@@ -1,16 +1,26 @@
 "use strict";
 const $ = id => document.getElementById(id);
-let token = location.hash.slice(1) || sessionStorage.getItem("lineAdminToken") || "";
-if (location.hash) { sessionStorage.setItem("lineAdminToken", token); history.replaceState(null, "", "/"); }
+const remote = location.hostname !== "127.0.0.1";
+let token = remote ? "" : location.hash.slice(1) || sessionStorage.getItem("lineAdminToken") || "";
+if (location.hash) { if (!remote) sessionStorage.setItem("lineAdminToken", token); history.replaceState(null, "", "/"); }
+$("logout").hidden = !remote;
+$("logout").addEventListener("click", () => { location.href = "/cdn-cgi/access/logout"; });
 let contacts = [], selected = new Set(), pending = false, initialized = false;
 const label = r => r.alias || r.display_name || `${r.kind === "user" ? "個人" : "群組"} · ${r.recipient_id.slice(-8)}`;
 function notice(text, error = false) { $("notice").textContent = text; $("notice").classList.toggle("error", error); }
 async function api(path, payload) {
-  const response = await fetch(path, {method:payload === undefined ? "GET" : "POST", headers:{"Authorization":`Bearer ${token}`,"Content-Type":"application/json"}, body:payload === undefined ? undefined : JSON.stringify(payload), cache:"no-store"});
+  const headers = {"Content-Type":"application/json"};
+  if (!remote) headers.Authorization = `Bearer ${token}`;
+  let response;
+  try {
+    response = await fetch(path, {method:payload === undefined ? "GET" : "POST", headers, credentials:"same-origin", redirect:"error", body:payload === undefined ? undefined : JSON.stringify(payload), cache:"no-store"});
+  } catch (_) { throw new Error(remote ? "連線中斷或登入已逾時，請重新整理並登入；發送狀態請先查看紀錄。" : "無法連線，請確認 LINE 服務已啟動。"); }
+  if (!response.headers.get("Content-Type")?.includes("application/json")) throw new Error("登入已逾時，請重新整理並登入。");
   const result = await response.json();
   if (!response.ok) throw new Error(result.error || "操作未完成。");
   return result;
 }
+api("/api/session").then(session => { $("identity").textContent = `LINE 自動化 · ${session.identity}`; }).catch(error => notice(error.message, true));
 function counts() {
   const subscribers = contacts.filter(r => r.active && r.weather_subscribed).length;
   $("summary").textContent = `${contacts.length} 個聊天室 · ${subscribers} 個天氣訂閱 · 已勾選 ${selected.size} 個`;

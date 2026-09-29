@@ -1,6 +1,6 @@
 # LINE OA 對話紀錄：本機 SQLite
 
-本專案供內部使用，由本機 Python 接收 LINE 官方帳號（OA）的 Webhook，將新訊息儲存至 SQLite。Webhook 與資料庫僅使用 Python 標準函式庫；手動圖片推送另外使用 `truststore` 驗證 HTTPS。不需要資料庫帳號、密碼、Docker 或獨立資料庫服務。
+本專案供內部使用，由本機 Python 接收 LINE 官方帳號（OA）的 Webhook，將新訊息儲存至 SQLite。Webhook 與資料庫僅使用 Python 標準函式庫；圖片推送使用 `truststore` 驗證 HTTPS，管理服務另使用 `PyJWT[crypto]` 驗證 Cloudflare Access 登入。透過根目錄安裝器安裝相依套件。遠端管理設定請見[根目錄 README](../README.md#在外面登入管理頁)。不需要資料庫帳號、密碼、Docker 或獨立資料庫服務。
 
 ```text
 LINE OA → https://reports.stack-base.com/webhook

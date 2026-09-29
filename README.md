@@ -51,7 +51,28 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Install-ControlPanel.p
 4. 勾選某列的「天氣訂閱」並儲存，即加入訂閱名單；按 **「發給天氣訂閱名單」** 傳給目前仍有效的訂閱者。群組訂閱由管理員設定，單一成員在群組傳指令不會改動整個群組。
 5. 個人可私訊 Bot「訂閱天氣」「取消訂閱」「我的訂閱」「幫助」，Bot 會記錄並回覆目前狀態。重送的同一則訊息不會重複處理；封鎖 Bot 或 Bot 離開群組後會停用對象並取消訂閱。
 
-管理頁僅監聽 `127.0.0.1:18475`，以本機臨時管理憑證保護 API，與公開的 `18474` Webhook／圖片服務分開。請勿把管理連接埠加入 Tunnel 路由；服務重啟後需從控制台重新開啟管理頁。收到群組訊息不代表取得全部群組成員名單；要個別收件，使用者需與 Bot 互動。
+管理頁監聽 `127.0.0.1:18475`，與 `18474` Webhook／圖片服務分開。本機使用臨時管理憑證，服務重啟後需從控制台重新開啟管理頁。遠端使用須先完成下方 Cloudflare Access 設定；缺少設定時不接受代理連線。收到群組訊息不代表取得全部群組成員名單；要個別收件，使用者需與 Bot 互動。
+
+### 在外面登入管理頁
+
+1. Cloudflare Zero Trust → Access controls → Applications → Add an application → Self-hosted（介面也可能顯示 Self-hosted and private）。應用程式名称 `LINE 管理後台`，Public hostname 為 `line-admin.stack-base.com`，Path 留白，保護整個網域。
+2. 設定 Allow 政策，Include → Emails 填入可登入管理員的完整信箱；不使用 Everyone 或 Bypass。登入方法啟用 One-time PIN（信箱驗證碼）。若未列出，先到 Zero Trust 的 Integrations → Identity providers 新增 One-time PIN。建議 Session duration 為 8 小時。
+3. 複製 Access 應用程式的 Application Audience（AUD）與帳戶的 Team domain（`你的團隊.cloudflareaccess.com`），填入 `line-oa-archive/.env`：
+
+   ```dotenv
+   ADMIN_PUBLIC_HOST=line-admin.stack-base.com
+   CF_ACCESS_TEAM_DOMAIN=你的團隊.cloudflareaccess.com
+   CF_ACCESS_AUD=應用程式的AUD
+   ADMIN_ALLOWED_EMAILS=你的完整信箱
+   ```
+
+   多名管理員信箱以逗號分隔，且同時加入 Access 政策。四項必須完整填入；修改後在控制台按「重啟 LINE」。本機會驗證 Access JWT 的 RSA 簽章、期限、issuer、audience 及 Email 白名單；不信任單獨的 Email 標頭。憑證驗證金鑰透過 HTTPS 取得並暫存。
+4. 完成 Access 政策後，到 Tunnels → Bruce-PC-Services → Routes 新增已發佈應用程式路由：`line-admin.stack-base.com` → HTTP `127.0.0.1:18475`。Path 留白，HTTP Host Header 不要覆寫；保留 `reports.stack-base.com` 的 18474 路由。Access 僅保護管理網域，避免 Webhook 與 LINE 取圖被登入頁攔截。
+5. 手機使用行動網路開啟 `https://line-admin.stack-base.com`，輸入允許的信箱，收取驗證碼登入。確認頁面上方顯示管理員信箱，再測試查閱名單。使用完成可按「登出」。到期時重新整理並登入；發送中斷先查紀錄，不自動重送。
+
+電腦須保持開機、不進入睡眠、網路正常，LINE 本機服務與共用 Cloudflared 都須持續執行。遠端頁面的 PNG 路徑指的是這台 Windows 電腦上的檔案；不需要把圖片下載到手機。
+
+官方說明：[建立 Access 應用程式](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/self-hosted-public-app/)、[One-time PIN](https://developers.cloudflare.com/cloudflare-one/integrations/identity-providers/one-time-pin/)、[驗證 JWT 與取得 AUD](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/validating-json/)。
 
 發送紀錄會逐一顯示 LINE 已接受、失敗、狀態不明或取消；相同工作識別碼不重複提交，不自動重送失敗或不明結果。訂閱發送在每一筆送出前再確認訂閱及有效狀態；已交給 LINE 的訊息無法因稍後取消訂閱而收回。停止服務會取消尚未送出的佇列並等待當筆請求結束。
 

@@ -21,7 +21,8 @@ def load_settings():
                 continue
             key, separator, value = line.partition("=")
             if separator and key.strip() in {"LINE_CHANNEL_SECRET", "DATABASE_PATH", "LINE_CHANNEL_ACCESS_TOKEN",
-                                             "LINE_PUSH_USER_ID", "LINE_PUSH_GROUP_ID", "PUBLIC_BASE_URL", "WEATHER_IMAGE_PATH"}:
+                                             "LINE_PUSH_USER_ID", "LINE_PUSH_GROUP_ID", "PUBLIC_BASE_URL", "WEATHER_IMAGE_PATH",
+                                             "ADMIN_PUBLIC_HOST", "CF_ACCESS_TEAM_DOMAIN", "CF_ACCESS_AUD", "ADMIN_ALLOWED_EMAILS"}:
                 value = value.strip()
                 if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
                     value = value[1:-1]

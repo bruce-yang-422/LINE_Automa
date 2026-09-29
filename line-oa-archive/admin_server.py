@@ -1,4 +1,4 @@
-"""Loopback-only recipient management with authenticated writes and audited sends."""
+"""Recipient management: local bearer token or verified Cloudflare Access identity."""
 
 from concurrent.futures import ThreadPoolExecutor
 import hmac
@@ -16,6 +16,7 @@ import app
 from control_runtime import load_settings
 import line_api
 import recipients
+from remote_auth import RemoteAccess
 from send_image import publish_image, verify_public_image, send_push
 
 
@@ -154,11 +155,29 @@ class AdminHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def authorized(self, require_token=True):
+        self.identity = "本機管理員"
+        for name in ("Host", "Origin", "Authorization", "Cf-Access-Jwt-Assertion", "X-Forwarded-Proto"):
+            if len(self.headers.get_all(name, [])) > 1:
+                self.respond(403, {"error": "不接受重複的驗證標頭。"})
+                return False
         expected_host = f"127.0.0.1:{self.server.server_port}"
         origin = self.headers.get("Origin")
+        remote = self.server.remote_access
+        if remote.enabled and self.headers.get("Host", "").lower() == remote.host:
+            if (self.headers.get("X-Forwarded-Proto") != "https"
+                    or (origin is not None and origin != "https://" + remote.host)
+                    or (self.command == "POST" and origin != "https://" + remote.host)):
+                self.respond(403, {"error": "請透過 HTTPS 管理網址操作。"})
+                return False
+            try:
+                self.identity = remote.verify(self.headers.get("Cf-Access-Jwt-Assertion", ""))
+            except ValueError as exc:
+                self.respond(403, {"error": str(exc)})
+                return False
+            return True
         if (self.headers.get("Host") != expected_host or (origin and origin != "http://" + expected_host)
-                or self.headers.get("CF-Connecting-IP") or self.headers.get("X-Forwarded-For")):
-            self.respond(403, {"error": "管理頁僅允許本機直接連線。"})
+                or any(name in self.headers for name in ("CF-Connecting-IP", "X-Forwarded-For", "X-Forwarded-Proto", "Cf-Access-Jwt-Assertion"))):
+            self.respond(403, {"error": "請從本機控制台或已設定的 Cloudflare Access 管理入口登入。"})
             return False
         if require_token and not hmac.compare_digest(self.headers.get("Authorization", ""), "Bearer " + self.server.token):
             self.respond(401, {"error": "管理連線已失效，請從控制台重新開啟。"})
@@ -175,6 +194,8 @@ class AdminHandler(BaseHTTPRequestHandler):
         if self.path in files:
             path, mime = files[self.path]
             self.respond(200, path.read_bytes(), mime)
+        elif self.path == "/api/session":
+            self.respond(200, {"identity": self.identity})
         elif self.path == "/api/contacts":
             with app.database_connection() as conn:
                 rows = recipients.list_contacts(conn)
@@ -240,6 +261,7 @@ class AdminServer(ThreadingHTTPServer):
     def __init__(self, port):
         super().__init__(("127.0.0.1", port), AdminHandler)
         self.token = secrets.token_urlsafe(32)
+        self.remote_access = RemoteAccess()
         self.dispatcher = None
 
     def start(self):

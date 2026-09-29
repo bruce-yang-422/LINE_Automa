@@ -2,7 +2,7 @@
 <!-- 管理介面首頁；透過控制台「收件者與發送」開啟。 -->
 <html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>LINE 收件者與發送</title><link rel="stylesheet" href="/admin.css"><script src="/admin.js" defer></script></head>
 <body><main>
-<header><div><p class="eyebrow">LINE 自動化 · 本機管理</p><h1>收件者與發送</h1><p>管理個人、群組與天氣訂閱，選好對象再傳送報告。</p></div><button id="refresh">重新整理</button></header>
+<header><div><p class="eyebrow" id="identity">LINE 自動化 · 管理後台</p><h1>收件者與發送</h1><p>管理個人、群組與天氣訂閱，選好對象再傳送報告。</p></div><button id="refresh">重新整理</button><button id="logout" hidden>登出</button></header>
 <p id="notice" role="status" aria-live="polite">正在讀取名單…</p>
 <section class="card"><div class="section-head"><div><h2>收件者名單</h2><p id="summary"></p></div><button id="profiles">更新 LINE 名稱</button></div>
 <div class="toolbar"><input id="search" type="search" placeholder="搜尋名稱、備註或 ID" aria-label="搜尋收件者"><select id="filter" aria-label="篩選名單"><option value="all">所有聊天室</option><option value="user">個人</option><option value="group">群組</option><option value="subscribed">天氣訂閱中</option></select><button id="select-visible">勾選目前顯示</button><button id="clear">清除勾選</button></div>
