@@ -1,3 +1,0 @@
-[submodule "line-bot-sdk-python"]
-	path = line-bot-sdk-python
-	url = https://github.com/line/line-bot-sdk-python.git

@@ -2,3 +2,6 @@
 .venv/
 __pycache__/
 *.pyc
+
+# Official SDK is kept locally for reference only.
+/line-bot-sdk-python/
