@@ -84,8 +84,8 @@
 | --- | --- |
 | Channel ID | 頻道識別碼，建立後取得；目前接收程式不需額外設定 |
 | Channel secret | 驗證 Webhook 簽章；設為環境變數 `LINE_CHANNEL_SECRET` |
-| Channel access token | 後續呼叫 API 發送文字、圖片或通知時使用；目前程式尚未實作通知發送與此設定 |
-| 接收對象 ID | 後續通知需使用 LINE API 的 userId／groupId 等識別碼，不是顯示名稱；依事件來源取得並確認對象 |
+| Channel access token | 圖片推送使用；在本機 `.env` 設定 `LINE_CHANNEL_ACCESS_TOKEN` |
+| 接收對象 ID | 使用 Webhook 的 userId／groupId；可指定 `.env` 的 `LINE_PUSH_USER_ID`／`LINE_PUSH_GROUP_ID`，同類型只有一個紀錄時可自動選取 |
 
 實際密鑰與權杖請存於本機環境設定或密碼管理工具，不要填進這份 Markdown 或提交 Git。SQLite 不需要帳號密碼，但 LINE 頻道密鑰仍需設定。
 
@@ -104,4 +104,4 @@
 - [ ] 群組紀錄範圍、資料保留方式與刪除聯絡窗口已確認。
 - [ ] 通知功能完成後，再設定權杖、接收對象與排程。
 
-目前已實作接收訊息與 SQLite 紀錄；天氣報表、圖片服務與通知功能待開發。先在 Windows 驗證，穩定後依需求文件部署至 Ubuntu。
+目前已實作接收訊息、SQLite 紀錄、PNG 圖片服務與手動推送；可傳送外部天氣專案產生的報表，每日排程仍待開發。先在 Windows 驗證，穩定後依需求文件部署至 Ubuntu。

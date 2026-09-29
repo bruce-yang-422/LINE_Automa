@@ -5,11 +5,13 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import sqlite3
 from contextlib import contextmanager, closing
 from pathlib import Path
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import recipients
 
 BASE_DIR = Path(__file__).resolve().parent
 DATABASE_PATH = Path(os.environ.get("DATABASE_PATH", "data/line_archive.db"))
@@ -17,6 +19,7 @@ if not DATABASE_PATH.is_absolute():
     DATABASE_PATH = BASE_DIR / DATABASE_PATH
 CHANNEL_SECRET = os.environ.get("LINE_CHANNEL_SECRET", "")
 MAX_BODY_BYTES = 1_048_576
+IMAGE_DIR = BASE_DIR / "published-images"
 
 
 @contextmanager
@@ -36,6 +39,7 @@ def initialize_database() -> None:
     with database_connection() as conn:
         conn.execute("PRAGMA journal_mode=WAL")
         conn.executescript((BASE_DIR / "schema.sql").read_text(encoding="utf-8"))
+        recipients.migrate_contacts(conn)
 
 
 def valid_signature(body: bytes, signature: str) -> bool:
@@ -54,8 +58,9 @@ def source_fields(event: dict) -> tuple[str, str, str | None] | None:
     return source_type, source[key], source.get("userId")
 
 
-def save_events(events: list[dict]) -> None:
+def save_events(events: list[dict]) -> list:
     # 交易失敗時回傳 HTTP 503，讓 LINE 可以重新傳送 Webhook。
+    replies = []
     with database_connection() as conn:
         with closing(conn.cursor()) as cur:
             for event in events:
@@ -63,6 +68,9 @@ def save_events(events: list[dict]) -> None:
                 if fields is None:
                     continue
                 source_type, conversation_id, sender_user_id = fields
+                reply = recipients.handle_event(conn, event, source_type, conversation_id)
+                if reply:
+                    replies.append(reply)
                 event_type = event.get("type")
                 if event_type == "message":
                     message = event.get("message") or {}
@@ -104,9 +112,40 @@ def save_events(events: list[dict]) -> None:
                         """,
                         (message_id, source_type, conversation_id, sender_user_id),
                     )
+    return replies
 
 
 class Handler(BaseHTTPRequestHandler):
+    def serve_image(self, head_only: bool = False) -> bool:
+        # Only explicitly published PNG snapshots are public, never arbitrary local paths.
+        match = re.fullmatch(r"/images/([0-9a-f]{32}\.png)", self.path)
+        if not match:
+            return False
+        path = IMAGE_DIR / match[1]
+        try:
+            with path.open("rb") as image:
+                data = image.read(1_000_001)
+        except OSError:
+            self.respond(404, "找不到圖片")
+            return True
+        if len(data) > 1_000_000 or not data.startswith(b"\x89PNG\r\n\x1a\n"):
+            self.respond(404, "找不到圖片")
+            return True
+        self.send_response(200)
+        self.send_header("Content-Type", "image/png")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "public, max-age=86400, immutable")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        if not head_only:
+            self.wfile.write(data)
+        return True
+
+    def do_HEAD(self) -> None:
+        if not self.serve_image(head_only=True):
+            self.send_response(404)
+            self.end_headers()
+
     def respond(self, code: int, message: str) -> None:
         data = message.encode("utf-8")
         self.send_response(code)
@@ -116,6 +155,8 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def do_GET(self) -> None:
+        if self.serve_image():
+            return
         if self.path == "/healthz":
             try:
                 with database_connection() as conn:
@@ -151,11 +192,20 @@ class Handler(BaseHTTPRequestHandler):
             self.respond(400, "Webhook 格式無效")
             return
         try:
-            save_events(events)
+            replies = save_events(events)
         except sqlite3.Error:
             self.respond(503, "資料庫無法使用")
             return
         self.respond(200, "ok")
+        # Acknowledge persisted subscriptions before calling LINE; redelivery won't toggle or reply twice.
+        if replies and os.environ.get("LINE_CHANNEL_ACCESS_TOKEN"):
+            import line_api
+            for token, text in replies:
+                try:
+                    line_api.reply(token, text)
+                except ValueError:
+                    # Subscription state remains committed. Users can request status again.
+                    pass
 
 
 if __name__ == "__main__":

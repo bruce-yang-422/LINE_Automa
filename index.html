@@ -1,0 +1,13 @@
+<!doctype html>
+<!-- 管理介面首頁；透過控制台「收件者與發送」開啟。 -->
+<html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>LINE 收件者與發送</title><link rel="stylesheet" href="/admin.css"><script src="/admin.js" defer></script></head>
+<body><main>
+<header><div><p class="eyebrow">LINE 自動化 · 本機管理</p><h1>收件者與發送</h1><p>管理個人、群組與天氣訂閱，選好對象再傳送報告。</p></div><button id="refresh">重新整理</button></header>
+<p id="notice" role="status" aria-live="polite">正在讀取名單…</p>
+<section class="card"><div class="section-head"><div><h2>收件者名單</h2><p id="summary"></p></div><button id="profiles">更新 LINE 名稱</button></div>
+<div class="toolbar"><input id="search" type="search" placeholder="搜尋名稱、備註或 ID" aria-label="搜尋收件者"><select id="filter" aria-label="篩選名單"><option value="all">所有聊天室</option><option value="user">個人</option><option value="group">群組</option><option value="subscribed">天氣訂閱中</option></select><button id="select-visible">勾選目前顯示</button><button id="clear">清除勾選</button></div>
+<div class="table-wrap"><table><thead><tr><th>選取</th><th>名稱</th><th>類型／狀態</th><th>備註名稱</th><th>天氣訂閱</th><th>設定</th></tr></thead><tbody id="contacts"></tbody></table></div>
+<p class="hint">新使用者加好友或傳送訊息、Bot 加入群組後，名單會自動建立。個人可私訊「訂閱天氣」「取消訂閱」「我的訂閱」；群組由管理員設定。訂閱名單與這次勾選的收件者分開管理。</p></section>
+<section class="card"><h2>發送圖片</h2><label for="image-path">本機 PNG 圖片路徑</label><input id="image-path" class="wide" placeholder="例如 D:\Tools\ai_weather_report\output\weather_report.png"><p class="hint">先執行天氣程式產生最新圖片。每次發送使用獨立圖片快照；此版本支援 1 MB 以內 PNG。</p><div class="send-actions"><button id="send-selected" class="primary">發給勾選對象（0）</button><button id="send-subscribers">發給天氣訂閱名單（0）</button></div><p class="hint">發送前會列出對象供確認。目前沒有每日自動排程；取消訂閱會排除尚未送出的訂閱通知。</p></section>
+<section class="card"><h2>最近發送紀錄</h2><p class="hint">「LINE 已接受」代表 API 已受理，仍需在聊天室確認。失敗或狀態不明不會自動重送。</p><div id="jobs"></div></section>
+</main></body></html>

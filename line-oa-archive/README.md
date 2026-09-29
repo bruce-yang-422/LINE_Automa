@@ -1,6 +1,6 @@
 # LINE OA 對話紀錄：本機 SQLite
 
-本專案供公司內部使用，由本機 Python 接收 LINE 官方帳號（OA）的 Webhook，將新訊息儲存至 SQLite。僅使用 Python 標準函式庫，不需要資料庫帳號、密碼、Docker 或獨立資料庫服務。
+本專案供內部使用，由本機 Python 接收 LINE 官方帳號（OA）的 Webhook，將新訊息儲存至 SQLite。Webhook 與資料庫僅使用 Python 標準函式庫；手動圖片推送另外使用 `truststore` 驗證 HTTPS。不需要資料庫帳號、密碼、Docker 或獨立資料庫服務。
 
 ```text
 LINE OA → https://reports.stack-base.com/webhook
@@ -14,10 +14,12 @@ LINE OA → https://reports.stack-base.com/webhook
 - 儲存文字、訊息類型、識別碼與時間；時間採用 UTC ISO 8601 格式。
 - 不下載圖片、檔案、貼圖、音訊或影片內容，不記錄 OA 主動發送的訊息，也不追蹤訊息編輯。
 - 相同訊息 ID 不重複寫入。收回訊息時清除文字並保留收回標記；即使收回事件先到達，後續重送的原始訊息也不會恢復文字。
-- 目前只實作接收與紀錄。PNG 圖片服務、公告、表單提醒與每日通知仍屬需求規劃，尚未實作。
+- 已實作接收與紀錄、PNG 圖片服務與個人／群組手動推送。發送步驟見 [天氣圖片測試](../README.md#傳送天氣圖片到-line)；公告、表單提醒與每日排程仍未實作。
 - 請告知對話參與者，並依公司需求訂定資料保留與存取規則。
 
 ## Windows 啟動方式
+
+日常操作可使用專案根目錄的獨立控制台與桌面捷徑，參見 [控制台設定與操作](../README.md)。控制台啟動器會讀取本資料夾的 `.env`；以下直接執行 `app.py` 的方式仍需自行設定環境變數。
 
 需要 Python 3.11 以上版本，以及 LINE Developers 中 Messaging API 頻道的 channel secret（頻道密鑰）。密鑰用來驗證 LINE Webhook，與資料庫登入無關。
 
@@ -31,7 +33,7 @@ python app.py
 
 程式會自動建立 `data/line_archive.db` 及資料表，重新啟動時保留既有紀錄。環境變數只對目前 PowerShell 工作階段與其子程序生效。
 
-`.env.example` 供設定參考；程式不會自動載入 `.env`。若需要自訂資料庫位置，請在啟動前設定：
+`.env.example` 供設定參考；直接執行 `app.py` 不會自動載入 `.env`。若使用此啟動方式並需要自訂資料庫位置，請在啟動前設定：
 
 ```powershell
 $env:DATABASE_PATH = 'D:\Data\line_archive.db'

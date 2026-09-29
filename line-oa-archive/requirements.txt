@@ -1,1 +1,2 @@
-# 僅使用 Python 標準函式庫，無須安裝第三方套件。
+# 圖片發送使用作業系統憑證存放區驗證 HTTPS；Webhook 與 SQLite 本身僅使用標準函式庫。
+truststore>=0.10,<1

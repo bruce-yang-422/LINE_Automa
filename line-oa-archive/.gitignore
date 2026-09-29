@@ -4,6 +4,8 @@ __pycache__/
 *.pyc
 data/
 backups/
+instance/
+published-images/
 *.db
 *.db-wal
 *.db-shm
