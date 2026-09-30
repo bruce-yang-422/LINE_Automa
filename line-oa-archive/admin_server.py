@@ -402,6 +402,8 @@ class AdminHandler(BaseHTTPRequestHandler):
                  "/admin.js": (app.BASE_DIR / "web" / "admin.js", "text/javascript; charset=utf-8"),
                  "/composer.js": (app.BASE_DIR / "web" / "composer.js", "text/javascript; charset=utf-8"),
                  "/workspace-theme.css": (app.BASE_DIR / "web" / "workspace-theme.css", "text/css; charset=utf-8"),
+                 "/management.js": (app.BASE_DIR / "web" / "management.js", "text/javascript; charset=utf-8"),
+                 "/management.css": (app.BASE_DIR / "web" / "management.css", "text/css; charset=utf-8"),
                  "/appearance.js": (app.BASE_DIR / "web" / "appearance.js", "text/javascript; charset=utf-8"),
                  "/admin.css": (app.BASE_DIR / "web" / "admin.css", "text/css; charset=utf-8")}
         brand = app.BASE_DIR / 'web' / 'assets' / 'brand'

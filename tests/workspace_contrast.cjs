@@ -60,8 +60,20 @@ async function contrast(page,label){
         await primary.focus();results.push(await contrast(page,view+' focus'));await primary.blur();
       }
     }
-    for(const [view,action] of [['reports','new-report'],['contacts','edit-contact'],['settings','new-account'],['organizations','new-organization'],['organizations','new-dispatch-scope'],['organizations','edit-sender-grant']]){
-      await page.locator(`nav [data-view="${view}"]`).click();await page.locator(`[data-action="${action}"]`).first().click();
+    await page.locator('nav [data-view="organizations"]').click();
+    for(const tab of ['scopes','modules','people']){
+      await page.locator(`[data-action="mg-tab"][data-id="${tab}"]`).click();results.push(await contrast(page,'organization '+tab));
+    }
+    await page.setViewportSize({width:390,height:844});results.push(await contrast(page,'mobile organization'));
+    assert(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth));
+    await page.setViewportSize({width:1440,height:1000});
+    for(const [view,action] of [['reports','new-report'],['contacts','edit-contact'],['settings','new-account'],['organizations','new-organization'],['organizations','new-membership'],['organizations','new-dispatch-scope'],['organizations','edit-sender-grant']]){
+      await page.locator(`nav [data-view="${view}"]`).click();
+      if(view==='organizations'){
+        await page.locator('[data-action="mg-org"][data-id="示範公司"]').click();
+        await page.locator(`[data-action="mg-tab"][data-id="${action==='new-dispatch-scope'?'scopes':'people'}"]`).click();
+      }
+      await page.locator(`[data-action="${action}"]`).first().click();
       results.push(await contrast(page,action));await page.locator('#modal-close').click();
     }
     await page.locator('nav [data-view="send"]').click();

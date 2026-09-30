@@ -1,0 +1,67 @@
+/* Compile locally; no Preflight reset or browser CDN. */
+@layer theme, utilities;
+@import "tailwindcss/theme.css" layer(theme) prefix(tw);
+@import "tailwindcss/utilities.css" layer(utilities) prefix(tw) source(none);
+@source "../line-oa-archive/web/management.js";
+@theme inline {
+  --color-panel: var(--surface);
+  --color-soft: var(--soft);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-edge: var(--line);
+  --color-tint: var(--mint);
+  --color-brand: #00B900;
+}
+.management { @apply tw:grid tw:gap-6 tw:text-ink; }
+.management .mg-summary { @apply tw:grid tw:grid-cols-1 tw:gap-3 tw:sm:grid-cols-3; }
+.management .mg-stat { @apply tw:rounded-2xl tw:border tw:border-solid tw:border-edge tw:bg-panel tw:px-5 tw:py-4; }
+.management .mg-stat strong { @apply tw:mr-2 tw:text-2xl tw:font-semibold; }
+.management .mg-stat span { @apply tw:text-sm tw:text-muted; }
+.management .mg-shell { @apply tw:grid tw:gap-5; grid-template-columns: 250px minmax(0,1fr); align-items:start; }
+.management .mg-mobile-org { display:none; }
+.management .mg-card { @apply tw:rounded-2xl tw:border tw:border-solid tw:border-edge tw:bg-panel tw:overflow-hidden; }
+.management .mg-picker { @apply tw:grid tw:gap-2 tw:p-3; }
+.management .mg-org { @apply tw:w-full tw:rounded-xl tw:border tw:border-solid tw:border-transparent tw:bg-panel tw:p-3 tw:text-left tw:text-ink; }
+.management .mg-org:hover { @apply tw:bg-soft; }
+.management .mg-org[aria-pressed="true"] { @apply tw:bg-tint; border-color:var(--control-border); }
+.management .mg-org strong,.management .mg-org small { @apply tw:block; }
+.management .mg-org small { @apply tw:mt-1 tw:text-xs tw:text-muted; }
+.management .mg-head { @apply tw:flex tw:flex-wrap tw:items-center tw:justify-between tw:gap-3 tw:p-5; }
+.management .mg-head p { @apply tw:mt-1 tw:text-sm tw:text-muted; }
+.management .mg-actions { @apply tw:flex tw:flex-wrap tw:items-center tw:gap-2; }
+.management .mg-tabs { @apply tw:flex tw:flex-wrap tw:gap-1 tw:border-y tw:border-solid tw:border-edge tw:bg-soft tw:p-2; border-left:0;border-right:0; }
+.management .mg-tabs button { @apply tw:rounded-lg tw:border-0 tw:bg-soft tw:px-4 tw:py-2 tw:text-sm tw:text-muted; min-height:44px; }
+.management .mg-tabs button[aria-pressed="true"] { @apply tw:bg-panel tw:text-ink tw:font-semibold; }
+.management .mg-body { @apply tw:grid tw:gap-4 tw:p-5; }
+.management .mg-row { @apply tw:flex tw:flex-wrap tw:items-center tw:justify-between tw:gap-4 tw:rounded-xl tw:border tw:border-solid tw:border-edge tw:p-4; }
+.management .mg-person { @apply tw:flex tw:items-start tw:gap-3 tw:min-w-0; flex:1 1 220px; }
+.management .mg-person>div { min-width:0;overflow-wrap:anywhere; }
+.management .mg-person p { @apply tw:mt-1 tw:text-sm tw:text-muted; }
+.management .mg-person strong { @apply tw:text-sm; }
+.management .mg-tags { @apply tw:flex tw:flex-wrap tw:gap-2 tw:mt-2; }
+.management .mg-guide { @apply tw:grid tw:gap-3 tw:rounded-2xl tw:bg-tint tw:p-5 tw:sm:grid-cols-3; }
+.management .mg-guide strong { @apply tw:block tw:text-sm; }
+.management .mg-guide p { @apply tw:mt-1 tw:text-xs tw:text-ink; line-height:1.7; }
+.management .mg-tools { @apply tw:flex tw:flex-wrap tw:items-end tw:gap-3; }
+.management .mg-tools label { @apply tw:grid tw:gap-1 tw:text-xs tw:text-muted; flex:1 1 180px; }
+.management .mg-note { @apply tw:rounded-xl tw:bg-soft tw:p-4 tw:text-sm tw:text-muted; }
+.management details>summary { @apply tw:cursor-pointer tw:p-5 tw:font-semibold; }
+.management .mg-empty { @apply tw:grid tw:justify-items-start tw:gap-3 tw:rounded-xl tw:bg-soft tw:p-6; }
+.management .mg-empty p { @apply tw:text-sm tw:text-muted; }
+.management-form { @apply tw:grid tw:gap-5; }
+.management-form .mg-section { @apply tw:grid tw:gap-4 tw:rounded-xl tw:border tw:border-solid tw:border-edge tw:p-5; }
+.management-form .mg-section h3 { @apply tw:text-base; }
+.management-form .mg-section p,.management-form .mg-help { @apply tw:text-sm tw:text-muted; }
+.management-form .mg-role-help { @apply tw:rounded-xl tw:bg-tint tw:p-4 tw:text-sm tw:text-ink; }
+.management-form .mg-toggle { @apply tw:flex tw:items-start tw:gap-3 tw:rounded-xl tw:bg-soft tw:p-4; }
+.management-form .mg-toggle span { @apply tw:grid tw:gap-1 tw:text-sm tw:text-ink; }
+.management-form .mg-toggle small { @apply tw:text-xs tw:text-muted; }
+.management-form details { @apply tw:rounded-xl tw:border tw:border-solid tw:border-edge tw:p-4; }
+.management-form summary { @apply tw:cursor-pointer tw:text-sm tw:font-semibold; }
+.management-form details .form-grid { @apply tw:mt-4; }
+.management-form .form-actions { margin-top:0; }
+.management-form .permission-fieldset { margin:0; }
+.management-form .mg-grant-summary { @apply tw:rounded-xl tw:bg-tint tw:p-4 tw:text-sm tw:text-ink; }
+@media(max-width:1100px) { .management .mg-shell { grid-template-columns:1fr; } .management .mg-picker { grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); } }
+@media(max-width:580px) { .management .mg-head,.management .mg-body { padding:16px; } .management .mg-actions { width:100%; } .management .mg-actions .btn { flex:1; } .management-form .mg-section { padding:16px; } }
+@media(max-width:580px) { .management .mg-shell>aside { display:none; } .management .mg-mobile-org { display:grid; gap:8px; color:var(--muted); font-size:13px; } }

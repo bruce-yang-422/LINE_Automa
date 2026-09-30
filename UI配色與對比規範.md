@@ -31,3 +31,7 @@
 涵蓋頁面、設定視窗、hover、focus、placeholder、選檔按鈕、訊息編輯器、手機導覽與角色預覽。這是已檢查狀態的文字對比結果，不代表整站所有無障礙條目皆通過，也不含圖片內文字。
 
 驗證產物（不納入 Git）：`line-oa-archive/instance/contrast-audit-light.json`、`contrast-audit-dark.json`、`palette-light-desktop.png`、`palette-dark-desktop.png`，以及各主題 mobile 截圖。
+
+## 組織管理改版驗證
+
+Tailwind 管理主題完成後，深淺模式各檢查 42 個畫面／狀態、3,730 次文字配對；最低分別 5.297:1、5.646:1，未達 4.5:1 者為零。新增組織分類頁、成員表單與手機組織切換覆蓋。

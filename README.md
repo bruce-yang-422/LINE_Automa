@@ -1,5 +1,23 @@
 # LINE 自動化
 
+## 組織與人員管理（Tailwind 主題）
+
+1. 「組織管理」先選取或新增組織；右側資料只顯示目前選取的組織。
+2. 在「人員與權限」新增後台人員，或將既有帳號加入組織。發送人員需另外按「設定授權」；一般 LINE 收件者不需要後台帳號。
+3. 在「發送範圍」建立部門、專案或 LINE 群組，再回到人員旁勾選範圍、模組及報告。
+4. 在「可用模組」查看組織開放的功能，透過「編輯組織」調整。帳號頁可搜尋姓名／Email／主要組織、依主要角色篩選。
+
+新增組織後會自動選中；新增帳號和範圍會帶入該組織。新增表單提供角色說明，LINE 綁定收於選填進階設定。Cloudflare Access 的 Email 允許名單仍須另外維護，介面不會宣稱已驗證外部名單。
+
+管理 UI 使用 Tailwind CSS 4 的主題變數與 CLI 本機編譯，無瀏覽器端 CDN 或全域 Preflight 重設。來源為 `styles/management.css`，輸出為 `line-oa-archive/web/management.css`（部署時需包含）；主題沿用 `#00B900`、低飽和綠色與深淺模式。一般啟動不需要 Node.js；修改樣式時執行：
+
+```powershell
+npm ci
+npm run build:css
+```
+
+套件版本由 `package-lock.json` 固定，`node_modules` 不納入 Git。參考 [Tailwind CLI](https://tailwindcss.com/docs/installation/tailwind-cli) 與 [Theme variables](https://tailwindcss.com/docs/theme)。
+
 LINE 官方帳號的對話紀錄與通知專案。目前已完成 Webhook、SQLite 對話紀錄、收件者管理、天氣訂閱及 PNG 圖片推送；每日排程提醒仍在規劃中。
 
 ## Windows 獨立控制台
