@@ -91,13 +91,16 @@ def main():
     from admin_server import AdminServer
     with ManagedServer(("127.0.0.1", args.port), ManagedHandler) as server:
         admin = AdminServer(args.admin_port)
+        profiles = app.recipients.ProfileRefresher()
         try:
             app.initialize_database()
             admin.start()
+            profiles.start()
             server.timeout = 0.25
             while not stop_file.exists():
                 server.handle_request()
         finally:
+            profiles.close()
             admin.close()
         # server_close waits for request threads and their database transactions.
     stop_file.unlink(missing_ok=True)

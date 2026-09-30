@@ -4,7 +4,7 @@ $repo = Split-Path $PSScriptRoot -Parent
 $fixture = Join-Path ([IO.Path]::GetTempPath()) ('line-control-test-' + [guid]::NewGuid())
 $appRoot = Join-Path $fixture 'line-oa-archive'
 $null = New-Item -ItemType Directory -Path $appRoot -Force
-foreach ($name in @('app.py','schema.sql','control_runtime.py','recipients.py','admin_server.py','line_api.py','send_image.py','remote_auth.py')) {
+foreach ($name in @('app.py','schema.sql','control_runtime.py','recipients.py','admin_server.py','line_api.py','send_image.py','remote_auth.py','reports.py','composer.py')) {
     Copy-Item -LiteralPath (Join-Path $repo "line-oa-archive\$name") -Destination $appRoot
 }
 Set-Content -LiteralPath (Join-Path $appRoot '.env') -Value "LINE_CHANNEL_SECRET=test-secret`nDATABASE_PATH=data/test.db" -Encoding UTF8

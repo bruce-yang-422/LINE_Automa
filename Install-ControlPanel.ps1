@@ -21,7 +21,7 @@ $shortcut.TargetPath = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershe
 $shortcut.Arguments = "-NoProfile -STA -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$(Join-Path $PSScriptRoot 'ControlPanel.ps1')`""
 $shortcut.WorkingDirectory = $PSScriptRoot
 $shortcut.Description = 'LINE 自動化服務啟動、停止與連線狀態'
-$shortcut.IconLocation = "$env:SystemRoot\System32\shell32.dll,13"
+$shortcut.IconLocation = "$(Join-Path $PSScriptRoot 'line-oa-archive\web\assets\brand\line-automation-logo-light.ico'),0"
 $shortcut.WindowStyle = 7
 $shortcut.Save()
 Write-Output "已建立捷徑：$shortcutPath"

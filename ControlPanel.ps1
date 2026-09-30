@@ -40,6 +40,12 @@ $form.SuspendLayout()
 # Scale this fixed layout explicitly; Framework Label controls otherwise scale twice.
 $form.AutoScaleMode = [Windows.Forms.AutoScaleMode]::None
 $form.Text = 'LINE 自動化控制台'
+$brandIconPath = Join-Path $PSScriptRoot 'line-oa-archive\web\assets\brand\line-automation-logo-light.ico'
+if (Test-Path -LiteralPath $brandIconPath) {
+    $brandIcon = [Drawing.Icon]::new($brandIconPath)
+    $form.Icon = $brandIcon
+    $form.Add_Disposed({ $brandIcon.Dispose() }.GetNewClosure())
+}
 $form.ClientSize = New-UiSize 600 495
 $form.StartPosition = 'CenterScreen'
 $form.FormBorderStyle = 'FixedDialog'

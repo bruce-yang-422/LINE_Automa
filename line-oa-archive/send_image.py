@@ -77,9 +77,11 @@ def verify_public_image(url, expected):
         raise ValueError("公開圖片無法讀取，尚未發送。請先重啟 LINE 服務並確認公開連線。") from None
 
 
-def send_push(token, recipient, image_url, retry_key=None):
-    body = json.dumps({"to": recipient, "messages": [{"type": "image", "originalContentUrl": image_url,
-                                                    "previewImageUrl": image_url}]}).encode()
+def send_push(token, recipient, image_url, retry_key=None, text=None, messages=None):
+    if messages is None:
+        messages = [{"type": "text", "text": text}] if text is not None else [{"type": "image", "originalContentUrl": image_url,
+                                                                                "previewImageUrl": image_url}]
+    body = json.dumps({"to": recipient, "messages": messages}).encode()
     retry_key = retry_key or str(uuid4())
     request = Request("https://api.line.me/v2/bot/message/push", data=body, headers={
         "Authorization": "Bearer " + token, "Content-Type": "application/json", "X-Line-Retry-Key": retry_key,

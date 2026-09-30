@@ -27,7 +27,7 @@ class RemoteAccess:
                 headers={"User-Agent": "LINE-Automation/1.0"},
                 ssl_context=truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT))
 
-    def verify(self, token):
+    def verify(self, token, allowed_emails=None):
         if not self.enabled or not token or len(token) > 16384:
             raise ValueError("遠端登入尚未設定完成，或缺少登入憑證。")
         try:
@@ -39,7 +39,7 @@ class RemoteAccess:
             claims = jwt.decode(token, key, algorithms=["RS256"], audience=self.audience,
                                 issuer=self.issuer, options={"require": ["exp", "iat", "iss", "aud", "sub", "email"]})
             email = claims["email"]
-            if not isinstance(email, str) or email.lower() not in self.emails:
+            if not isinstance(email, str) or email.lower() not in (self.emails if allowed_emails is None else allowed_emails):
                 raise ValueError("Email not allowed")
             return email.lower()
         except (jwt.PyJWTError, ValueError, TypeError, OSError) as exc:

@@ -39,6 +39,8 @@ def initialize_database() -> None:
     with database_connection() as conn:
         conn.execute("PRAGMA journal_mode=WAL")
         conn.executescript((BASE_DIR / "schema.sql").read_text(encoding="utf-8"))
+        import reports
+        reports.migrate(conn)
         recipients.migrate_contacts(conn)
 
 
@@ -119,9 +121,10 @@ class Handler(BaseHTTPRequestHandler):
     def serve_image(self, head_only: bool = False) -> bool:
         # Only explicitly published PNG snapshots are public, never arbitrary local paths.
         match = re.fullmatch(r"/images/([0-9a-f]{32}\.png)", self.path)
-        if not match:
+        imagemap = re.fullmatch(r"/imagemaps/([0-9a-f]{32})/(240|300|460|700|1040)", self.path)
+        if not match and not imagemap:
             return False
-        path = IMAGE_DIR / match[1]
+        path = IMAGE_DIR / (match[1] if match else f'{imagemap[1]}-{imagemap[2]}.png')
         try:
             with path.open("rb") as image:
                 data = image.read(1_000_001)
@@ -212,4 +215,10 @@ if __name__ == "__main__":
     if not CHANNEL_SECRET:
         raise SystemExit("請先設定 LINE_CHANNEL_SECRET")
     initialize_database()
-    ThreadingHTTPServer(("127.0.0.1", 18474), Handler).serve_forever()
+    profiles = recipients.ProfileRefresher()
+    profiles.start()
+    try:
+        with ThreadingHTTPServer(("127.0.0.1", 18474), Handler) as server:
+            server.serve_forever()
+    finally:
+        profiles.close()

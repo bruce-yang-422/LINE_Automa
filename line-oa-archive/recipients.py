@@ -2,14 +2,99 @@
 
 import time
 import sqlite3
+import os
+import re
+import threading
 
 COMMANDS = {"訂閱天氣", "取消訂閱", "取消訂閱天氣", "我的訂閱", "幫助"}
 
 
 def migrate_contacts(conn):
+    existing = {row[1] for row in conn.execute('PRAGMA table_info(recipients)')}
+    for column in ('profile_checked_at', 'profile_next_at', 'profile_failures', 'profile_lease_until'):
+        if column not in existing:
+            conn.execute(f'ALTER TABLE recipients ADD COLUMN {column} INTEGER NOT NULL DEFAULT 0')
     conn.execute("""INSERT OR IGNORE INTO recipients (recipient_id, kind)
                     SELECT conversation_id, conversation_type FROM line_messages
                     GROUP BY conversation_id, conversation_type""")
+
+
+def refresh_profile(recipient_id, *, force=False, now=None):
+    """Fetch outside the write transaction. SQLite lease prevents concurrent lookups."""
+    import app
+    import line_api
+    if not os.environ.get('LINE_CHANNEL_ACCESS_TOKEN', '').strip():
+        return 'skipped'
+    now = int(time.time()) if now is None else now
+    lease = now + 60
+    with app.database_connection() as conn:
+        conn.row_factory = sqlite3.Row
+        conn.execute('BEGIN IMMEDIATE')
+        row = conn.execute('SELECT * FROM recipients WHERE recipient_id=?', (recipient_id,)).fetchone()
+        if (not row or not row['active'] or row['profile_lease_until'] > now
+                or (not force and row['profile_next_at'] > now)
+                or row['kind'] not in {'user', 'group'}
+                or not re.fullmatch(('U' if row['kind']=='user' else 'C') + '[0-9a-fA-F]{32}', recipient_id)):
+            return 'skipped'
+        conn.execute('UPDATE recipients SET profile_lease_until=? WHERE recipient_id=?', (lease, recipient_id))
+    try:
+        path = 'profile/' + recipient_id if row['kind']=='user' else 'group/' + recipient_id + '/summary'
+        profile = line_api.request(path)
+        name = profile.get('displayName' if row['kind']=='user' else 'groupName')
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError('LINE 未提供名稱。')
+    except (ValueError, OSError):
+        failures = min(row['profile_failures'] + 1, 8)
+        delay = min(900 * 2 ** (failures - 1), 86400)
+        with app.database_connection() as conn:
+            conn.execute('''UPDATE recipients SET profile_next_at=?,profile_failures=?,profile_lease_until=0
+                            WHERE recipient_id=? AND profile_lease_until=?''', (now+delay, failures, recipient_id, lease))
+        return 'failed'
+    with app.database_connection() as conn:
+        changed = conn.execute('''UPDATE recipients SET display_name=?,profile_checked_at=?,profile_next_at=?,
+                                 profile_failures=0,profile_lease_until=0
+                                 WHERE recipient_id=? AND active=1 AND profile_lease_until=?''',
+                               (name.strip()[:200],now,now+86400,recipient_id,lease)).rowcount
+    return 'updated' if changed else 'skipped'
+
+
+class ProfileRefresher:
+    """Recipient rows are the durable backlog, including contacts discovered before startup."""
+    def __init__(self):
+        self.stopping = threading.Event()
+
+    def tick(self):
+        import app
+        if not os.environ.get('LINE_CHANNEL_ACCESS_TOKEN', '').strip():
+            return
+        now = int(time.time())
+        with app.database_connection() as conn:
+            ids = [r[0] for r in conn.execute('''SELECT recipient_id FROM recipients
+                WHERE active=1 AND kind IN ('user','group') AND profile_next_at<=? AND profile_lease_until<=?
+                AND length(recipient_id)=33 AND substr(recipient_id,2) NOT GLOB '*[^0-9a-fA-F]*'
+                AND ((kind='user' AND substr(recipient_id,1,1)='U') OR (kind='group' AND substr(recipient_id,1,1)='C'))
+                ORDER BY profile_next_at,recipient_id LIMIT 20''', (now,now))]
+        for rid in ids:
+            if self.stopping.is_set():
+                break
+            refresh_profile(rid)
+
+    def start(self):
+        def run():
+            while not self.stopping.is_set():
+                try:
+                    self.tick()
+                except Exception:
+                    # A profile lookup must not stop webhook persistence or expose raw API errors.
+                    pass
+                self.stopping.wait(2)
+        self.thread = threading.Thread(target=run, name='line-profile-cache', daemon=True)
+        self.thread.start()
+
+    def close(self):
+        self.stopping.set()
+        if hasattr(self, 'thread'):
+            self.thread.join(timeout=12)
 
 
 def handle_event(conn, event, source_type, recipient_id):
