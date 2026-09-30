@@ -46,6 +46,9 @@ def refresh_profile(recipient_id, *, force=False, now=None):
                                  profile_failures=0,profile_lease_until=0
                                  WHERE recipients.channel_id=current_channel() AND recipient_id=? AND active=1 AND profile_lease_until=?""",
                                (name.strip()[:200],now,now+86400,recipient_id,lease)).rowcount
+        if changed:
+            conn.execute(f'UPDATE recipients SET display_name=?,profile_checked_at=? WHERE recipient_id=? AND channel_id IN ({channels.SHARE_SCOPES})',
+                         (name.strip()[:200], now, recipient_id))
     return 'updated' if changed else 'skipped'
 
 
@@ -55,7 +58,8 @@ class ProfileRefresher:
         self.stopping = threading.Event()
 
     def tick(self):
-        rows = channels._rows()
+        # Names are fetched once per real OA; share copies are updated from the owner's result.
+        rows = [r for r in channels._rows() if not r['shared']]
         for channel_id in ([r['channel_id'] for r in rows if channels.operational(r)] if rows else ['']):
             with channels.use(channel_id):
                 self.tick_channel()
@@ -115,6 +119,12 @@ def handle_event(conn, event, source_type, recipient_id):
     company = channels.organization_id()
     if company is not None:
         conn.execute('UPDATE recipients SET company=? WHERE channel_id=current_channel() AND recipient_id=?', (company, recipient_id))
+    # Shared workspaces hold copies of assigned recipients; follow/block state comes only from the owner's webhook.
+    conn.execute(f"""UPDATE recipients SET active=o.active,event_at=o.event_at,last_seen=o.last_seen,
+                     weather_subscribed=CASE WHEN o.active=0 THEN 0 ELSE recipients.weather_subscribed END
+                     FROM (SELECT active,event_at,last_seen FROM recipients WHERE channel_id=current_channel() AND recipient_id=?) AS o
+                     WHERE recipients.recipient_id=? AND recipients.channel_id IN ({channels.SHARE_SCOPES})""",
+                 (recipient_id, recipient_id))
     message = event.get("message") or {}
     if event_type != "message" or message.get("type") != "text" or not message.get("id"):
         return None

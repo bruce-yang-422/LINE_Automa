@@ -177,7 +177,7 @@ CREATE TABLE IF NOT EXISTS builtin_report_state (
     PRIMARY KEY(channel_id,report_id)
 );
 
--- OA 歸屬固定於個人或組織。Bot user ID 唯一，防止同一 OA 重複登記。
+-- OA 歸屬於一個個人或組織工作區，只能由平台管理員移轉。Bot user ID 唯一，防止同一 OA 重複登記。
 CREATE TABLE IF NOT EXISTS line_channels (
     channel_id TEXT PRIMARY KEY,
     org_id TEXT NOT NULL DEFAULT '',
@@ -195,6 +195,19 @@ CREATE TABLE IF NOT EXISTS line_channels (
     CHECK ((org_id<>'' AND owner_email='') OR (org_id='' AND owner_email<>''))
 );
 CREATE UNIQUE INDEX IF NOT EXISTS line_channels_legacy ON line_channels(legacy_webhook) WHERE legacy_webhook=1;
+-- OA 共用：擁有者工作區把使用權授予其他工作區。share_id 是獨立資料範圍，
+-- 各工作區的收件者副本、報告、發送與授權以它區隔；憑證與 Webhook 仍屬擁有者。
+CREATE TABLE IF NOT EXISTS line_channel_shares (
+    share_id TEXT PRIMARY KEY,
+    channel_id TEXT NOT NULL REFERENCES line_channels(channel_id),
+    org_id TEXT NOT NULL DEFAULT '',
+    owner_email TEXT NOT NULL DEFAULT '',
+    active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)),
+    created_by TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    CHECK ((org_id<>'' AND owner_email='') OR (org_id='' AND owner_email<>'')),
+    UNIQUE(channel_id, org_id, owner_email)
+);
 CREATE INDEX IF NOT EXISTS audit_events_channel_idx ON audit_events(channel_id);
 CREATE INDEX IF NOT EXISTS builtin_report_state_channel_idx ON builtin_report_state(channel_id);
 CREATE INDEX IF NOT EXISTS dispatch_scopes_channel_idx ON dispatch_scopes(channel_id);

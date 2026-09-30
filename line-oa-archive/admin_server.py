@@ -248,6 +248,7 @@ class Dispatcher:
             for row in rows:
                 recipient_id = row["recipient_id"]
                 with app.database_connection() as conn:
+                    conn.row_factory = sqlite3.Row
                     current = conn.execute('SELECT active,weather_subscribed FROM recipients WHERE recipients.channel_id=current_channel() AND recipient_id=?', (recipient_id,)).fetchone()
                     skip = (self.closing.is_set() or not current or not current[0] or
                             (job["audience"] == "subscribers" and not current[1]))
@@ -488,6 +489,11 @@ class AdminHandler(BaseHTTPRequestHandler):
             self.respond(200, path.read_bytes(), mime)
         elif self.path == '/api/channels':
             self.respond(200, channels.catalogue(self.user))
+        elif re.fullmatch(r'/api/channels/shares/[0-9a-f]{32}', self.path):
+            try:
+                self.respond(200, channels.share_recipients(self.path.rsplit('/', 1)[1], self.user))
+            except ValueError as exc:
+                self.respond(403, {'error': str(exc)})
         elif self.path == "/api/session":
             self.respond(200, {"identity": self.identity, "user": self.user, "role": self.user["role"],
                                "principal": self.principal, "preview": self.preview, "auth": site_auth.status(self),
@@ -566,6 +572,12 @@ class AdminHandler(BaseHTTPRequestHandler):
                 self.respond(200, channels.verify(payload.get('channel_id'), self.user))
             elif self.path == '/api/channels/active':
                 self.respond(200, channels.set_active(payload, self.user))
+            elif self.path == '/api/channels/share':
+                self.respond(200, channels.share(payload, self.user))
+            elif self.path == '/api/channels/assign':
+                self.respond(200, channels.assign(payload, self.user))
+            elif self.path == '/api/channels/transfer':
+                self.respond(200, channels.transfer(payload, self.user))
             elif self.path == '/api/assets/upload':
                 if not reports.module_enabled(self.user, 'messaging'):
                     raise ValueError('此組織尚未授權訊息發送模組。')

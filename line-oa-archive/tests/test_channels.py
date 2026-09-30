@@ -162,6 +162,21 @@ class ChannelTests(unittest.TestCase):
             self.assertEqual([call.args[0] for call in push.call_args_list], ['a','b'])
         self.assertEqual(channels.current_id(), '')
 
+    def test_organization_admin_job_is_delivered(self):
+        # Regression: non-platform actors were re-checked against a tuple row and every delivery was interrupted.
+        self.event(self.a)
+        dispatcher=admin_server.Dispatcher();self.addCleanup(dispatcher.close)
+        with channels.use(self.a):
+            job=dispatcher.submit({'job_id':str(uuid4()),'message_text':'test','audience':'selected','ids':[USER],
+                                   'scheduled_at':(datetime.now(timezone.utc)+timedelta(minutes=2)).isoformat()},actor='boss@example.test',organization='A')
+        with app.database_connection() as conn:
+            conn.execute("UPDATE send_jobs SET status='queued',scheduled_at=''")
+        with patch('admin_server.send_push',return_value='fake-id') as push:
+            dispatcher.run(job['job_id'])
+        push.assert_called_once()
+        with channels.use(self.a):
+            self.assertEqual(admin_server.job_status(job['job_id'])[0]['status'],'finished')
+
     def test_disabled_oa_and_revoked_membership_prevent_scheduled_delivery(self):
         self.event(self.a)
         dispatcher=admin_server.Dispatcher();self.addCleanup(dispatcher.close)
@@ -228,10 +243,110 @@ class ChannelTests(unittest.TestCase):
         signature=base64.b64encode(hmac.new(b'',body,hashlib.sha256).digest()).decode()
         self.assertFalse(app.valid_signature(body,signature,secret=''))
 
+    def shared_to_b(self):
+        self.event(self.a)
+        with channels.use(self.a):
+            app.save_events([{'type':'follow','timestamp':1790750000001,'source':{'type':'user','userId':'U'+'2'*32}}])
+        return channels.share({'channel_id':self.a,'workspace_id':'o:B'},self.admin)['share_id']
+
+    def test_shared_oa_sees_only_assigned_recipients_and_uses_owner_token(self):
+        share=self.shared_to_b()
+        other=reports.account('other@example.test')
+        rows={c['channel_id']:c for c in channels.catalogue(other)['channels']}
+        self.assertEqual(set(rows),{self.c,share})
+        self.assertTrue(rows[share]['shared']);self.assertEqual(rows[share]['webhook_url'],'')
+        self.assertFalse(rows[share]['can_manage']);self.assertNotIn('shares',rows[share])
+        for call in (lambda:channels.verify(share,other),lambda:channels.set_active({'channel_id':share,'active':False},other),
+                     lambda:channels.save({'channel_id':share,'workspace_id':'o:B'},other),
+                     lambda:channels.assign({'share_id':share,'recipient_ids':[USER]},other)):
+            with self.assertRaises(ValueError):call()
+        with channels.use(share),app.database_connection() as conn:
+            self.assertEqual(recipients.list_contacts(conn),[])
+        # The owning workspace's manager distributes recipients.
+        self.assertEqual(channels.assign({'share_id':share,'recipient_ids':[USER]},reports.account('boss@example.test'))['added'],1)
+        with self.assertRaises(ValueError):channels.assign({'share_id':share,'recipient_ids':['U'+'9'*32]},self.admin)
+        server=self.server()
+        code,result=self.request(server,'/api/contacts',share,email='other@example.test')
+        self.assertEqual(code,200)
+        self.assertEqual([(c['recipient_id'],c['company']) for c in result['contacts']],[(USER,'B')])
+        self.assertEqual(self.request(server,'/api/contacts',share,email='boss@example.test')[0],403)
+        self.assertEqual(self.request(server,'/api/channels/shares/'+share,email='other@example.test')[0],403)
+        _,detail=self.request(server,'/api/channels/shares/'+share,email='boss@example.test')
+        self.assertEqual({r['recipient_id']:r['assigned'] for r in detail['recipients']},{USER:True,'U'+'2'*32:False})
+        dispatcher=admin_server.Dispatcher();self.addCleanup(dispatcher.close)
+        with channels.use(share):
+            job=dispatcher.submit({'job_id':str(uuid4()),'message_text':'shared','audience':'selected','ids':[USER],
+                                   'scheduled_at':(datetime.now(timezone.utc)+timedelta(minutes=2)).isoformat()},actor='other@example.test',organization='B')
+        with channels.use(self.a):self.assertEqual(admin_server.job_status(job['job_id']),[])
+        with app.database_connection() as conn:
+            conn.execute("UPDATE send_jobs SET status='queued',scheduled_at=''")
+        with patch('admin_server.send_push',return_value='fake-id') as push:
+            dispatcher.run(job['job_id'])
+        self.assertEqual(push.call_args.args[0],'a')
+
+    def test_owner_webhook_state_and_names_follow_into_shares_and_pause_keeps_data(self):
+        share=self.shared_to_b()
+        channels.assign({'share_id':share,'recipient_ids':[USER]},self.admin)
+        with channels.use(share),app.database_connection() as conn:
+            conn.execute("UPDATE recipients SET alias='B note' WHERE channel_id=current_channel()")
+        with channels.use(self.a):
+            app.save_events([{'type':'unfollow','timestamp':1790750009999,'source':{'type':'user','userId':USER}}])
+            with patch('line_api.request',return_value={'displayName':'Owner lookup'}):
+                with app.database_connection() as conn:
+                    conn.execute('UPDATE recipients SET active=1 WHERE channel_id=current_channel()')
+                recipients.refresh_profile(USER,force=True)
+        with channels.use(share),app.database_connection() as conn:
+            row=recipients.list_contacts(conn)[0]
+        self.assertEqual((row['active'],row['display_name'],row['alias']),(0,'Owner lookup','B note'))
+        channels.share({'channel_id':self.a,'workspace_id':'o:B','active':False},self.admin)
+        with self.assertRaises(ValueError):channels.authorize(share,reports.account('other@example.test'))
+        self.assertNotIn(share,{c['channel_id'] for c in channels.catalogue(self.admin)['channels']})
+        self.assertEqual(channels.share({'channel_id':self.a,'workspace_id':'o:B'},self.admin)['share_id'],share)
+        with channels.use(share),app.database_connection() as conn:
+            self.assertEqual(len(recipients.list_contacts(conn)),1)
+        with self.assertRaises(ValueError):channels.webhook_channel('/webhook/'+share)
+        with app.database_connection() as conn:conn.execute("UPDATE organizations SET active=0 WHERE org_id='A'")
+        self.assertFalse(channels.operational(channels.get(share)))
+
+    def test_only_platform_admin_shares_or_transfers(self):
+        boss=reports.account('boss@example.test')
+        with self.assertRaises(ValueError):channels.share({'channel_id':self.a,'workspace_id':'o:B'},boss)
+        with self.assertRaises(ValueError):channels.transfer({'channel_id':self.a,'workspace_id':'o:B','confirm':True},boss)
+        with self.assertRaises(ValueError):channels.share({'channel_id':self.a,'workspace_id':'o:A'},self.admin)
+        share=channels.share({'channel_id':self.a,'workspace_id':'o:B'},self.admin)['share_id']
+        with self.assertRaises(ValueError):channels.share({'channel_id':share,'workspace_id':'p:'+ADMIN},self.admin)
+        with self.assertRaises(ValueError):channels.transfer({'channel_id':self.a,'workspace_id':'o:B','confirm':True},self.admin)
+
+    def test_transfer_previews_blocks_pending_jobs_and_moves_owner_data(self):
+        self.event(self.a)
+        with channels.use(self.a):
+            scope=reports.save_dispatch_scope({'company':'A','name':'Team','kind':'department','department':'Sales','active':True,'recipient_ids':[]},ADMIN)
+            reports.save_grant({'email':'sender@example.test','company':'A','scope_ids':[scope['scope_id']],'report_ids':[],'messaging':True,'reports':False,'weather':False},ADMIN)
+            with app.database_connection() as conn:conn.execute("UPDATE recipients SET department='Sales' WHERE channel_id=current_channel()")
+            dispatcher=admin_server.Dispatcher();self.addCleanup(dispatcher.close)
+            job=dispatcher.submit({'job_id':str(uuid4()),'message_text':'later','audience':'selected','ids':[USER],
+                                   'scheduled_at':(datetime.now(timezone.utc)+timedelta(minutes=5)).isoformat()},actor=ADMIN)
+        target={'channel_id':self.a,'workspace_id':'p:'+ADMIN}
+        preview=channels.transfer(target,self.admin)
+        self.assertEqual((preview['transferred'],preview['recipients'],preview['pending_jobs'],preview['sender_grants']),(False,1,1,1))
+        self.assertEqual(channels.get(self.a)['org_id'],'A')
+        with self.assertRaises(ValueError):channels.transfer({**target,'confirm':True},self.admin)
+        with channels.use(self.a):dispatcher.cancel(job['job_id'],ADMIN)
+        self.assertTrue(channels.transfer({**target,'confirm':True},self.admin)['transferred'])
+        row=channels.get(self.a)
+        self.assertEqual((row['org_id'],row['owner_email']),('',ADMIN))
+        with self.assertRaises(ValueError):channels.authorize(self.a,reports.account('boss@example.test'))
+        with channels.use(self.a),app.database_connection() as conn:
+            self.assertEqual(conn.execute('SELECT company,department FROM recipients WHERE channel_id=current_channel()').fetchone(),('',''))
+            self.assertEqual(conn.execute('SELECT count(*) FROM dispatch_scopes WHERE channel_id=current_channel()').fetchone()[0],0)
+            self.assertEqual(conn.execute('SELECT count(*) FROM sender_grants WHERE channel_id=current_channel()').fetchone()[0],0)
+        with app.database_connection() as conn:
+            self.assertTrue(conn.execute("SELECT 1 FROM audit_events WHERE action='oa.transfer'").fetchone())
+
     def test_offline_upgrade_preserves_credentials_and_rolls_back_on_failure(self):
         # Recreate precisely the previous schema by removing only the new scoped columns/keys.
         import re
-        old=self.schema[:self.schema.index('-- OA 歸屬固定')]
+        old=self.schema[:self.schema.index('-- OA 歸屬於')]
         old=re.sub(r"\s*channel_id TEXT NOT NULL DEFAULT '',?",'',old)
         old=re.sub(r',\s*PRIMARY KEY\(channel_id,(message_id|recipient_id|report_id)\)',lambda m:', PRIMARY KEY('+m[1]+')',old)
         old=old.replace('PRIMARY KEY(channel_id,email,company)','PRIMARY KEY(email,company)')

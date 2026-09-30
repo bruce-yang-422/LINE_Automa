@@ -186,6 +186,10 @@ dialog { border-radius:18px; }
 .oa-actions { display:flex;flex-wrap:wrap;gap:8px;margin-top:18px; }
 .oa-steps { padding-left:24px;line-height:2.2;margin:12px 0; }
 .oa-import { margin-bottom:22px; }.oa-import p { margin:8px 0 0; }
+.oa-shares { border-top:1px solid var(--line);margin-top:20px;padding-top:14px; }
+.oa-shares h4 { font-size:14px;margin:0 0 6px; }
+.oa-share-row { display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:8px 0; }
+.oa-share-row strong { margin-right:auto;overflow-wrap:anywhere; }
 @media(max-width:760px) {
  .line-context { width:100%; }.line-context label { flex:1; }.line-context select { max-width:100%;width:100%; }
  .topbar-left { flex-wrap:wrap;flex:1; }.oa-card { padding:16px; }.oa-import { align-items:stretch;flex-direction:column; }

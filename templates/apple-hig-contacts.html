@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="zh-Hant-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>收件者管理 - CRM Dashboard</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/styles/app.css">
+    <link rel="stylesheet" href="/styles/management.css">
+    <!-- Vue.js -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+</head>
+<body class="min-h-screen bg-gray-50/50 font-sans">
+    <div id="root"></div>
+    
+    <script>
+        // 使用更簡單的渲染方式
+        new Vue({
+            el: "#root",
+            components: {
+                ContactsManager: require("./components/crm/contacts-manager.vue").default
+            },
+            template: "<div><contacts-manager /></div>"
+        }).mount("#root");
+    </script>
+</body>
+</html>

@@ -541,3 +541,108 @@ Cloudflare Tunnel 提供對外連線；Cloudflare Access 提供存取驗證。�
 **正式環境現況（2026-09-30）**：既有 OA 尚未匯入工作區（`line_channels` 為 0 筆），服務以 `.env` 憑證的單一 OA 模式運作，收發正常。平台管理員於「LINE OA 管理」按「匯入既有 OA」並選定工作區後，即切換為多 OA 模式。
 
 依據 LINE 官方文件：[Bot information / Messaging API](https://developers.line.biz/en/reference/messaging-api/#get-bot-info)、[Webhook 簽章驗證](https://developers.line.biz/en/docs/messaging-api/verify-webhook-signature/)、[接收訊息與 destination](https://developers.line.biz/en/docs/messaging-api/receiving-messages/)。
+
+## 14. Vue＋Apple HIG 收件者管理原型（2026-09-30，未整合）
+
+另一份筆記「SaaS 平台與全站 Tailwind 改版規劃」（已併入本節並刪除）記錄了一個 Vue 3 收件者管理元件原型。下列內容已依實際檔案查核；原筆記中「全部測試通過、可準備部署」等說法與程式現況不符，不予採用。此原型不代表第 10.9 節的前端選型已開始實作。
+
+### 14.1 相關檔案（皆未納入版本控制）
+
+| 檔案 | 內容 |
+| --- | --- |
+| `web/components/crm/contacts-manager.vue` | Vue 3 單檔元件（約 363 行）；`templates/components/crm/` 有相同副本 |
+| `web/index.html` | 以 unpkg 載入 Vue，並用 `require()` 載入 `.vue` |
+| `web/test.html`、`web/test-esm.html`、`web/test-integration.html` | 以 unpkg Vue 做 ES Module／全域版本載入測試 |
+| `templates/apple-hig-contacts.html`、`templates/apple-hig-sidebar.html` | Apple HIG 風格展示頁；前者使用 Tailwind Play CDN |
+| `web/app.css`、`web/management.css`、`templates/management.css` | 全域與管理介面樣式 |
+| `templates/apple-hig-index-prototype.html` | 原型曾覆蓋正式首頁 `index.html`，並在 `styles/app.css` 末尾追加樣式、清空 `admin_server.py`；已於 2026-09-30 還原正式版本，原型首頁移至此檔保存 |
+
+### 14.2 元件目前內容
+
+- 統計卡片 4 張（總收件者、組織標籤、活躍、待處理），數值為寫死的示範資料，未接 API。
+- 篩選 4 種：全部、活躍、未分類、高級搜尋。
+- 排序 5 種：姓名 A–Z／Z–A、Email、新增時間新→舊／舊→新。
+- 收件者卡片：頭像、名稱、職位、部門、電話等欄位、進度條、組織標籤、狀態指示、主要／更多動作按鈕、空狀態與載入遮罩。
+- `contacts` 初始為空陣列，沒有 CRUD、批次操作或 CSV 匯入匯出。
+
+### 14.3 查核到的問題
+
+- `stats` 的 `label` 字串引號位置錯誤（`'...' </span>`），屬 JavaScript 語法錯誤，元件無法載入。
+- 瀏覽器不能直接 `import`／`require()` `.vue` 單檔元件，需經 Vite 等工具編譯；目前的測試頁無法真正渲染此元件。
+- 使用 unpkg、Tailwind Play CDN，違反首版「不新增前端框架或 CDN」及本機編譯、鎖定依賴版本的原則。
+- 資料欄位（Email、職位、部門、電話、網站、進度）屬通用 CRM 模型，與本平台的 LINE 收件者（個人／群組聊天室、`channel_id` 範圍、訂閱、發送範圍）不一致；也未處理工作區／OA 隔離與後端權限。
+- 部分文字色（如 `text-gray-500`）未依本平台 AA 對比規範驗證。
+
+### 14.4 後續處理建議
+
+- 視為視覺參考，不直接接到正式入口。若採 Vue，依第 10.9 節先建立 Vite＋TypeScript 建置、API 型別與共用外框，再以真實收件者 API 重做此頁。
+- 原筆記列出的後續項目（接真實 API、CRUD、批次、CSV、訊息範本、活動管理、分析儀表板）併入第 9 節階段 D／E 評估，不另立排程。
+
+## 15. 收件者經營（CRM）設計（2026-09-30，已確認，實作中）
+
+使用者確認收件者已接近 CRM 經營，決定：**同一 OA 內收件者可屬於多個組織、各組織自有標籤、指標以生命週期與訂閱分群為主、經營欄位為備註＋負責人＋跟進狀態（不收集電話／Email 等個資）**。本節是實作前的設計，尚未改程式。
+
+### 15.1 現況差距
+
+- `recipients` 每筆只有一個 `company`、`department`、`alias`；可見性（`allowed_contact`）、發送範圍、送出前及排程執行時的重驗都依這個單一組織判斷。
+- 組織擁有的 OA 收到事件時自動把收件者歸到該組織；平台管理員在單一 OA 模式下手動指定組織。沒有標籤、負責人或跟進狀態。
+- Webhook 只更新 `active`、`event_at`、`last_seen`，不保留加入／封鎖／退出歷史，無法計算「近 30 天新加入／流失」。
+- 「OA 共用」（進行中）以 `share_id` 複製收件者到其他工作區，副本各自管理；它處理跨工作區，本節處理**同一 OA 範圍內**的多組織歸屬，兩者並存。
+
+### 15.2 資料模型
+
+| 資料表 | 內容 | 說明 |
+| --- | --- | --- |
+| `recipients`（保留） | LINE 端狀態：種類、LINE 名稱、有效、訂閱、最後事件；新增 `first_seen_at` | 移除 `company`、`department`；`alias` 保留為 OA 層級名稱，只有 OA 管理者可改 |
+| `recipient_orgs`（新） | `channel_id, recipient_id, org_id, department, alias, note, owner_email, stage, stage_at, added_by, added_at` | 收件者 ↔ 組織多對多；每個組織自己的部門、備註名稱、備註、負責人、跟進狀態。個人工作區以 `org_id=''` 表示 |
+| `contact_tags`（新） | `tag_id, channel_id, org_id, name, color, created_at` | 各組織（個人工作區為 `''`）自有標籤；同組織名稱不可重複 |
+| `recipient_tags`（新） | `channel_id, org_id, recipient_id, tag_id` | 只能貼自己組織的標籤，且收件者須已屬於該組織 |
+| `recipient_events`（新） | `channel_id, recipient_id, event_type, event_at` | follow／unfollow／join／leave 及首次出現；供生命週期指標與時間軸，不存訊息內容 |
+
+- 跟進狀態：`new` 新名單、`engaged` 經營中、`dormant` 沉睡、`lost` 流失，由組織人員手動設定。封鎖或退出時**不自動改狀態**（已確認），只在畫面標示「LINE 已停用」並建議改為流失。
+- 負責人：必須是該組織有效的後台成員（組織管理員或發送人員）；成員撤銷後保留顯示「已離開」，由管理員改派。
+- **已確認：** 標籤與跟進資料沿用現行以 `channel_id` 隔離資料的慣例，每個 OA 各有一套。同一組織若有多個 OA，標籤集不共用；跨 OA 共用標籤列為後續選項。
+- 訂閱（`weather_subscribed`）是收件者本人透過 Bot 指令決定的，維持 OA 層級、不分組織。
+
+### 15.3 權限
+
+- 可見性：平台管理員看全部；其他人只看得到**自己組織在 `recipient_orgs` 有列**的收件者，且只回傳自己組織那一列的部門、備註、標籤、負責人、狀態。其他組織的歸屬、標籤、備註一律不回傳，也不顯示「還屬於哪些組織」。
+- 加入／移出組織：平台管理員可操作任何組織；組織擁有的 OA 收到事件時自動加入該組織（沿用現況）；組織管理員只能在自己組織內移出，不能把收件者加到其他組織。移出會同時刪除該組織的標籤指派與經營資料，並記錄稽核。
+- 編輯經營資料與標籤：組織管理員可管理自己組織的標籤集與全部經營欄位；發送人員預設只能看，不能編輯（後續可另開「可編輯經營資料」授權）。
+- 發送：`allowed_contact`、送出前選取、排程執行重驗都改為檢查「收件者屬於此工作的組織」，部門範圍改讀該組織的 `recipient_orgs.department`。移出組織後，既有預約在執行時會略過該收件者並記錄原因。
+- 新增發送範圍類型 `tag`（依標籤）：執行時依當下標籤展開，並與發送人員被授權的範圍取交集；標籤被刪除時該範圍自動失效。
+
+### 15.4 指標與分群（依組織計算）
+
+| 類別 | 指標 |
+| --- | --- |
+| 生命週期 | 可接收人數、近 7／30 天新加入、近 30 天封鎖或退出、回流（曾停用又重新加入）、各跟進狀態人數 |
+| 訂閱與分群 | 訂閱中人數與比例、依標籤／部門／跟進狀態的人數；平台管理員另看依組織的人數與「未歸屬任何組織」 |
+
+- 每個數字都可點擊，直接套用為清單篩選條件。「近 30 天」依 `recipient_events` 計算，所以只從升級後開始累積；升級前的事件以 `first_seen_at`、`event_at` 推估，並在畫面註明。
+- 不納入互動與送達指標（例如訊息數、沉睡自動判定、送達率），列為後續選項。
+
+### 15.5 畫面
+
+- **收件者管理：** 頂部是指標列；篩選列可選標籤（多選）、跟進狀態、部門、聊天室類型、訂閱，平台管理員另有組織篩選；排序可依名稱、加入時間、最近事件；清單／卡片可切換。
+- **批次操作：** 勾選後可加上或移除標籤、設定跟進狀態、指派負責人、設定部門；執行前顯示筆數與範圍（本頁或全部符合）。
+- **詳情面板：** 分成「經營資料」（本組織的部門、備註名稱、備註、標籤、負責人、狀態）、「生命週期」（事件時間軸）、「發送紀錄」三塊。平台管理員另有「組織歸屬」，可加入或移出組織。
+- **標籤管理：** 在收件者頁開啟視窗，可新增、改名、改色、刪除標籤，並顯示各標籤使用人數；刪除前提示影響的收件者數與發送範圍數。
+- **建立發送：** 可「依標籤」選取對象，送出前的確認畫面列出展開後的人數。
+- 延續既有的 Tailwind 主題、`#00B900`、AA 對比、手機單欄與鍵盤操作；不引入 Vue，也不使用 CDN。第 14 節的原型只作視覺參考。
+
+### 15.6 升級與相容
+
+- 提供 `upgrade_contact_crm.py --apply`，比照 `upgrade_multi_oa.py`：在單一交易內把每筆 `recipients.company／department／alias` 搬進 `recipient_orgs`，重建 `recipients` 移除舊欄位，補上 `first_seen_at`，並核對筆數；任何錯誤都會回復。`schema.sql` 同步更新為完整的新版結構。
+- 「OA 共用」指派的副本在自己的 `share_id` 範圍內建立 `recipient_orgs` 列，取代原本寫入 `company` 的做法。建議先把進行中的 OA 共用改動 commit，再開始這次實作，避免兩者混在一起。
+
+### 15.7 實作順序與驗收
+
+| 階段 | 內容 | 驗收 |
+| --- | --- | --- |
+| C1 | `recipient_orgs`、升級工具、權限及發送重驗改寫 | 同一收件者屬 A、B 兩組織時，A 只看到 A 的資料；移出後預約略過；跨組織 API 負向測試 |
+| C2 | 備註名稱、備註、負責人、跟進狀態、標籤 API 與畫面、批次操作 | 標籤不能貼到其他組織；負責人需為有效成員；批次結果逐筆回報 |
+| C3 | `recipient_events`、生命週期指標、分群統計、可點擊篩選 | 指標與清單篩選結果一致；升級前資料標示為推估 |
+| C4 | 依標籤的發送範圍與對象選取 | 以當下標籤展開，與授權取交集；刪除標籤後範圍失效 |
+
+每個階段都附 Python 回歸測試與隔離資料的瀏覽器驗證，不發送真實 LINE 訊息。
