@@ -36,8 +36,6 @@ kbd { font:inherit; font-size:11px; padding:2px 5px; border:1px solid var(--cont
 .account { max-width:190px; }
 .account strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .account small { font-size:11px; }
-.appearance-picker { border-radius:12px; }
-.appearance-picker button { border-radius:9px; }
 #content { max-width:1600px; margin:0 auto; padding:34px 32px 48px; }
 .page-heading { align-items:center; margin-bottom:26px; gap:20px; }
 .page-heading h1 { font-size:28px; letter-spacing:-.025em; line-height:1.3; }
@@ -155,7 +153,6 @@ dialog { border-radius:18px; }
 .login-features span { background:var(--mint);border-radius:10px;padding:10px 14px;color:var(--ink); }
 .login-card { padding:32px; }
 .login-card h2 { font-size:26px; }
-.login-theme { display:flex;justify-content:flex-end;margin-bottom:28px; }
 .login-card form { display:grid;gap:20px;margin-top:28px; }
 .login-card .field { font-size:14px; }
 .login-card input:not([type=checkbox]) { font-size:16px;min-height:48px; }

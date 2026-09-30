@@ -1,4 +1,6 @@
 .env
+.env.*
+!.env.example
 .venv/
 __pycache__/
 *.pyc
@@ -6,3 +8,23 @@ node_modules/
 
 # Official SDK is kept locally for reference only.
 /line-bot-sdk-python/
+
+# Secrets: OA credential encryption key and certificates, wherever they end up.
+line-credentials.key
+*.key
+*.pem
+
+# Runtime data and logs outside line-oa-archive/.
+*.db
+*.db-wal
+*.db-shm
+*.log
+
+# Browser test output.
+test-results/
+playwright-report/
+
+# OS files.
+Thumbs.db
+Desktop.ini
+.DS_Store

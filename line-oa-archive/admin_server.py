@@ -464,10 +464,9 @@ class AdminHandler(BaseHTTPRequestHandler):
                  "/workspace-theme.css": (app.BASE_DIR / "web" / "workspace-theme.css", "text/css; charset=utf-8"),
                  "/management.js": (app.BASE_DIR / "web" / "management.js", "text/javascript; charset=utf-8"),
                  "/management.css": (app.BASE_DIR / "web" / "management.css", "text/css; charset=utf-8"),
-                 "/appearance.js": (app.BASE_DIR / "web" / "appearance.js", "text/javascript; charset=utf-8"),
                  "/admin.css": (app.BASE_DIR / "web" / "admin.css", "text/css; charset=utf-8")}
         brand = app.BASE_DIR / 'web' / 'assets' / 'brand'
-        for variant in ('light', 'dark'):
+        for variant in ('light',):
             for extension, mime in (('png', 'image/png'), ('ico', 'image/x-icon')):
                 name = f'line-automation-logo-{variant}.{extension}'
                 files['/assets/brand/' + name] = (brand / name, mime)

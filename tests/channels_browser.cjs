@@ -84,9 +84,7 @@ async function contrast(page,label){
   await page.getByRole('heading',{name:'個人報告',exact:true}).waitFor();
   await page.locator('nav [data-view="channels"]').click();
   await page.screenshot({path:path.join(dir,'oa-desktop.png'),fullPage:true});
-  for(const theme of ['light','dark']){
-   await page.getByRole('button',{name:theme==='light'?'淺色':'深色',exact:true}).click();
-   await page.waitForFunction(t=>document.documentElement.dataset.theme===t,theme);
+  for(const theme of ['light']){
    await page.waitForTimeout(250);
    await contrast(page,'OA desktop '+theme);
    await page.setViewportSize({width:390,height:844});
@@ -99,7 +97,7 @@ async function contrast(page,label){
    await page.setViewportSize({width:1440,height:1050});
   }
   assert.deepEqual(errors,[]);
-  console.log(JSON.stringify({oa_create:'passed',switch_isolation:'passed',verify:'passed',personal_upload:'passed',mobile_themes:'passed',text_contrast_AA:'passed',browser_errors:0,real_send_requests:0}));
+  console.log(JSON.stringify({oa_create:'passed',switch_isolation:'passed',verify:'passed',personal_upload:'passed',mobile_light:'passed',text_contrast_AA:'passed',browser_errors:0,real_send_requests:0}));
  }finally{
   if(browser)await browser.close();fs.writeFileSync(stop,'stop');
   for(let i=0;i<100&&child.exitCode===null;i++)await delay(100);

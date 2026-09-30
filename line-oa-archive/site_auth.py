@@ -281,8 +281,8 @@ def status(handler):
 
 def handle_get(handler):
     paths = {'/login':('login.html','text/html; charset=utf-8'),'/login.js':('login.js','text/javascript; charset=utf-8')}
-    assets = {'/app.css','/appearance.js','/favicon.ico'}
-    public_asset = handler.server.auth_mode=='password' and (handler.path in assets or re.fullmatch(r'/assets/brand/line-automation-logo-(light|dark)\.(png|ico)',handler.path))
+    assets = {'/app.css','/favicon.ico'}
+    public_asset = handler.server.auth_mode=='password' and (handler.path in assets or re.fullmatch(r'/assets/brand/line-automation-logo-light\.(png|ico)',handler.path))
     if handler.path not in paths and handler.path!='/api/auth/config' and not public_asset:
         return False
     try:
