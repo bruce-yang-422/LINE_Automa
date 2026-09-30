@@ -251,17 +251,14 @@ class WorkspaceTests(unittest.TestCase):
         app.initialize_database()
         self.assertIsNone(reports.account('alice@example.com','A'))
 
-    def test_organization_migration_does_not_restore_membership(self):
+    def test_restart_does_not_recreate_deleted_organizations_or_memberships(self):
         with app.database_connection() as conn:
             conn.execute('DELETE FROM organization_members')
             conn.execute('DELETE FROM organizations')
-            conn.execute("DELETE FROM workspace_migrations WHERE name='organizations-v1'")
         app.initialize_database()
-        self.assertEqual({o['org_id'] for o in reports.organizations()},{'A','B'})
-        self.assertEqual(reports.account('alice@example.com','A')['recipient_id'],USER)
-        reports.save_membership({'email':'alice@example.com','org_id':'A','role':'employee','active':False},'admin@example.com')
-        app.initialize_database()
-        self.assertIsNone(reports.account('alice@example.com','A'))
+        self.assertEqual(reports.organizations(), [])
+        self.assertEqual(reports.memberships(), [])
+        self.assertIsNone(reports.account('alice@example.com', 'A'))
 
     def test_company_admin_api_isolation_and_privilege_escalation(self):
         self.company_admins()
@@ -319,19 +316,13 @@ class WorkspaceTests(unittest.TestCase):
             send.assert_not_called()
         self.assertEqual(admin_server.job_status(a['job_id'])[0]['deliveries'][0]['status'],'cancelled')
 
-    def test_old_role_constraint_migration_preserves_accounts(self):
-        with app.database_connection() as conn:
-            before = conn.execute('SELECT * FROM workspace_users ORDER BY email').fetchall()
-            sql = conn.execute("SELECT sql FROM sqlite_master WHERE name='workspace_users'").fetchone()[0]
-            conn.execute('DROP TABLE workspace_users')
-            conn.execute(sql.replace("'administrator','company_admin','employee'", "'administrator','employee'"))
-            conn.executemany('INSERT INTO workspace_users VALUES (?,?,?,?,?,?,?)',before)
+    def test_restart_preserves_accounts_and_supports_company_admin(self):
+        before = reports.users()
         app.initialize_database()
         app.initialize_database()
-        with app.database_connection() as conn:
-            self.assertEqual(before,conn.execute('SELECT * FROM workspace_users ORDER BY email').fetchall())
+        self.assertEqual(reports.users(), before)
         self.company_admins()
-        self.assertEqual(reports.account('a-admin@example.com')['role'],'company_admin')
+        self.assertEqual(reports.account('a-admin@example.com')['role'], 'company_admin')
 
     def test_company_module_send_rejects_other_modules_and_private_paths(self):
         self.company_admins()

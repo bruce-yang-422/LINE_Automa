@@ -1,4 +1,4 @@
-"""Private report catalogue, versioned previews, and additive workspace migrations."""
+"""Private report catalogue, versioned previews, and workspace access."""
 
 import base64
 from datetime import datetime, timezone, timedelta
@@ -11,58 +11,10 @@ import sqlite3
 from uuid import uuid4
 
 import app
+import channels
 
 MAX_BYTES = 1_000_000
 CATEGORIES = {"weather": "天氣報告", "company": "組織報表", "other": "其他報告"}
-
-
-def migrate(conn):
-    # SQLite CHECK constraints require a transactional table replacement.
-    table_sql = conn.execute("SELECT sql FROM sqlite_master WHERE name='workspace_users'").fetchone()[0]
-    if "'sender'" not in table_sql:
-        if not conn.in_transaction:
-            conn.execute('BEGIN IMMEDIATE')
-        conn.execute("""CREATE TABLE workspace_users_roles (
-            email TEXT PRIMARY KEY, display_name TEXT NOT NULL DEFAULT '',
-            role TEXT NOT NULL CHECK(role IN ('administrator','company_admin','sender','employee')),
-            company TEXT NOT NULL DEFAULT '', department TEXT NOT NULL DEFAULT '',
-            recipient_id TEXT NOT NULL DEFAULT '', active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)))""")
-        conn.execute("INSERT INTO workspace_users_roles SELECT email,display_name,role,company,department,recipient_id,active FROM workspace_users")
-        conn.execute('DROP TABLE workspace_users')
-        conn.execute('ALTER TABLE workspace_users_roles RENAME TO workspace_users')
-    member_sql = conn.execute("SELECT sql FROM sqlite_master WHERE name='organization_members'").fetchone()[0]
-    if "'sender'" not in member_sql:
-        if not conn.in_transaction:
-            conn.execute('BEGIN IMMEDIATE')
-        conn.execute("""CREATE TABLE organization_members_roles (
-            email TEXT NOT NULL, org_id TEXT NOT NULL,
-            role TEXT NOT NULL CHECK(role IN ('company_admin','sender','employee')),
-            department TEXT NOT NULL DEFAULT '', recipient_id TEXT NOT NULL DEFAULT '',
-            active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)), PRIMARY KEY(email,org_id))""")
-        conn.execute('INSERT INTO organization_members_roles SELECT * FROM organization_members')
-        conn.execute('DROP TABLE organization_members')
-        conn.execute('ALTER TABLE organization_members_roles RENAME TO organization_members')
-    for table, columns in {
-        "recipients": {"department": "TEXT NOT NULL DEFAULT ''", "company": "TEXT NOT NULL DEFAULT ''"},
-        "report_sources": {"company": "TEXT NOT NULL DEFAULT ''", "scope": "TEXT NOT NULL DEFAULT 'company'",
-                           "owner_email": "TEXT NOT NULL DEFAULT ''", "owner_recipient_id": "TEXT NOT NULL DEFAULT ''"},
-        "send_jobs": {"actor": "TEXT NOT NULL DEFAULT ''", "report_title": "TEXT NOT NULL DEFAULT ''",
-                      "report_id": "TEXT NOT NULL DEFAULT ''", "scheduled_at": "TEXT NOT NULL DEFAULT ''",
-                      "message_text": "TEXT NOT NULL DEFAULT ''", "company": "TEXT NOT NULL DEFAULT ''",
-                      "messages_json": "TEXT NOT NULL DEFAULT '[]'"},
-        "audit_events": {"company": "TEXT NOT NULL DEFAULT ''"},
-    }.items():
-        existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
-        for column, declaration in columns.items():
-            if column not in existing:
-                conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {declaration}")
-    if not conn.execute("SELECT 1 FROM workspace_migrations WHERE name='organizations-v1'").fetchone():
-        for table in ('workspace_users','report_sources','recipients','send_jobs','audit_events'):
-            conn.execute(f"INSERT OR IGNORE INTO organizations(org_id,name) SELECT DISTINCT company,company FROM {table} WHERE company<>''")
-        conn.execute("""INSERT OR IGNORE INTO organization_members(email,org_id,role,department,recipient_id,active)
-                        SELECT email,company,role,department,recipient_id,active FROM workspace_users
-                        WHERE company<>'' AND role<>'administrator'""")
-        conn.execute("INSERT INTO workspace_migrations(name) VALUES ('organizations-v1')")
 
 
 def bootstrap_users(emails):
@@ -104,7 +56,7 @@ def account(email, company=None):
 
 
 def module_enabled(user, module):
-    if user['role']=='administrator':
+    if user['role']=='administrator' or channels.personal_owner(user):
         return True
     org=next((o for o in organizations() if o['org_id']==user.get('company') and o['active']),None)
     return bool(org and org.get(module+'_enabled') and (user['role']!='sender' or grant(user).get(module)))
@@ -144,7 +96,7 @@ def save_membership(payload, actor):
     with app.database_connection() as conn:
         if not conn.execute('SELECT 1 FROM workspace_users WHERE email=?',(email,)).fetchone() or not conn.execute('SELECT 1 FROM organizations WHERE org_id=?',(org_id,)).fetchone():
             raise ValueError('請先建立登入帳號與組織。')
-        if recipient and not conn.execute("SELECT 1 FROM recipients WHERE recipient_id=? AND company=? AND kind='user'",(recipient,org_id)).fetchone():
+        if recipient and not conn.execute("SELECT 1 FROM recipients WHERE recipients.channel_id=current_channel() AND recipient_id=? AND company=? AND kind='user'",(recipient,org_id)).fetchone():
             raise ValueError('LINE 個人聊天室必須屬於此組織。')
         conn.execute('''INSERT INTO organization_members(email,org_id,role,department,recipient_id,active) VALUES (?,?,?,?,?,?)
                         ON CONFLICT(email,org_id) DO UPDATE SET role=excluded.role,department=excluded.department,recipient_id=excluded.recipient_id,active=excluded.active''',
@@ -178,13 +130,13 @@ def dispatch_scopes():
     with app.database_connection() as conn:
         conn.row_factory = sqlite3.Row
         return [{**dict(r), 'recipient_ids': json.loads(r['recipients_json'])}
-                for r in conn.execute('SELECT * FROM dispatch_scopes ORDER BY company,name')]
+                for r in conn.execute('SELECT * FROM dispatch_scopes WHERE dispatch_scopes.channel_id=current_channel() ORDER BY company,name')]
 
 
 def grant(user):
     with app.database_connection() as conn:
         conn.row_factory = sqlite3.Row
-        row = conn.execute('SELECT * FROM sender_grants WHERE email=? AND company=?', (user['email'], user['company'])).fetchone()
+        row = conn.execute('SELECT * FROM sender_grants WHERE sender_grants.channel_id=current_channel() AND email=? AND company=?', (user['email'], user['company'])).fetchone()
     return {**(dict(row) if row else {'messaging': 0, 'reports': 0, 'weather': 0}),
             'scope_ids': json.loads(row['scopes_json']) if row else [],
             'report_ids': json.loads(row['reports_json']) if row else []}
@@ -193,7 +145,7 @@ def grant(user):
 def allowed_contact(user, row):
     if not same_company(user, row.get('company')):
         return False
-    if user['role'] != 'sender':
+    if user['role'] != 'sender' or channels.personal_owner(user):
         return operator(user)
     ids = set(grant(user)['scope_ids'])
     return any(s['scope_id'] in ids and s['active'] and s['company'] == user['company'] and
@@ -220,6 +172,7 @@ def save_dispatch_scope(payload, actor):
         raise ValueError('群組範圍須選擇一個 LINE 群組。')
     if kind == 'project' and not ids:
         raise ValueError('專案範圍須選擇收件者。')
+    channels.enforce_company(company)
     scope_id = payload.get('scope_id') or uuid4().hex
     if not isinstance(scope_id, str) or not re.fullmatch('[0-9a-f]{32}', scope_id):
         raise ValueError('範圍識別資料不正確。')
@@ -227,15 +180,15 @@ def save_dispatch_scope(payload, actor):
         conn.execute('BEGIN IMMEDIATE')
         if not conn.execute('SELECT 1 FROM organizations WHERE org_id=?', (company,)).fetchone():
             raise ValueError('請選擇有效組織。')
-        old = conn.execute('SELECT company FROM dispatch_scopes WHERE scope_id=?', (scope_id,)).fetchone()
+        old = conn.execute('SELECT company FROM dispatch_scopes WHERE dispatch_scopes.channel_id=current_channel() AND scope_id=?', (scope_id,)).fetchone()
         if payload.get('scope_id') and (not old or old[0] != company):
             raise ValueError('範圍不存在或組織不可變更，請另建範圍。')
         for rid in ids:
-            row = conn.execute('SELECT kind,company FROM recipients WHERE recipient_id=?', (rid,)).fetchone()
+            row = conn.execute('SELECT kind,company FROM recipients WHERE recipients.channel_id=current_channel() AND recipient_id=?', (rid,)).fetchone()
             if not row or row[1] != company or (kind == 'group' and row[0] not in {'group','room'}):
                 raise ValueError('請選擇同組織的有效收件者／群組。')
-        conn.execute('''INSERT INTO dispatch_scopes VALUES (?,?,?,?,?,?,?) ON CONFLICT(scope_id) DO UPDATE SET
-                        name=excluded.name,kind=excluded.kind,department=excluded.department,recipients_json=excluded.recipients_json,active=excluded.active''',
+        conn.execute("""INSERT INTO dispatch_scopes(channel_id,scope_id,company,name,kind,department,recipients_json,active) VALUES (current_channel(),?,?,?,?,?,?,?) ON CONFLICT(scope_id) DO UPDATE SET
+                        name=excluded.name,kind=excluded.kind,department=excluded.department,recipients_json=excluded.recipients_json,active=excluded.active WHERE dispatch_scopes.channel_id=excluded.channel_id""",
                      (scope_id,company,name.strip(),kind,department.strip() if kind=='department' else '',json.dumps(ids if kind!='department' else []),int(active)))
         audit(conn,actor,'scope.update',scope_id,name.strip(),company)
     return {'scope_id':scope_id}
@@ -243,6 +196,7 @@ def save_dispatch_scope(payload, actor):
 
 def save_grant(payload, actor):
     email, company = payload.get('email'), payload.get('company')
+    channels.enforce_company(company)
     scopes, report_ids = string_list(payload,'scope_ids'), string_list(payload,'report_ids')
     flags = [payload.get(k) for k in ('messaging','reports','weather')]
     if any(type(v) is not bool for v in flags):
@@ -253,27 +207,33 @@ def save_grant(payload, actor):
     with app.database_connection() as conn:
         conn.execute('BEGIN IMMEDIATE')
         for sid in scopes:
-            if not conn.execute('SELECT 1 FROM dispatch_scopes WHERE scope_id=? AND company=?', (sid,company)).fetchone():
+            if not conn.execute('SELECT 1 FROM dispatch_scopes WHERE dispatch_scopes.channel_id=current_channel() AND scope_id=? AND company=?', (sid,company)).fetchone():
                 raise ValueError('範圍不屬於此組織。')
         for rid in report_ids:
-            if rid != 'weather' and not conn.execute('SELECT 1 FROM report_sources WHERE report_id=? AND company=?', (rid,company)).fetchone():
+            if rid != 'weather' and not conn.execute('SELECT 1 FROM report_sources WHERE report_sources.channel_id=current_channel() AND report_id=? AND company=?', (rid,company)).fetchone():
                 raise ValueError('報告不屬於此組織。')
-        conn.execute('''INSERT INTO sender_grants VALUES (?,?,?,?,?,?,?) ON CONFLICT(email,company) DO UPDATE SET
-                        scopes_json=excluded.scopes_json,reports_json=excluded.reports_json,messaging=excluded.messaging,reports=excluded.reports,weather=excluded.weather''',
+        conn.execute("""INSERT INTO sender_grants(channel_id,email,company,scopes_json,reports_json,messaging,reports,weather) VALUES (current_channel(),?,?,?,?,?,?,?) ON CONFLICT(channel_id,email,company) DO UPDATE SET
+                        scopes_json=excluded.scopes_json,reports_json=excluded.reports_json,messaging=excluded.messaging,reports=excluded.reports,weather=excluded.weather""",
                      (email,company,json.dumps(scopes),json.dumps(report_ids),*[int(v) for v in flags]))
         audit(conn,actor,'grant.update',email,'更新發送範圍、報告與模組授權',company)
 
 
 def same_company(user, company):
-    return user['role'] == 'administrator' or (bool(user.get('company')) and user['company'] == company)
+    return user['role'] == 'administrator' or (channels.personal_owner(user) and company == '') or (bool(user.get('company')) and user['company'] == company)
 
 
 def actor_user(actor, company=None):
     if actor == '本機管理員':
         return {'email': actor, 'role': 'administrator', 'company': ''}
     user = account(actor, company)
+    if not user and channels.current_id():
+        candidate = login_account(actor)
+        if candidate and channels.personal_owner(candidate):
+            user = {**candidate, 'company': ''}
     if not operator(user):
         raise ValueError('發送權限已失效。')
+    if channels.current_id():
+        channels.authorize(channels.current_id(), user)
     return user
 
 
@@ -305,7 +265,7 @@ def save_user(payload, actor):
     with app.database_connection() as conn:
         conn.execute("BEGIN IMMEDIATE")
         if fields["recipient_id"]:
-            contact = conn.execute("SELECT kind,company FROM recipients WHERE recipient_id=?", (fields["recipient_id"],)).fetchone()
+            contact = conn.execute('SELECT kind,company FROM recipients WHERE recipients.channel_id=current_channel() AND recipient_id=?', (fields["recipient_id"],)).fetchone()
             if not contact or contact[0] != "user" or contact[1] != fields["company"]:
                 raise ValueError("請先在收件者管理設定該個人的組織，再連結到帳號。")
         previous = conn.execute("SELECT role,active FROM workspace_users WHERE email=?", (email,)).fetchone()
@@ -328,11 +288,14 @@ def save_user(payload, actor):
                         VALUES (?,?,?,?,?,?,?) ON CONFLICT(email) DO UPDATE SET role=excluded.role,active=excluded.active,
                         display_name=excluded.display_name,company=excluded.company,department=excluded.department,recipient_id=excluded.recipient_id""",
                      (email, role, int(active), fields["display_name"], fields["company"], fields["department"], fields["recipient_id"]))
+        if previous and (not active or previous[0] != role):
+            conn.execute('DELETE FROM site_sessions WHERE email=?', (email,))
+            conn.execute('DELETE FROM site_activation WHERE email=?', (email,))
         audit(conn, actor, "account.update", email, role + (" · 啟用" if active else " · 停用"))
 
 
 def can_view(source, user):
-    if user["role"] == "administrator":
+    if user["role"] == "administrator" or channels.personal_owner(user):
         return True
     if user['role']=='sender':
         return (source['report_id'] in grant(user)['report_ids'] and module_enabled(user, 'weather' if source['report_id']=='weather' else 'reports')
@@ -356,7 +319,7 @@ def validate_targets(source, selected):
     owner = account(source.get("owner_email", ""),source['company']) if source["scope"] == "personal" else None
     owner_id = source.get("owner_recipient_id") or (owner["recipient_id"] if owner else "")
     for row in selected:
-        if (not source["company"] or row.get("company") != source["company"]
+        if ((not source["company"] and channels.organization_id() is None) or row.get("company") != source["company"]
                 or (source["scope"] == "department" and row.get("department") != source["department"])
                 or (source["scope"] == "personal" and (not owner_id or row["recipient_id"] != owner_id))):
             raise ValueError("收件者不在這份報告的組織／部門／個人範圍內，請重新選擇。")
@@ -366,23 +329,23 @@ def audit(conn, actor, action, target, detail, company=None):
     user = conn.execute('SELECT role,company FROM workspace_users WHERE email=? AND active=1', (actor,)).fetchone()
     if company is None:
         company = user[1] if user and user[0] == 'company_admin' else ''
-    conn.execute("INSERT INTO audit_events(actor,action,target,detail,company) VALUES (?,?,?,?,?)",
+    conn.execute('INSERT INTO audit_events(channel_id,actor,action,target,detail,company) VALUES (current_channel(),?,?,?,?,?)',
                  (actor, action, target, detail, company))
 
 
 def weather_removed():
     with app.database_connection() as conn:
-        row = conn.execute("SELECT removed FROM builtin_report_state WHERE report_id='weather'").fetchone()
+        row = conn.execute("SELECT removed FROM builtin_report_state WHERE builtin_report_state.channel_id=current_channel() AND report_id='weather'").fetchone()
         return bool(row and row[0])
 
 
 def sources():
     with app.database_connection() as conn:
         conn.row_factory = sqlite3.Row
-        rows = [dict(row) for row in conn.execute("SELECT * FROM report_sources ORDER BY created_at,report_id")]
+        rows = [dict(row) for row in conn.execute('SELECT * FROM report_sources WHERE report_sources.channel_id=current_channel() ORDER BY created_at,report_id')]
     # Weather follows the existing environment setting and doesn't rewrite user configuration.
     weather = []
-    if not weather_removed() and os.environ.get("WEATHER_MODULE_ENABLED", "true").lower() not in {"false", "0", "no"}:
+    if (not channels.current_id() or (channels.get() and channels.get()["legacy_webhook"])) and not weather_removed() and os.environ.get("WEATHER_MODULE_ENABLED", "true").lower() not in {"false", "0", "no"}:
         weather = [{"report_id": "weather", "title": "個人模組 · 天氣報告", "category": "weather", "department": "", "company": "", "scope": "module",
                     "owner_email": os.environ.get("WEATHER_OWNER_EMAIL", "").strip().lower(),
                     "source_path": os.environ.get("WEATHER_IMAGE_PATH", r"D:\Tools\ai_weather_report\output\weather_report.png")}]
@@ -453,7 +416,8 @@ def save(payload, actor):
     company, scope, owner = payload.get("company", ""), payload.get("scope", "company"), payload.get("owner_email", "")
     if payload.get('asset_id') and asset['company'] and asset['company'] != company:
         raise ValueError('圖片與報告必須屬於同一組織，請重新選擇圖片。')
-    if not isinstance(company, str) or not company.strip() or len(company.strip()) > 60 or scope not in {"company", "department", "personal"}:
+    channels.enforce_company(company)
+    if not isinstance(company, str) or (not company.strip() and channels.organization_id() is None) or len(company.strip()) > 60 or scope not in {"company", "department", "personal"}:
         raise ValueError("請設定報告所屬組織與可見範圍。")
     if not isinstance(owner, str):
         raise ValueError("個人帳號格式不正確。")
@@ -467,7 +431,7 @@ def save(payload, actor):
             legacy = account(owner,company.strip())
             owner_id = legacy['recipient_id'] if legacy else ''
         with app.database_connection() as conn:
-            if not conn.execute("SELECT 1 FROM recipients WHERE recipient_id=? AND company=? AND kind='user' AND active=1", (owner_id,company.strip())).fetchone():
+            if not conn.execute("SELECT 1 FROM recipients WHERE recipients.channel_id=current_channel() AND recipient_id=? AND company=? AND kind='user' AND active=1", (owner_id,company.strip())).fetchone():
                 raise ValueError('個人報告必須指定同組織、啟用中的 LINE 個人收件者。')
     if not isinstance(title, str) or not title.strip() or len(title.strip()) > 80:
         raise ValueError("請填寫 1 至 80 字的報告名稱。")
@@ -483,11 +447,11 @@ def save(payload, actor):
     if not isinstance(report_id, str) or not re.fullmatch(r"[0-9a-f]{32}", report_id):
         raise ValueError("報告識別資料不正確。")
     with app.database_connection() as conn:
-        if payload.get("report_id") and not conn.execute("SELECT 1 FROM report_sources WHERE report_id=?", (report_id,)).fetchone():
+        if payload.get("report_id") and not conn.execute('SELECT 1 FROM report_sources WHERE report_sources.channel_id=current_channel() AND report_id=?', (report_id,)).fetchone():
             raise ValueError("這份報告來源已移除。")
-        conn.execute("""INSERT INTO report_sources(report_id,title,category,source_path,department,company,scope,owner_email,owner_recipient_id) VALUES (?,?,?,?,?,?,?,?,?)
+        conn.execute("""INSERT INTO report_sources(channel_id,report_id,title,category,source_path,department,company,scope,owner_email,owner_recipient_id) VALUES (current_channel(),?,?,?,?,?,?,?,?,?)
                         ON CONFLICT(report_id) DO UPDATE SET title=excluded.title,category=excluded.category,source_path=excluded.source_path,
-                        department=excluded.department,company=excluded.company,scope=excluded.scope,owner_email=excluded.owner_email,owner_recipient_id=excluded.owner_recipient_id""",
+                        department=excluded.department,company=excluded.company,scope=excluded.scope,owner_email=excluded.owner_email,owner_recipient_id=excluded.owner_recipient_id WHERE report_sources.channel_id=excluded.channel_id""",
                      (report_id, title.strip(), category, source_path.strip(), department.strip(), company.strip(), scope, owner if scope == "personal" else "", owner_id if scope == "personal" else ""))
         audit(conn, actor, "report.update" if payload.get("report_id") else "report.create", report_id, title.strip())
     return describe(find(report_id))
@@ -500,16 +464,16 @@ def remove(report_id, actor):
         conn.execute('BEGIN IMMEDIATE')
         if report_id == 'weather':
             title = '個人模組 · 天氣報告'
-            conn.execute("INSERT INTO builtin_report_state(report_id,removed) VALUES ('weather',1) ON CONFLICT(report_id) DO UPDATE SET removed=1")
+            conn.execute("INSERT INTO builtin_report_state(channel_id,report_id,removed) VALUES (current_channel(),'weather',1) ON CONFLICT(channel_id,report_id) DO UPDATE SET removed=1")
         else:
-            row = conn.execute("SELECT title FROM report_sources WHERE report_id=?", (report_id,)).fetchone()
+            row = conn.execute('SELECT title FROM report_sources WHERE report_sources.channel_id=current_channel() AND report_id=?', (report_id,)).fetchone()
             if not row:
                 raise ValueError("找不到報告來源。")
             title = row[0]
-            conn.execute("DELETE FROM report_sources WHERE report_id=?", (report_id,))
+            conn.execute('DELETE FROM report_sources WHERE report_sources.channel_id=current_channel() AND report_id=?', (report_id,))
         conn.execute("""UPDATE send_deliveries SET status='cancelled' WHERE status='pending'
-                        AND job_id IN (SELECT job_id FROM send_jobs WHERE report_id=? AND status IN ('scheduled','queued'))""", (report_id,))
-        conn.execute("UPDATE send_jobs SET status='cancelled',error='報告來源已移除。' WHERE report_id=? AND status IN ('scheduled','queued')", (report_id,))
+                        AND job_id IN (SELECT job_id FROM send_jobs WHERE send_jobs.channel_id=current_channel() AND report_id=? AND status IN ('scheduled','queued'))""", (report_id,))
+        conn.execute("UPDATE send_jobs SET status='cancelled',error='報告來源已移除。' WHERE send_jobs.channel_id=current_channel() AND report_id=? AND status IN ('scheduled','queued')", (report_id,))
         audit(conn, actor, "report.remove", report_id, title)
 
 
@@ -517,7 +481,7 @@ def restore_weather(actor):
     if os.environ.get('WEATHER_MODULE_ENABLED', 'true').lower() in {'false', '0', 'no'}:
         raise ValueError('天氣模組已在本機設定停用，請先啟用模組。')
     with app.database_connection() as conn:
-        conn.execute("UPDATE builtin_report_state SET removed=0 WHERE report_id='weather'")
+        conn.execute("UPDATE builtin_report_state SET removed=0 WHERE builtin_report_state.channel_id=current_channel() AND report_id='weather'")
         audit(conn, actor, 'report.restore', 'weather', '個人模組 · 天氣報告')
 
 
@@ -525,7 +489,7 @@ def activity(user=None):
     with app.database_connection() as conn:
         conn.row_factory = sqlite3.Row
         if user and user['role'] == 'sender':
-            return [dict(row) for row in conn.execute("SELECT * FROM audit_events WHERE actor=? AND company=? ORDER BY event_id DESC LIMIT 50", (user['email'],user['company']))]
+            return [dict(row) for row in conn.execute('SELECT * FROM audit_events WHERE audit_events.channel_id=current_channel() AND actor=? AND company=? ORDER BY event_id DESC LIMIT 50', (user['email'],user['company']))]
         if user and user['role'] != 'administrator':
-            return [dict(row) for row in conn.execute("SELECT * FROM audit_events WHERE company=? AND company<>'' ORDER BY event_id DESC LIMIT 50", (user['company'],))]
-        return [dict(row) for row in conn.execute("SELECT * FROM audit_events ORDER BY event_id DESC LIMIT 50")]
+            return [dict(row) for row in conn.execute("SELECT * FROM audit_events WHERE audit_events.channel_id=current_channel() AND company=? AND company<>'' ORDER BY event_id DESC LIMIT 50", (user['company'],))]
+        return [dict(row) for row in conn.execute('SELECT * FROM audit_events WHERE audit_events.channel_id=current_channel() ORDER BY event_id DESC LIMIT 50')]

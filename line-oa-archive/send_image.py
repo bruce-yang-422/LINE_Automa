@@ -17,6 +17,7 @@ from urllib.request import Request, urlopen
 from uuid import uuid4
 
 import truststore
+import channels
 
 from control_runtime import load_settings
 
@@ -32,12 +33,12 @@ def chat_ids(kind):
         return []
     with closing(sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)) as connection:
         return [row[0] for row in connection.execute(
-            "SELECT DISTINCT conversation_id FROM line_messages WHERE conversation_type=? ORDER BY conversation_id", (kind,))]
+            "SELECT DISTINCT conversation_id FROM line_messages WHERE channel_id=? AND conversation_type=? ORDER BY conversation_id", (channels.current_id(),kind))]
 
 
 def select_recipient(kind):
     configured = os.environ.get("LINE_PUSH_USER_ID" if kind == "user" else "LINE_PUSH_GROUP_ID", "").strip()
-    candidates = [configured] if configured else chat_ids(kind)
+    candidates = [configured] if configured and not channels.current_id() else chat_ids(kind)
     if len(candidates) != 1:
         raise ValueError("找不到唯一收件者：請先向 Bot 傳送測試訊息；多位收件者請使用控制台的「收件者與發送」，或 --target subscribers。")
     prefix = "U" if kind == "user" else "C"
@@ -108,6 +109,8 @@ def send_to_subscribers(image):
     access = json.loads(access_file.read_text(encoding="utf-8"))
     base = f"http://127.0.0.1:{int(access['port'])}"
     headers = {"Authorization": "Bearer " + access["token"], "Content-Type": "application/json"}
+    if channels.current_id():
+        headers['X-Line-Channel'] = channels.current_id()
     job_id = str(uuid4())
     payload = {"job_id": job_id, "audience": "subscribers", "ids": [], "image_path": str(image.resolve())}
     try:
@@ -144,8 +147,22 @@ def main():
     parser.add_argument("--target", choices=("user", "group", "both", "subscribers"))
     parser.add_argument("--list-targets", action="store_true", help="列出已收到訊息的聊天室 ID，不發送")
     parser.add_argument("--prepare-only", action="store_true", help="只發布並檢查圖片網址，不向 LINE 發送")
+    parser.add_argument('--oa', help='LINE OA 管理頁登記的 OA 識別碼；多 OA 模式必填')
     args = parser.parse_args()
     load_settings()
+    # Load app only after settings so DATABASE_PATH is correct in standalone CLI.
+    import app
+    if app.DATABASE_PATH.exists() and channels.configured() and not args.oa:
+        raise ValueError('多 OA 模式請指定 --oa，或從管理後台選擇 OA 發送。')
+    with channels.use(args.oa or ''):
+        if args.oa:
+            row = channels.get()
+            if not channels.operational(row):
+                raise ValueError('找不到啟用中的 OA。')
+        return execute(args, parser)
+
+
+def execute(args, parser):
     if args.list_targets:
         for kind in ("user", "group"):
             ids = chat_ids(kind)
@@ -155,7 +172,7 @@ def main():
         parser.error("請指定圖片與 --target user/group/both/subscribers；也可用 --prepare-only 測試圖片連線。")
     if args.target == "subscribers" and not args.prepare_only:
         return send_to_subscribers(args.image)
-    token = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN", "").strip()
+    token = channels.access_token() if channels.current_id() else os.environ.get("LINE_CHANNEL_ACCESS_TOKEN", "").strip()
     recipients = []
     if not args.prepare_only:
         if not token:

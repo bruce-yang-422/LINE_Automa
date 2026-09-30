@@ -22,14 +22,17 @@ def load_settings():
             key, separator, value = line.partition("=")
             if separator and key.strip() in {"LINE_CHANNEL_SECRET", "DATABASE_PATH", "LINE_CHANNEL_ACCESS_TOKEN",
                                              "LINE_PUSH_USER_ID", "LINE_PUSH_GROUP_ID", "PUBLIC_BASE_URL", "WEATHER_IMAGE_PATH",
-                                             "ADMIN_PUBLIC_HOST", "CF_ACCESS_TEAM_DOMAIN", "CF_ACCESS_AUD", "ADMIN_ALLOWED_EMAILS"}:
+                                             "WEATHER_MODULE_ENABLED", "WEATHER_OWNER_EMAIL",
+                                             "ADMIN_PUBLIC_HOST", "ADMIN_AUTH_MODE", "CF_ACCESS_TEAM_DOMAIN", "CF_ACCESS_AUD", "ADMIN_ALLOWED_EMAILS"}:
                 value = value.strip()
                 if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
                     value = value[1:-1]
                 settings[key.strip()] = value
     os.environ.update(settings)
     secret = os.environ.get("LINE_CHANNEL_SECRET", "").strip()
-    return bool(secret and secret != "replace_with_messaging_api_channel_secret")
+    # Native login can be set up before adding the first OA through the website.
+    return bool((secret and secret != "replace_with_messaging_api_channel_secret")
+                or os.environ.get('ADMIN_AUTH_MODE') == 'password')
 
 
 def main():
@@ -44,7 +47,7 @@ def main():
         print(json.dumps({"configured": configured, "python_ok": sys.version_info >= (3, 11)}))
         return 0
     if not configured or not args.instance:
-        print("Setup required: configure LINE_CHANNEL_SECRET before starting.", file=sys.stderr)
+        print("Setup required: configure native login or LINE_CHANNEL_SECRET before starting.", file=sys.stderr)
         return 2
 
     # app reads environment settings at import time.

@@ -14,6 +14,8 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / 'line-oa-archive'))
 parser = argparse.ArgumentParser()
 parser.add_argument('state_file', type=Path)
+parser.add_argument('--password-auth', action='store_true')
+parser.add_argument('--multi-oa', action='store_true')
 args = parser.parse_args()
 with tempfile.TemporaryDirectory(prefix='line-ui-fixture-') as temp:
     root = Path(temp)
@@ -41,6 +43,8 @@ with tempfile.TemporaryDirectory(prefix='line-ui-fixture-') as temp:
         if key.startswith(('LINE_', 'CF_ACCESS_', 'ADMIN_')):
             os.environ.pop(key)
     os.environ.update(WEATHER_IMAGE_PATH=str(image), LINE_CHANNEL_ACCESS_TOKEN='fixture-only', ADMIN_ALLOWED_EMAILS='admin@example.test')
+    if args.password_auth:
+        os.environ['ADMIN_AUTH_MODE']='password'
     import app
     import admin_server
     import reports
@@ -85,6 +89,24 @@ with tempfile.TemporaryDirectory(prefix='line-ui-fixture-') as temp:
     admin_server.send_push = forbidden_send
     admin_server.verify_public_image = forbidden_send
     admin_server.line_api.request = forbidden_send
+    if args.multi_oa:
+        import channels
+        import hashlib
+        os.environ['LINE_CHANNEL_SECRET']='a'*32
+        os.environ['PUBLIC_BASE_URL']='https://reports.example.test'
+        def fixture_line(path, payload=None, *, token=None):
+            if path == 'info' and token:
+                return {'userId':'U'+hashlib.md5(token.encode()).hexdigest(),'displayName':'OA '+token,'basicId':'@fixture'}
+            raise AssertionError('Only bot identity lookup is allowed in this fixture')
+        admin_server.line_api.request=fixture_line
+        owner=reports.account('admin@example.test')
+        first=channels.save({'workspace_id':'o:示範公司','import_existing':True,'name':'總公司通知 OA'},owner)
+        second=channels.save({'workspace_id':'o:示範公司','secret':'b'*32,'access_token':'second','name':'門市服務 OA'},owner)
+        personal=channels.save({'workspace_id':'p:admin@example.test','secret':'c'*32,'access_token':'personal','name':'個人小幫手'},owner)
+        with channels.use(second['channel_id']):
+            app.save_events([{'type':'message','source':{'type':'user','userId':'U'+'2'*32},'message':{'id':'store-only','type':'text','text':'hello'}}])
+            with app.database_connection() as conn:
+                conn.execute("UPDATE recipients SET display_name='門市客戶' WHERE channel_id=current_channel()")
     server = admin_server.AdminServer(0)
     server.RequestHandlerClass = FixtureHandler
     server.start()

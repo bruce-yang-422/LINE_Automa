@@ -1,5 +1,22 @@
 # LINE 自動化
 
+## 網站帳號密碼登入
+
+站內登入功能已完成，保留 Cloudflare Tunnel。既有帳號可從右上角「登入設定」建立密碼；平台管理員也能在「帳號與設定」提供 30 分鐘一次性啟用／重設連結、撤銷登入。支援保持登入、修改密碼與登出，沿用原有組織及發送範圍權限。
+
+正式入口需先有管理員密碼，再執行 `line-oa-archive/configure_login.py --mode password`、重啟服務，最後調整 Cloudflare Access 的 `line-admin` 應用程式原則。完成前仍會看到舊 Access 驗證。完整操作、恢復方式及測試見 [網站登入與切換](網站登入與切換.md)。密碼與 Token 不填入 `.env` 或 Git。
+
+## 全站工作台（Apple 風格＋Tailwind）
+
+工作總覽、報告中心、訊息編輯／確認、收件者、訂閱、排程、發送紀錄、組織與帳號設定共用本機編譯的 Tailwind 主題。保留 `#00B900`、低飽和背景、系統／深／淺色及手機版。
+
+- 報告中心可搜尋、切換清單／卡片，開啟詳情後預覽、設定來源、移除或建立發送。
+- 點收件者名稱可查看組織、分類、訂閱及最近互動；有管理權限者可繼續編輯。桌面使用分欄，窄螢幕進入詳情後關閉即可返回清單。
+- 工具列搜尋或 `Ctrl / ⌘ K` 可尋找目前已載入且有權限的頁面、報告與收件者；支援方向鍵、Enter 與 Escape。
+- 「排程管理」查看單次預約、取消預約及執行異常；建立發送時於確認頁選擇「指定日期與時間」。顯示所有待發預約與最近載入的歷史，不代表完整歷史統計。
+
+此階段完整接回現有 API 與權限；站內登入已接續實作。多 OA、審核協作及循環／檔案觸發排程仍見 [SaaS 規劃](SaaS平台與全站Tailwind改版規劃.md)，尚未實作。
+
 ## 組織與人員管理（Tailwind 主題）
 
 1. 「組織管理」先選取或新增組織；右側資料只顯示目前選取的組織。
@@ -9,7 +26,7 @@
 
 新增組織後會自動選中；新增帳號和範圍會帶入該組織。新增表單提供角色說明，LINE 綁定收於選填進階設定。Cloudflare Access 的 Email 允許名單仍須另外維護，介面不會宣稱已驗證外部名單。
 
-管理 UI 使用 Tailwind CSS 4 的主題變數與 CLI 本機編譯，無瀏覽器端 CDN 或全域 Preflight 重設。來源為 `styles/management.css`，輸出為 `line-oa-archive/web/management.css`（部署時需包含）；主題沿用 `#00B900`、低飽和綠色與深淺模式。一般啟動不需要 Node.js；修改樣式時執行：
+全站 UI 使用 Tailwind CSS 4 的主題變數與 CLI 本機編譯，無瀏覽器端 CDN 或全域 Preflight 重設。入口為 `styles/app.css`，整合既有基礎樣式、`workspace-theme.css` 與 `styles/management.css`，輸出為 `line-oa-archive/web/app.css`（部署時需包含）。修改來源後要重新建置；一般啟動不需要 Node.js：
 
 ```powershell
 npm ci

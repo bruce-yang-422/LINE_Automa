@@ -1,6 +1,8 @@
--- 時間以 UTC ISO 8601 文字格式儲存。
+-- 全新安裝的完整 schema；啟動只執行此檔，不搬移或修補舊版資料。
+-- IF NOT EXISTS 只用於重啟時保留本版資料，不代表支援舊版 schema。
+-- 業務時間採 UTC ISO 8601；登入與快取期限採 Unix seconds。
 CREATE TABLE IF NOT EXISTS line_messages (
-    message_id TEXT PRIMARY KEY NOT NULL,
+    message_id TEXT NOT NULL,
     conversation_type TEXT NOT NULL CHECK (conversation_type IN ('user', 'group', 'room')),
     conversation_id TEXT NOT NULL,
     sender_user_id TEXT,
@@ -8,14 +10,16 @@ CREATE TABLE IF NOT EXISTS line_messages (
     text_content TEXT,
     sent_at TEXT,
     received_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f+00:00', 'now')),
-    unsent_at TEXT
+    unsent_at TEXT,
+    channel_id TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY(channel_id,message_id)
 );
 
 CREATE INDEX IF NOT EXISTS line_messages_conversation_time_idx
     ON line_messages (conversation_type, conversation_id, sent_at DESC);
 
 CREATE TABLE IF NOT EXISTS recipients (
-    recipient_id TEXT PRIMARY KEY,
+    recipient_id TEXT NOT NULL,
     kind TEXT NOT NULL CHECK (kind IN ('user', 'group', 'room')),
     display_name TEXT NOT NULL DEFAULT '',
     alias TEXT NOT NULL DEFAULT '',
@@ -23,12 +27,22 @@ CREATE TABLE IF NOT EXISTS recipients (
     weather_subscribed INTEGER NOT NULL DEFAULT 0,
     event_at INTEGER NOT NULL DEFAULT 0,
     subscription_at INTEGER NOT NULL DEFAULT 0,
-    last_seen TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    company TEXT NOT NULL DEFAULT '',
+    department TEXT NOT NULL DEFAULT '',
+    profile_checked_at INTEGER NOT NULL DEFAULT 0,
+    profile_next_at INTEGER NOT NULL DEFAULT 0,
+    profile_failures INTEGER NOT NULL DEFAULT 0,
+    profile_lease_until INTEGER NOT NULL DEFAULT 0,
+    last_seen TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    channel_id TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY(channel_id,recipient_id)
 );
 CREATE TABLE IF NOT EXISTS subscription_commands (
-    message_id TEXT PRIMARY KEY,
+    message_id TEXT NOT NULL,
     recipient_id TEXT NOT NULL,
-    response TEXT NOT NULL
+    response TEXT NOT NULL,
+    channel_id TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY(channel_id,message_id)
 );
 CREATE TABLE IF NOT EXISTS send_jobs (
     job_id TEXT PRIMARY KEY,
@@ -36,8 +50,16 @@ CREATE TABLE IF NOT EXISTS send_jobs (
     audience TEXT NOT NULL,
     image_path TEXT NOT NULL,
     image_url TEXT NOT NULL DEFAULT '',
+    actor TEXT NOT NULL DEFAULT '',
+    report_title TEXT NOT NULL DEFAULT '',
+    report_id TEXT NOT NULL DEFAULT '',
+    scheduled_at TEXT NOT NULL DEFAULT '',
+    message_text TEXT NOT NULL DEFAULT '',
+    company TEXT NOT NULL DEFAULT '',
+    messages_json TEXT NOT NULL DEFAULT '[]',
     error TEXT NOT NULL DEFAULT '',
-    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    channel_id TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS send_deliveries (
     job_id TEXT NOT NULL REFERENCES send_jobs(job_id),
@@ -55,8 +77,13 @@ CREATE TABLE IF NOT EXISTS report_sources (
     title TEXT NOT NULL,
     category TEXT NOT NULL,
     source_path TEXT NOT NULL,
+    company TEXT NOT NULL DEFAULT '',
+    scope TEXT NOT NULL DEFAULT 'company',
+    owner_email TEXT NOT NULL DEFAULT '',
+    owner_recipient_id TEXT NOT NULL DEFAULT '',
     department TEXT NOT NULL DEFAULT '',
-    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    channel_id TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS audit_events (
     event_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -64,7 +91,9 @@ CREATE TABLE IF NOT EXISTS audit_events (
     action TEXT NOT NULL,
     target TEXT NOT NULL,
     detail TEXT NOT NULL,
-    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    company TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    channel_id TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS workspace_users (
     email TEXT PRIMARY KEY,
@@ -74,6 +103,31 @@ CREATE TABLE IF NOT EXISTS workspace_users (
     department TEXT NOT NULL DEFAULT '',
     recipient_id TEXT NOT NULL DEFAULT '',
     active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1))
+);
+-- 登入資料只存密碼雜湊與 Token 雜湊。
+CREATE TABLE IF NOT EXISTS site_credentials (
+    email TEXT PRIMARY KEY REFERENCES workspace_users(email),
+    password_hash TEXT NOT NULL,
+    changed_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS site_sessions (
+    token_hash TEXT PRIMARY KEY,
+    email TEXT NOT NULL REFERENCES workspace_users(email),
+    created_at INTEGER NOT NULL,
+    last_seen INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL,
+    idle_seconds INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS site_sessions_email ON site_sessions(email);
+CREATE TABLE IF NOT EXISTS site_activation (
+    token_hash TEXT PRIMARY KEY,
+    email TEXT NOT NULL REFERENCES workspace_users(email),
+    expires_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS site_login_limits (
+    bucket TEXT PRIMARY KEY,
+    started_at INTEGER NOT NULL,
+    attempts INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS organizations (
     org_id TEXT PRIMARY KEY,
@@ -93,28 +147,61 @@ CREATE TABLE IF NOT EXISTS organization_members (
     active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)),
     PRIMARY KEY(email,org_id)
 );
-CREATE TABLE IF NOT EXISTS workspace_migrations (name TEXT PRIMARY KEY);
 CREATE TABLE IF NOT EXISTS upload_assets (
     asset_id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     company TEXT NOT NULL DEFAULT '',
     owner TEXT NOT NULL,
-    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    channel_id TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS dispatch_scopes (
  scope_id TEXT PRIMARY KEY, company TEXT NOT NULL, name TEXT NOT NULL,
  kind TEXT NOT NULL CHECK(kind IN ('department','project','group')),
  department TEXT NOT NULL DEFAULT '', recipients_json TEXT NOT NULL DEFAULT '[]',
- active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1))
+ active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)),
+    channel_id TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS sender_grants (
  email TEXT NOT NULL, company TEXT NOT NULL,
  scopes_json TEXT NOT NULL DEFAULT '[]', reports_json TEXT NOT NULL DEFAULT '[]',
  messaging INTEGER NOT NULL DEFAULT 0, reports INTEGER NOT NULL DEFAULT 0, weather INTEGER NOT NULL DEFAULT 0,
- PRIMARY KEY(email,company)
+ channel_id TEXT NOT NULL DEFAULT '',
+ PRIMARY KEY(channel_id,email,company)
 );
 CREATE TABLE IF NOT EXISTS builtin_report_state (
-    report_id TEXT PRIMARY KEY,
-    removed INTEGER NOT NULL DEFAULT 0 CHECK(removed IN (0,1))
+    report_id TEXT NOT NULL,
+    removed INTEGER NOT NULL DEFAULT 0 CHECK(removed IN (0,1)),
+    channel_id TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY(channel_id,report_id)
 );
+
+-- OA 歸屬固定於個人或組織。Bot user ID 唯一，防止同一 OA 重複登記。
+CREATE TABLE IF NOT EXISTS line_channels (
+    channel_id TEXT PRIMARY KEY,
+    org_id TEXT NOT NULL DEFAULT '',
+    owner_email TEXT NOT NULL DEFAULT '',
+    name TEXT NOT NULL,
+    bot_user_id TEXT NOT NULL UNIQUE,
+    basic_id TEXT NOT NULL DEFAULT '',
+    token_cipher TEXT NOT NULL,
+    secret_cipher TEXT NOT NULL,
+    active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)),
+    legacy_webhook INTEGER NOT NULL DEFAULT 0 CHECK(legacy_webhook IN (0,1)),
+    verified_at TEXT NOT NULL DEFAULT '',
+    webhook_seen_at TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    CHECK ((org_id<>'' AND owner_email='') OR (org_id='' AND owner_email<>''))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS line_channels_legacy ON line_channels(legacy_webhook) WHERE legacy_webhook=1;
+CREATE INDEX IF NOT EXISTS audit_events_channel_idx ON audit_events(channel_id);
+CREATE INDEX IF NOT EXISTS builtin_report_state_channel_idx ON builtin_report_state(channel_id);
+CREATE INDEX IF NOT EXISTS dispatch_scopes_channel_idx ON dispatch_scopes(channel_id);
+CREATE INDEX IF NOT EXISTS line_messages_channel_idx ON line_messages(channel_id);
+CREATE INDEX IF NOT EXISTS recipients_channel_idx ON recipients(channel_id);
+CREATE INDEX IF NOT EXISTS report_sources_channel_idx ON report_sources(channel_id);
+CREATE INDEX IF NOT EXISTS send_jobs_channel_idx ON send_jobs(channel_id);
+CREATE INDEX IF NOT EXISTS sender_grants_channel_idx ON sender_grants(channel_id);
+CREATE INDEX IF NOT EXISTS subscription_commands_channel_idx ON subscription_commands(channel_id);
+CREATE INDEX IF NOT EXISTS upload_assets_channel_idx ON upload_assets(channel_id);

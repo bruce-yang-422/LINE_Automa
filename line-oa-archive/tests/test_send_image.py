@@ -44,14 +44,14 @@ class SendImageTests(unittest.TestCase):
         os.environ["DATABASE_PATH"] = "test.db"
         con = sqlite3.connect(self.root / "test.db")
         self.addCleanup(con.close)
-        con.execute("CREATE TABLE line_messages (conversation_type TEXT, conversation_id TEXT)")
+        con.execute("CREATE TABLE line_messages (conversation_type TEXT, conversation_id TEXT, channel_id TEXT NOT NULL DEFAULT '')")
         user = "U" + "1" * 32
         group = "C" + "2" * 32
-        con.executemany("INSERT INTO line_messages VALUES (?, ?)", [("user", user), ("group", group)])
+        con.executemany("INSERT INTO line_messages(conversation_type,conversation_id) VALUES (?, ?)", [("user", user), ("group", group)])
         con.commit()
         self.assertEqual(send_image.select_recipient("user"), user)
         self.assertEqual(send_image.select_recipient("group"), group)
-        con.execute("INSERT INTO line_messages VALUES ('user', ?)", ("U" + "3" * 32,))
+        con.execute("INSERT INTO line_messages(conversation_type,conversation_id) VALUES ('user', ?)", ("U" + "3" * 32,))
         con.commit()
         with self.assertRaises(ValueError):
             send_image.select_recipient("user")
@@ -91,7 +91,7 @@ class SendImageTests(unittest.TestCase):
 
     def test_both_preflight_resolves_all_targets_before_sending(self):
         os.environ["LINE_CHANNEL_ACCESS_TOKEN"] = "test-token"
-        with patch.object(send_image, "load_settings"), patch.object(send_image, "select_recipient", side_effect=["U" + "1" * 32, ValueError("missing group")]), \
+        with patch.object(send_image.channels, "configured", return_value=False), patch.object(send_image, "load_settings"), patch.object(send_image, "select_recipient", side_effect=["U" + "1" * 32, ValueError("missing group")]), \
                 patch.object(send_image, "send_push") as push, patch.object(send_image, "publish_image") as publish, \
                 patch("sys.argv", ["send_image.py", str(self.source), "--target", "both"]):
             with self.assertRaises(ValueError):

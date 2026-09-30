@@ -12,6 +12,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import recipients
+import channels
 
 BASE_DIR = Path(__file__).resolve().parent
 DATABASE_PATH = Path(os.environ.get("DATABASE_PATH", "data/line_archive.db"))
@@ -26,6 +27,7 @@ IMAGE_DIR = BASE_DIR / "published-images"
 def database_connection():
     """每個請求使用獨立連線；交易失敗時回復，結束後關閉連線。"""
     conn = sqlite3.connect(DATABASE_PATH, timeout=10)
+    conn.create_function("current_channel", 0, channels.current_id)
     try:
         with conn:
             yield conn
@@ -39,16 +41,13 @@ def initialize_database() -> None:
     with database_connection() as conn:
         conn.execute("PRAGMA journal_mode=WAL")
         conn.executescript((BASE_DIR / "schema.sql").read_text(encoding="utf-8"))
-        import reports
-        reports.migrate(conn)
-        recipients.migrate_contacts(conn)
 
 
-def valid_signature(body: bytes, signature: str) -> bool:
+def valid_signature(body: bytes, signature: str, secret=None) -> bool:
     expected = base64.b64encode(
-        hmac.new(CHANNEL_SECRET.encode("utf-8"), body, hashlib.sha256).digest()
+        hmac.new((CHANNEL_SECRET if secret is None else secret).encode("utf-8"), body, hashlib.sha256).digest()
     ).decode("ascii")
-    return bool(signature) and hmac.compare_digest(expected, signature)
+    return bool((CHANNEL_SECRET if secret is None else secret) and signature) and hmac.compare_digest(expected, signature)
 
 
 def source_fields(event: dict) -> tuple[str, str, str | None] | None:
@@ -90,10 +89,10 @@ def save_events(events: list[dict]) -> list:
                     cur.execute(
                         """
                         INSERT INTO line_messages
-                            (message_id, conversation_type, conversation_id,
+                            (channel_id,message_id, conversation_type, conversation_id,
                              sender_user_id, message_type, text_content, sent_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
-                        ON CONFLICT (message_id) DO NOTHING
+                        VALUES (current_channel(),?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT (channel_id,message_id) DO NOTHING
                         """,
                         (message_id, source_type, conversation_id,
                          sender_user_id, message_type, text, sent_at),
@@ -106,10 +105,10 @@ def save_events(events: list[dict]) -> list:
                     cur.execute(
                         """
                         INSERT INTO line_messages
-                            (message_id, conversation_type, conversation_id,
+                            (channel_id,message_id, conversation_type, conversation_id,
                              sender_user_id, message_type, unsent_at)
-                        VALUES (?, ?, ?, ?, 'unknown', strftime('%Y-%m-%dT%H:%M:%f+00:00', 'now'))
-                        ON CONFLICT (message_id) DO UPDATE
+                        VALUES (current_channel(),?, ?, ?, ?, 'unknown', strftime('%Y-%m-%dT%H:%M:%f+00:00', 'now'))
+                        ON CONFLICT (channel_id,message_id) DO UPDATE
                         SET text_content = NULL, unsent_at = strftime('%Y-%m-%dT%H:%M:%f+00:00', 'now')
                         """,
                         (message_id, source_type, conversation_id, sender_user_id),
@@ -163,7 +162,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/healthz":
             try:
                 with database_connection() as conn:
-                    conn.execute("SELECT message_id FROM line_messages LIMIT 1")
+                    conn.execute('SELECT message_id FROM line_messages WHERE line_messages.channel_id=current_channel() LIMIT 1')
                 self.respond(200, "ok")
             except sqlite3.Error:
                 self.respond(503, "資料庫無法使用")
@@ -171,7 +170,18 @@ class Handler(BaseHTTPRequestHandler):
             self.respond(404, "找不到資源")
 
     def do_POST(self) -> None:
-        if self.path != "/webhook":
+        try:
+            row = channels.webhook_channel(self.path)
+            with channels.use(row['channel_id'] if row else ''):
+                if row and not channels.operational(row):
+                    self.respond(403, "OA 已停用")
+                    return
+                self.receive_webhook(row)
+        except ValueError:
+            self.respond(404, "找不到可使用的 Webhook")
+
+    def receive_webhook(self, channel) -> None:
+        if not self.path.startswith("/webhook"):
             self.respond(404, "找不到資源")
             return
         try:
@@ -183,12 +193,15 @@ class Handler(BaseHTTPRequestHandler):
             self.respond(413, "請求本文大小超出允許範圍")
             return
         body = self.rfile.read(size)
-        if not valid_signature(body, self.headers.get("x-line-signature", "")):
+        if not valid_signature(body, self.headers.get("x-line-signature", ""), channels.credentials()[1] if channel else None):
             self.respond(401, "簽章無效")
             return
         try:
             payload = json.loads(body)
             events = payload["events"]
+            if channel and payload.get('destination') != channel['bot_user_id']:
+                self.respond(401, "Webhook OA 身分不符")
+                return
             if not isinstance(events, list):
                 raise ValueError("events 必須為陣列")
         except (UnicodeDecodeError, json.JSONDecodeError, KeyError, TypeError, ValueError):
@@ -196,12 +209,14 @@ class Handler(BaseHTTPRequestHandler):
             return
         try:
             replies = save_events(events)
+            if channel:
+                channels.seen(channel["channel_id"])
         except sqlite3.Error:
             self.respond(503, "資料庫無法使用")
             return
         self.respond(200, "ok")
         # Acknowledge persisted subscriptions before calling LINE; redelivery won't toggle or reply twice.
-        if replies and os.environ.get("LINE_CHANNEL_ACCESS_TOKEN"):
+        if replies and channels.access_token():
             import line_api
             for token, text in replies:
                 try:

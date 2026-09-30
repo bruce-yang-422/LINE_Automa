@@ -49,9 +49,16 @@ async function contrast(page,label){
     browser=await chromium.launch({channel:'chrome',headless:true});
     const theme=process.env.WORKSPACE_THEME||'light';
     const page=await browser.newPage({viewport:{width:1440,height:1000},reducedMotion:'reduce',colorScheme:theme}),results=[];
+    await page.goto(`http://127.0.0.1:${access.port}/login`);
+    results.push(await contrast(page,'website login'));
+    await page.locator('#login-submit').hover();results.push(await contrast(page,'login primary hover'));
+    await page.locator('#login-help summary').click();results.push(await contrast(page,'login recovery help'));
+    await page.setViewportSize({width:390,height:844});results.push(await contrast(page,'mobile website login'));
+    assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+    await page.setViewportSize({width:1440,height:1000});
     await page.goto(`http://127.0.0.1:${access.port}/#${access.token}`);
     await page.getByRole('heading',{name:'今天的工作，一目了然'}).waitFor();
-    for(const view of ['overview','reports','send','contacts','subscriptions','history','organizations','settings']){
+    for(const view of ['overview','reports','send','schedule','contacts','subscriptions','history','organizations','settings']){
       await page.locator(`nav [data-view="${view}"]`).click();
       results.push(await contrast(page,view));
       const primary=page.locator('.btn.primary:visible').first();
@@ -60,6 +67,31 @@ async function contrast(page,label){
         await primary.focus();results.push(await contrast(page,view+' focus'));await primary.blur();
       }
     }
+    await page.locator('nav [data-view="reports"]').click();
+    await page.locator('[data-action="report-detail"]').first().click();
+    results.push(await contrast(page,'report inspector'));
+    await page.screenshot({path:path.join(dir,`reports-${theme}-desktop.png`),fullPage:true,animations:'disabled'});
+    await page.locator('[data-action="report-layout"][data-id="grid"]').click();
+    results.push(await contrast(page,'report cards'));
+    await page.locator('nav [data-view="contacts"]').click();
+    await page.locator('[data-action="contact-detail"]').first().click();
+    results.push(await contrast(page,'recipient inspector'));
+    await page.locator('#command-open').click();
+    results.push(await contrast(page,'command palette'));
+    await page.locator('#command-search').fill('同事');
+    await page.locator('.command-result').first().hover();
+    results.push(await contrast(page,'command results hover'));
+    await page.keyboard.press('ArrowDown');
+    results.push(await contrast(page,'command results focus'));
+    await page.keyboard.press('Escape');
+    await page.setViewportSize({width:390,height:844});
+    results.push(await contrast(page,'mobile recipient inspector'));
+    assert(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth));
+    await page.screenshot({path:path.join(dir,`recipient-${theme}-mobile.png`),fullPage:true,animations:'disabled'});
+    await page.locator('#command-open').click();
+    results.push(await contrast(page,'mobile command palette'));
+    await page.keyboard.press('Escape');
+    await page.setViewportSize({width:1440,height:1000});
     await page.locator('nav [data-view="organizations"]').click();
     for(const tab of ['scopes','modules','people']){
       await page.locator(`[data-action="mg-tab"][data-id="${tab}"]`).click();results.push(await contrast(page,'organization '+tab));

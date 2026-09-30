@@ -2,7 +2,8 @@
   "name": "line-automation-workspace",
   "private": true,
   "scripts": {
-    "build:css": "tailwindcss -i ./styles/management.css -o ./line-oa-archive/web/management.css --minify"
+    "build:css": "tailwindcss -i ./styles/app.css -o ./line-oa-archive/web/app.css --minify",
+    "build:management": "tailwindcss -i ./styles/management.css -o ./line-oa-archive/web/management.css --minify"
   },
   "devDependencies": {
     "@tailwindcss/cli": "4.3.3",

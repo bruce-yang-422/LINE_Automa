@@ -6,10 +6,11 @@ import ssl
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 import truststore
+import channels
 
 
-def request(path, payload=None):
-    token = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN", "").strip()
+def request(path, payload=None, *, token=None):
+    token = channels.access_token() if token is None else token
     if not token:
         raise ValueError("尚未設定 Channel access token。")
     data = None if payload is None else json.dumps(payload).encode()

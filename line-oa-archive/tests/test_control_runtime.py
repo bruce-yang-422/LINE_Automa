@@ -28,7 +28,7 @@ class ManagedRuntimeTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(prefix="line-runtime-test-")
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        for name in ("control_runtime.py", "app.py", "schema.sql", "recipients.py", "admin_server.py", "line_api.py", "send_image.py", "remote_auth.py", "reports.py", "composer.py"):
+        for name in ("control_runtime.py", "app.py", "schema.sql", "recipients.py", "admin_server.py", "line_api.py", "send_image.py", "remote_auth.py", "reports.py", "composer.py", "site_auth.py", "channels.py"):
             shutil.copy2(ROOT / name, self.root / name)
         self.environment = os.environ.copy()
         self.environment.pop("LINE_CHANNEL_SECRET", None)

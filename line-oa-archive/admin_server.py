@@ -16,10 +16,12 @@ from uuid import UUID, uuid4
 from urllib.parse import urlsplit
 
 import app
+import channels
 from control_runtime import load_settings
 import line_api
 import recipients
 import reports
+import site_auth
 from remote_auth import RemoteAccess
 from send_image import publish_image, verify_public_image, send_push
 import composer
@@ -50,13 +52,13 @@ def select_contacts(conn, audience, ids):
 def job_status(job_id=None, user=None):
     with app.database_connection() as conn:
         conn.row_factory = sqlite3.Row
-        scope_sql = " AND company=? AND company<>''" if user and user['role'] != 'administrator' else ''
+        scope_sql = " AND company=? AND company<>''" if user and user['role'] != 'administrator' and not channels.personal_owner(user) else ''
         scope_args = (user['company'],) if scope_sql else ()
         if job_id:
-            jobs = conn.execute("SELECT * FROM send_jobs WHERE job_id=?" + scope_sql, (job_id,) + scope_args).fetchall()
+            jobs = conn.execute('SELECT * FROM send_jobs WHERE send_jobs.channel_id=current_channel() AND job_id=?' + scope_sql, (job_id,) + scope_args).fetchall()
         else:
-            jobs = conn.execute("SELECT * FROM send_jobs WHERE status='scheduled'" + scope_sql + " ORDER BY scheduled_at", scope_args).fetchall()
-            jobs += conn.execute("SELECT * FROM send_jobs WHERE status<>'scheduled'" + scope_sql + " ORDER BY created_at DESC LIMIT 20", scope_args).fetchall()
+            jobs = conn.execute("SELECT * FROM send_jobs WHERE send_jobs.channel_id=current_channel() AND status='scheduled'" + scope_sql + " ORDER BY scheduled_at", scope_args).fetchall()
+            jobs += conn.execute("SELECT * FROM send_jobs WHERE send_jobs.channel_id=current_channel() AND status<>'scheduled'" + scope_sql + " ORDER BY created_at DESC LIMIT 20", scope_args).fetchall()
         result = []
         for row in jobs:
             item = dict(row)
@@ -122,10 +124,10 @@ class Dispatcher:
         job_id = str(UUID(str(job_id)))
         user = reports.actor_user(actor, organization)
         with self.lock, app.database_connection() as conn:
-            job = conn.execute('SELECT company,actor FROM send_jobs WHERE job_id=?', (job_id,)).fetchone()
+            job = conn.execute('SELECT company,actor FROM send_jobs WHERE send_jobs.channel_id=current_channel() AND job_id=?', (job_id,)).fetchone()
             if not job or not reports.same_company(user, job[0]) or (user['role']=='sender' and job[1]!=actor):
                 raise ValueError('找不到可操作的預約。')
-            changed = conn.execute("UPDATE send_jobs SET status='cancelled' WHERE job_id=? AND status='scheduled'", (job_id,)).rowcount
+            changed = conn.execute("UPDATE send_jobs SET status='cancelled' WHERE send_jobs.channel_id=current_channel() AND job_id=? AND status='scheduled'", (job_id,)).rowcount
             if not changed:
                 raise ValueError("此預約已開始處理或已取消，請重新整理紀錄。")
             conn.execute("UPDATE send_deliveries SET status='cancelled' WHERE job_id=? AND status='pending'", (job_id,))
@@ -168,9 +170,8 @@ class Dispatcher:
                 raise ValueError("文字訊息請填入 1 至 5000 字（表情符號可能佔兩字）。")
             if message_text and (payload.get("report_id") or payload.get("image_path") or payload.get("audience") != "selected"):
                 raise ValueError("文字訊息請使用手動選擇對象，且不能混合報告來源。")
-            load_settings()
-            if not os.environ.get("LINE_CHANNEL_ACCESS_TOKEN", "").strip():
-                raise ValueError("請先在 .env 填入 Channel access token。")
+            if not channels.access_token():
+                raise ValueError("請先設定 LINE OA 憑證。")
             audience = payload.get("audience")
             if user['role'] != 'administrator' and (audience != 'selected' or payload.get('image_path')):
                 raise ValueError('組織管理員請選擇已授權報告或文字訊息，以及本組織的對象。')
@@ -211,7 +212,7 @@ class Dispatcher:
             if prepared and user['role'] == 'administrator':
                 company = next((item['asset']['company'] for item in prepared['items'] if item['asset']['company']), '')
             with app.database_connection() as conn:
-                conn.execute("INSERT INTO send_jobs (job_id,audience,image_path,image_url,actor,report_title,report_id,scheduled_at,message_text,status,company,messages_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                conn.execute('INSERT INTO send_jobs (channel_id,job_id,audience,image_path,image_url,actor,report_title,report_id,scheduled_at,message_text,status,company,messages_json) VALUES (current_channel(),?,?,?,?,?,?,?,?,?,?,?,?)',
                              (job_id, audience, str(source), url, actor, report_title, report_id, scheduled_at, message_text, 'scheduled' if scheduled_at else 'queued', company, json.dumps(messages, ensure_ascii=False)))
                 conn.executemany("INSERT INTO send_deliveries (job_id,recipient_id,label,retry_key) VALUES (?,?,?,?)",
                                  [(job_id, r["recipient_id"], contact_label(r), str(uuid4())) for r in selected])
@@ -221,23 +222,33 @@ class Dispatcher:
             return job_status(job_id)[0]
 
     def run(self, job_id):
+        # Workers never inherit an HTTP thread's OA; derive it from the persisted job.
+        with app.database_connection() as conn:
+            row = conn.execute('SELECT channel_id FROM send_jobs WHERE job_id=?', (job_id,)).fetchone()
+        if row:
+            with channels.use(row[0]):
+                self.run_channel(job_id)
+
+    def run_channel(self, job_id):
         try:
+            if not channels.access_token():
+                raise ValueError('OA 尚未設定。')
             with app.database_connection() as conn:
                 conn.row_factory = sqlite3.Row
-                job = conn.execute("SELECT * FROM send_jobs WHERE job_id=?", (job_id,)).fetchone()
+                job = conn.execute('SELECT * FROM send_jobs WHERE send_jobs.channel_id=current_channel() AND job_id=?', (job_id,)).fetchone()
                 rows = conn.execute("SELECT * FROM send_deliveries WHERE job_id=?", (job_id,)).fetchall()
-                claimed = conn.execute("UPDATE send_jobs SET status='running' WHERE job_id=? AND status='queued'", (job_id,)).rowcount
+                claimed = conn.execute("UPDATE send_jobs SET status='running' WHERE send_jobs.channel_id=current_channel() AND job_id=? AND status='queued'", (job_id,)).rowcount
                 if not claimed:
                     return
             if job['scheduled_at'] and (datetime.now(timezone.utc) - datetime.fromisoformat(job['scheduled_at'])).total_seconds() > 600:
                 with app.database_connection() as conn:
-                    conn.execute("UPDATE send_jobs SET status='missed',error='等待發送逾期，未補發。' WHERE job_id=?", (job_id,))
+                    conn.execute("UPDATE send_jobs SET status='missed',error='等待發送逾期，未補發。' WHERE send_jobs.channel_id=current_channel() AND job_id=?", (job_id,))
                     conn.execute("UPDATE send_deliveries SET status='cancelled' WHERE job_id=?", (job_id,))
                 return
             for row in rows:
                 recipient_id = row["recipient_id"]
                 with app.database_connection() as conn:
-                    current = conn.execute("SELECT active,weather_subscribed FROM recipients WHERE recipient_id=?", (recipient_id,)).fetchone()
+                    current = conn.execute('SELECT active,weather_subscribed FROM recipients WHERE recipients.channel_id=current_channel() AND recipient_id=?', (recipient_id,)).fetchone()
                     skip = (self.closing.is_set() or not current or not current[0] or
                             (job["audience"] == "subscribers" and not current[1]))
                     if job['company']:
@@ -245,7 +256,7 @@ class Dispatcher:
                         if not org or not org['active'] or not org['messaging_enabled'] or (job['report_id'] and job['report_id']!='weather' and not org['reports_enabled']):
                             skip=True
                         if job['messages_json'] != '[]':
-                            contact = conn.execute('SELECT company FROM recipients WHERE recipient_id=?', (recipient_id,)).fetchone()
+                            contact = conn.execute('SELECT company FROM recipients WHERE recipients.channel_id=current_channel() AND recipient_id=?', (recipient_id,)).fetchone()
                             if not contact or contact[0] != job['company']:
                                 skip = True
                     if job["report_id"]:
@@ -257,11 +268,11 @@ class Dispatcher:
                         except ValueError:
                             skip = True
                     if job["actor"] and job["actor"] != "本機管理員":
-                        actor = reports.account(job["actor"],job['company'])
+                        actor = reports.actor_user(job["actor"],job['company'])
                         if not reports.operator(actor) or not reports.module_enabled(actor,'messaging'):
                             skip = True
                         elif actor['role'] != 'administrator':
-                            contact = conn.execute('SELECT * FROM recipients WHERE recipient_id=?', (recipient_id,)).fetchone()
+                            contact = conn.execute('SELECT * FROM recipients WHERE recipients.channel_id=current_channel() AND recipient_id=?', (recipient_id,)).fetchone()
                             if (not reports.same_company(actor, job['company']) or not contact or not reports.allowed_contact(actor, dict(contact))
                                     or (job['report_id'] and (not source or not reports.can_view(source, actor)))):
                                 skip = True
@@ -274,7 +285,7 @@ class Dispatcher:
                     extra = {"text": job["message_text"]} if job["message_text"] else {}
                     if job['messages_json'] != '[]':
                         extra = {'messages': json.loads(job['messages_json'])}
-                    request_id = send_push(os.environ.get("LINE_CHANNEL_ACCESS_TOKEN", ""), recipient_id,
+                    request_id = send_push(channels.access_token(), recipient_id,
                                            job["image_url"], retry_key=row["retry_key"], **extra)
                 except ValueError as exc:
                     error = str(exc)
@@ -283,12 +294,12 @@ class Dispatcher:
                     conn.execute("UPDATE send_deliveries SET status=?,request_id=?,error=? WHERE job_id=? AND recipient_id=?",
                                  (status, request_id, error, job_id, recipient_id))
             with app.database_connection() as conn:
-                conn.execute("UPDATE send_jobs SET status='finished' WHERE job_id=?", (job_id,))
+                conn.execute("UPDATE send_jobs SET status='finished' WHERE send_jobs.channel_id=current_channel() AND job_id=?", (job_id,))
         except Exception:
             with app.database_connection() as conn:
                 conn.execute("UPDATE send_deliveries SET status='unknown' WHERE job_id=? AND status='sending'", (job_id,))
                 conn.execute("UPDATE send_deliveries SET status='cancelled' WHERE job_id=? AND status='pending'", (job_id,))
-                conn.execute("UPDATE send_jobs SET status='interrupted',error='發送中斷，請確認結果後再操作。' WHERE job_id=?", (job_id,))
+                conn.execute("UPDATE send_jobs SET status='interrupted',error='發送中斷，請確認結果後再操作。' WHERE send_jobs.channel_id=current_channel() AND job_id=?", (job_id,))
 
     def close(self):
         self.closing.set()
@@ -313,20 +324,26 @@ class AdminHandler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
+        if getattr(self, 'response_cookie', None):
+            self.send_header('Set-Cookie', self.response_cookie)
+            self.response_cookie = None
         self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'")
         self.end_headers()
         self.wfile.write(body)
 
     def authorized(self, require_token=True):
+        self.auth_method = 'local'
         self.identity = "本機管理員"
         self.user = {"email": self.identity, "display_name": "本機管理員", "role": "administrator", "company": "", "department": ""}
-        for name in ("Host", "Origin", "Authorization", "Cf-Access-Jwt-Assertion", "X-Forwarded-Proto", "X-Workspace-View-As", "X-Workspace-Organization", "X-Workspace-Preview-Organization"):
+        for name in ("Host", "Origin", "Authorization", "Cookie", "X-CSRF-Token", "Cf-Access-Jwt-Assertion", "X-Forwarded-Proto", "X-Workspace-View-As", "X-Workspace-Organization", "X-Workspace-Preview-Organization"):
             if len(self.headers.get_all(name, [])) > 1:
                 self.respond(403, {"error": "不接受重複的驗證標頭。"})
                 return False
         expected_host = f"127.0.0.1:{self.server.server_port}"
         origin = self.headers.get("Origin")
         remote = self.server.remote_access
+        if self.server.auth_mode == 'password' and remote.host and self.headers.get('Host','').lower() == remote.host:
+            return site_auth.authorize(self)
         if remote.enabled and self.headers.get("Host", "").lower() == remote.host:
             if (self.headers.get("X-Forwarded-Proto") != "https"
                     or (origin is not None and origin != "https://" + remote.host)
@@ -334,6 +351,7 @@ class AdminHandler(BaseHTTPRequestHandler):
                 self.respond(403, {"error": "請透過 HTTPS 管理網址操作。"})
                 return False
             try:
+                self.auth_method = 'cloudflare'
                 if self.server.workspace_ready:
                     allowed = {u["email"] for u in reports.users() if u["active"]}
                     self.identity = remote.verify(self.headers.get("Cf-Access-Jwt-Assertion", ""), allowed_emails=allowed)
@@ -351,6 +369,8 @@ class AdminHandler(BaseHTTPRequestHandler):
             self.respond(403, {"error": "請從本機控制台或已設定的 Cloudflare Access 管理入口登入。"})
             return False
         if require_token and not hmac.compare_digest(self.headers.get("Authorization", ""), "Bearer " + self.server.token):
+            if self.server.auth_mode == 'password' or site_auth.cookie_token(self, False):
+                return site_auth.authorize(self)
             self.respond(401, {"error": "管理連線已失效，請從控制台重新開啟。"})
             return False
         return self.apply_view() if require_token else True
@@ -381,6 +401,36 @@ class AdminHandler(BaseHTTPRequestHandler):
         self.identity, self.user, self.preview = user["email"], user, True
         return True
 
+    def select_line_channel(self):
+        if not self.server.workspace_ready:
+            return True
+        ids = self.headers.get_all('X-Line-Channel', [])
+        if len(ids) > 1:
+            self.respond(400, {'error': 'OA 標頭不能重複。'})
+            return False
+        channel_id = ids[0] if ids else ''
+        globals_ = {'/api/session', '/api/organizations', '/api/view-options', '/api/settings',
+                    '/api/accounts/save', '/api/organizations/save', '/api/memberships/save'}
+        registry = self.path.startswith('/api/channels')
+        if registry:
+            return True
+        try:
+            if channel_id:
+                row = channels.authorize(channel_id, self.user)
+                if row['org_id'] and self.user['role'] != 'administrator':
+                    self.user = reports.account(self.identity, row['org_id'])
+                    if not self.user:
+                        raise ValueError('組織成員資格已失效。')
+                elif not row['org_id'] and self.user['role'] != 'administrator':
+                    self.user = {**self.user, 'company': ''}
+                channels._current.set(channel_id)
+            elif channels.configured() and self.path not in globals_:
+                raise ValueError('請先選擇工作區與 LINE OA。')
+        except ValueError as exc:
+            self.respond(403, {'error': str(exc)})
+            return False
+        return True
+
     def admin_only(self):
         if not reports.manager(self.user):
             self.respond(403, {"error": "此功能僅供管理員使用。"})
@@ -396,10 +446,20 @@ class AdminHandler(BaseHTTPRequestHandler):
         return result
 
     def do_GET(self):
+        with channels.use(''):
+            self.get_request()
+
+    def get_request(self):
         self.path = urlsplit(self.path).path
+        if site_auth.handle_get(self):
+            return
         files = {"/": (app.BASE_DIR.parent / "index.html", "text/html; charset=utf-8"),
                  "/index.html": (app.BASE_DIR.parent / "index.html", "text/html; charset=utf-8"),
                  "/admin.js": (app.BASE_DIR / "web" / "admin.js", "text/javascript; charset=utf-8"),
+                 "/app.css": (app.BASE_DIR / "web" / "app.css", "text/css; charset=utf-8"),
+                 "/channels.js": (app.BASE_DIR / "web" / "channels.js", "text/javascript; charset=utf-8"),
+                 "/workspace.js": (app.BASE_DIR / "web" / "workspace.js", "text/javascript; charset=utf-8"),
+                 "/account-security.js": (app.BASE_DIR / "web" / "account-security.js", "text/javascript; charset=utf-8"),
                  "/composer.js": (app.BASE_DIR / "web" / "composer.js", "text/javascript; charset=utf-8"),
                  "/workspace-theme.css": (app.BASE_DIR / "web" / "workspace-theme.css", "text/css; charset=utf-8"),
                  "/management.js": (app.BASE_DIR / "web" / "management.js", "text/javascript; charset=utf-8"),
@@ -414,7 +474,9 @@ class AdminHandler(BaseHTTPRequestHandler):
         files['/favicon.ico'] = (brand / 'line-automation-logo-light.ico', 'image/x-icon')
         if not self.authorized(require_token=self.path not in files):
             return
-        employee_routes = {"/api/session", "/api/reports", "/api/organizations"}
+        if self.path not in files and not self.select_line_channel():
+            return
+        employee_routes = {"/api/channels", "/api/session", "/api/reports", "/api/organizations"}
         if self.path not in files and self.path not in employee_routes and not re.fullmatch(r"/api/reports/(weather|[0-9a-f]{32})", self.path):
             if self.user['role']=='sender' and self.path in {'/api/view-options','/api/settings'}:
                 self.respond(403, {'error':'此功能僅供管理員使用。'})
@@ -425,9 +487,11 @@ class AdminHandler(BaseHTTPRequestHandler):
         if self.path in files:
             path, mime = files[self.path]
             self.respond(200, path.read_bytes(), mime)
+        elif self.path == '/api/channels':
+            self.respond(200, channels.catalogue(self.user))
         elif self.path == "/api/session":
             self.respond(200, {"identity": self.identity, "user": self.user, "role": self.user["role"],
-                               "principal": self.principal, "preview": self.preview,
+                               "principal": self.principal, "preview": self.preview, "auth": site_auth.status(self),
                                "memberships": [m for m in reports.memberships(self.identity) if m['active'] and m['org_active'] and m['role'] in {'company_admin','sender'}] if not self.preview and self.server.workspace_ready else [],
                                "modules": {m:reports.module_enabled(self.user,m) for m in ('reports','messaging','weather')}})
         elif self.path == '/api/organizations':
@@ -451,7 +515,7 @@ class AdminHandler(BaseHTTPRequestHandler):
                                "admin_host": self.server.remote_access.host,
                                "users": reports.scoped_users(self.user),
                                "report_sources": reports.sources() if self.user['role'] == 'administrator' else [],
-                               "line_configured": bool(os.environ.get("LINE_CHANNEL_ACCESS_TOKEN")),
+                               "line_configured": bool(channels.get()) if channels.configured() else bool(os.environ.get("LINE_CHANNEL_ACCESS_TOKEN")),
                                "public_base": os.environ.get("PUBLIC_BASE_URL", ""),
                                "dispatch_scopes": reports.dispatch_scopes() if self.user['role']=='administrator' else [],
                                "sender_grants": [{"email":m['email'],"company":m['org_id'],**reports.grant({'email':m['email'],'company':m['org_id']})} for m in reports.memberships() if m['role']=='sender'] if self.user['role']=='administrator' else [],
@@ -467,12 +531,20 @@ class AdminHandler(BaseHTTPRequestHandler):
             self.respond(404, {"error": "找不到頁面。"})
 
     def do_POST(self):
+        with channels.use(''):
+            self.post_request()
+
+    def post_request(self):
+        if site_auth.handle_post(self):
+            return
         if not self.authorized():
+            return
+        if not self.select_line_channel():
             return
         if not reports.operator(self.user):
             self.respond(403, {'error':'沒有發送操作權限。'})
             return
-        if self.user['role']=='sender' and self.path not in {'/api/send','/api/jobs/cancel','/api/assets/upload'}:
+        if self.user['role']=='sender' and self.path not in {'/api/send','/api/jobs/cancel','/api/assets/upload','/api/channels/save','/api/channels/verify','/api/channels/active'}:
             self.respond(403, {'error':'發送人員不能修改收件者分類、來源或帳號授權。'})
             return
         if self.preview:
@@ -489,7 +561,13 @@ class AdminHandler(BaseHTTPRequestHandler):
             payload = json.loads(self.rfile.read(size))
             if not isinstance(payload, dict):
                 raise ValueError("請求格式不正確。")
-            if self.path == '/api/assets/upload':
+            if self.path == '/api/channels/save':
+                self.respond(200, channels.save(payload, self.user))
+            elif self.path == '/api/channels/verify':
+                self.respond(200, channels.verify(payload.get('channel_id'), self.user))
+            elif self.path == '/api/channels/active':
+                self.respond(200, channels.set_active(payload, self.user))
+            elif self.path == '/api/assets/upload':
                 if not reports.module_enabled(self.user, 'messaging'):
                     raise ValueError('此組織尚未授權訊息發送模組。')
                 self.respond(201, composer.upload(payload, self.user))
@@ -506,7 +584,7 @@ class AdminHandler(BaseHTTPRequestHandler):
             elif self.path == "/api/contact":
                 with app.database_connection() as conn:
                     conn.execute('BEGIN IMMEDIATE')
-                    current = conn.execute('SELECT company,weather_subscribed FROM recipients WHERE recipient_id=?', (payload.get('id'),)).fetchone()
+                    current = conn.execute('SELECT company,weather_subscribed FROM recipients WHERE recipients.channel_id=current_channel() AND recipient_id=?', (payload.get('id'),)).fetchone()
                     if not current or not reports.same_company(self.user, current[0]):
                         raise ValueError('找不到可管理的收件者。')
                     if self.user['role'] != 'administrator':
@@ -518,12 +596,14 @@ class AdminHandler(BaseHTTPRequestHandler):
                     if department is not None:
                         if not isinstance(department, str) or len(department.strip()) > 60:
                             raise ValueError("部門名稱請限制在 60 字以內。")
-                        conn.execute("UPDATE recipients SET department=? WHERE recipient_id=?", (department.strip(), payload["id"]))
+                        conn.execute('UPDATE recipients SET department=? WHERE recipients.channel_id=current_channel() AND recipient_id=?', (department.strip(), payload["id"]))
                     company = payload.get("company")
+                    if company is not None:
+                        channels.enforce_company(company)
                     if company is not None:
                         if not isinstance(company, str) or len(company.strip()) > 60:
                             raise ValueError("組織名稱請限制在 60 字以內。")
-                        conn.execute("UPDATE recipients SET company=? WHERE recipient_id=?", (company.strip(), payload["id"]))
+                        conn.execute('UPDATE recipients SET company=? WHERE recipients.channel_id=current_channel() AND recipient_id=?', (company.strip(), payload["id"]))
                     reports.audit(conn, self.identity, "contact.update", payload["id"], "更新備註與分類",self.user['company'])
                 self.respond(200, {"ok": True})
             elif self.path == "/api/profiles":
@@ -577,6 +657,10 @@ class AdminServer(ThreadingHTTPServer):
         super().__init__(("127.0.0.1", port), AdminHandler)
         self.token = secrets.token_urlsafe(32)
         self.remote_access = RemoteAccess()
+        self.auth_mode = os.environ.get('ADMIN_AUTH_MODE', 'cloudflare').strip().lower()
+        if self.auth_mode not in {'cloudflare', 'password'}:
+            self.server_close()
+            raise ValueError('ADMIN_AUTH_MODE 必須為 cloudflare 或 password。')
         self.dispatcher = None
         self.workspace_ready = False
 

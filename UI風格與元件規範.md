@@ -6,9 +6,13 @@
 
 以清楚的內容層級、平台系統字體、規律留白、圓角控制項與克制的半透明導覽呈現工作內容。參考 [Apple Human Interface Guidelines](https://developer.apple.com/design/human-interface-guidelines/) 的設計方向；這是跨平台網站，不宣稱為原生 Apple 應用程式或原生 Liquid Glass 實作。
 
+## 全站改版首版
+
+已實作全站「Tailwind CSS＋Apple iOS／macOS UI／UX」首版並串接既有功能；桌面以側欄、工具列及分欄詳情為主，手機以單欄、分組設定與底部短表單為主。詳細方向見 [SaaS平台與全站Tailwind改版規劃.md](SaaS平台與全站Tailwind改版規劃.md) 第 5 節。站內登入已接續套用同一主題；多 OA 及審核仍屬後續功能。
+
 ## 已套用的介面
 
-組織與人員管理已採 Tailwind CSS 4 主題；`styles/management.css` 使用 `@theme inline` 對應既有色票，透過 CLI 編譯，元件規則限定於管理頁與表單，不引入 Preflight。以組織選取、分類工作區、搜尋、角色說明及選填進階欄位減少初次設定負擔。
+全站入口 `styles/app.css` 整合既有基礎元件與 `styles/management.css`，後者使用 `@theme inline` 對應既有色票；透過 CLI 編譯為 `web/app.css`，不引入 Preflight。組織管理保留選取、分類工作區、搜尋、角色說明及選填進階欄位。
 
 | 範圍 | 桌面 | 手機 |
 | --- | --- | --- |
@@ -17,10 +21,13 @@
 | 選項 | 分段控制、圓角按鈕、明確選取及焦點狀態 | 主要按鈕至少 44px 高，選項可換行 |
 | 表單 | 置中的圓角對話框 | 底部彈出表單、安全區留白、固定標題與關閉按鈕 |
 | 訊息編輯 | 格式卡片、側邊預覽、可點選版型與圖片區塊 | 預覽與控制項依序排列，保留模擬點擊操作 |
+| 報告與收件者 | 清單／卡片搭配側邊詳情 | 窄螢幕查看詳情時隱藏清單，關閉後返回原頁與焦點 |
+| 工作台搜尋 | Ctrl／⌘ K、方向鍵與 Enter 選擇 | 放大鏡入口，輸入後點選結果；只含已載入授權資料 |
+| 排程 | 單次預約、最近載入紀錄、異常與取消確認 | 同一流程以單欄呈現 |
 
 系統字體依裝置採 `-apple-system`、`BlinkMacSystemFont`、Segoe UI Variable／Segoe UI、Microsoft JhengHei 等回退；沒有下載或散布 Apple 字型或 SF Symbols。
 
-桌面側欄 248px，中型螢幕 220px；850px 以下使用抽屜。手機對話框在 580px 以下改為底部表單。新增 `workspace-theme.css` 統一樣式，`admin.css` 保留原有元件與基礎規則。
+桌面側欄 248px；850px 以下使用 272px 抽屜。1200px 以下詳情改為單欄；手機表單在 580px 以下改為底部表單，搜尋維持上方對話框。`admin.css`、`workspace-theme.css` 作為編譯來源保留，頁面統一載入 `app.css`。
 
 ## 品牌與可讀性
 

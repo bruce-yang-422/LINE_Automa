@@ -11,6 +11,7 @@ import warnings
 
 from PIL import Image, ImageOps, UnidentifiedImageError
 import app
+import channels
 import reports
 
 MAX_UPLOAD = 8 * 1024 * 1024
@@ -38,6 +39,7 @@ def upload(payload,user):
     if not isinstance(encoded,str) or len(encoded)>((MAX_UPLOAD+2)//3)*4 or not isinstance(name,str) or len(name)>240:
         raise ValueError('請選擇 8 MB 以內的 JPG 或 PNG。')
     company=payload.get('company','') if user['role']=='administrator' else user['company']
+    channels.enforce_company(company)
     if not isinstance(company,str) or (company and not any(o['org_id']==company and o['active'] for o in reports.organizations())):
         raise ValueError('請選擇有效組織。')
     try:
@@ -63,7 +65,7 @@ def upload(payload,user):
     safe_name=name.replace('\\','/').rsplit('/',1)[-1] or '圖片'
     try:
         with app.database_connection() as conn:
-            conn.execute('INSERT INTO upload_assets(asset_id,name,company,owner) VALUES (?,?,?,?)',(asset_id,safe_name,company,user['email']))
+            conn.execute('INSERT INTO upload_assets(channel_id,asset_id,name,company,owner) VALUES (current_channel(),?,?,?,?)',(asset_id,safe_name,company,user['email']))
     except Exception:
         path.unlink(missing_ok=True);raise
     return {'asset_id':asset_id,'name':safe_name,'company':company,'size':len(data),'width':clean.width,'height':clean.height,
@@ -75,7 +77,7 @@ def asset(asset_id,user):
         raise ValueError('圖片識別資料不正確。')
     with app.database_connection() as conn:
         conn.row_factory=sqlite3.Row
-        row=conn.execute('SELECT * FROM upload_assets WHERE asset_id=?',(asset_id,)).fetchone()
+        row=conn.execute('SELECT * FROM upload_assets WHERE upload_assets.channel_id=current_channel() AND asset_id=?',(asset_id,)).fetchone()
     if not row or not reports.same_company(user,row['company']) or (user['role']=='sender' and row['owner']!=user['email']):
         raise ValueError('找不到可使用的圖片。')
     path=app.BASE_DIR/'data'/'uploads'/(asset_id+'.png')

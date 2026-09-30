@@ -68,7 +68,7 @@ class RecipientTests(unittest.TestCase):
         self.assertTrue(self.contact()["active"])
         self.assertFalse(self.contact()["weather_subscribed"])
 
-    def test_migration_does_not_reset_subscription_or_alias(self):
+    def test_restart_preserves_subscription_and_does_not_restore_deleted_contact(self):
         app.save_events([self.event()])
         with app.database_connection() as conn:
             recipients.update_contact(conn, USER, "測試同事", True)
@@ -78,8 +78,8 @@ class RecipientTests(unittest.TestCase):
         with app.database_connection() as conn:
             conn.execute("DELETE FROM recipients")
         app.initialize_database()
-        self.assertEqual(self.contact()["kind"], "user")
-        self.assertFalse(self.contact()["weather_subscribed"])
+        with app.database_connection() as conn:
+            self.assertEqual(recipients.list_contacts(conn), [])
 
     def test_batch_is_idempotent_and_scoped_to_selected_contacts(self):
         app.save_events([self.event(), self.event(USER2), self.event(GROUP)])

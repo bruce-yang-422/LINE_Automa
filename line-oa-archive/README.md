@@ -1,6 +1,8 @@
 # LINE OA 對話紀錄：本機 SQLite
 
-本專案供內部使用，由本機 Python 接收 LINE 官方帳號（OA）的 Webhook，將新訊息儲存至 SQLite。Webhook 與資料庫僅使用 Python 標準函式庫；圖片推送使用 `truststore` 驗證 HTTPS，管理服務另使用 `PyJWT[crypto]` 驗證 Cloudflare Access 登入。透過根目錄安裝器安裝相依套件。遠端管理設定請見[根目錄 README](../README.md#在外面登入管理頁)。不需要資料庫帳號、密碼、Docker 或獨立資料庫服務。
+管理工作台已整合全站 Apple 風格與 Tailwind 主題，提供報告／收件者詳情、授權資料搜尋及單次預約管理。樣式來源位於根目錄 `styles/app.css`，執行 `npm run build:css` 產生 `web/app.css`；部署需包含編譯檔。操作與首版範圍見[根目錄 README](../README.md)。
+
+本專案供內部使用，由本機 Python 接收 LINE 官方帳號（OA）的 Webhook，將新訊息儲存至 SQLite。Webhook 與資料庫僅使用 Python 標準函式庫；圖片推送使用 `truststore` 驗證 HTTPS，管理服務新增站內帳密及 Session 登入，舊 Cloudflare Access 模式仍使用 `PyJWT[crypto]`。切換步驟見[網站登入與切換](../網站登入與切換.md)。透過根目錄安裝器安裝相依套件。遠端管理設定請見[根目錄 README](../README.md#在外面登入管理頁)。不需要資料庫帳號、密碼、Docker 或獨立資料庫服務。
 
 ```text
 LINE OA → https://reports.stack-base.com/webhook
@@ -13,8 +15,8 @@ LINE OA → https://reports.stack-base.com/webhook
 - 記錄使用者與 OA 的一對一對話，以及 OA 已加入的群組、多人聊天室的新訊息；不包含其他使用者之間的私人聊天或過去的聊天紀錄。
 - 儲存文字、訊息類型、識別碼與時間；時間採用 UTC ISO 8601 格式。
 - 不下載圖片、檔案、貼圖、音訊或影片內容，不記錄 OA 主動發送的訊息，也不追蹤訊息編輯。
-- 相同訊息 ID 不重複寫入。收回訊息時清除文字並保留收回標記；即使收回事件先到達，後續重送的原始訊息也不會恢復文字。
-- 已實作接收與紀錄、PNG 圖片服務與個人／群組手動推送。發送步驟見 [天氣圖片測試](../README.md#傳送天氣圖片到-line)；公告、表單提醒與每日排程仍未實作。
+- 同一 OA 內相同訊息 ID 不重複寫入；不同 OA 各自保存。收回訊息時清除文字並保留收回標記；即使收回事件先到達，後續重送的原始訊息也不會恢復文字。
+- 已實作接收與紀錄、PNG 圖片服務與個人／群組手動推送。發送步驟見 [天氣圖片測試](../README.md#傳送天氣圖片到-line)；已支援文字公告及單次預約；循環排程與表單提醒尚未實作。
 - 請告知對話參與者，並依公司需求訂定資料保留與存取規則。
 
 ## Windows 啟動方式
@@ -32,6 +34,10 @@ python app.py
 ```
 
 程式會自動建立 `data/line_archive.db` 及資料表，重新啟動時保留既有紀錄。環境變數只對目前 PowerShell 工作階段與其子程序生效。
+
+`schema.sql` 是本版完整的首次建表定義，包含組織授權、排程、收件者名稱快取與網站登入欄位。啟動不再執行舊版補欄位、角色表重建或資料回填；不支援直接套用舊版資料庫備份。`IF NOT EXISTS` 用於本版重啟，不會清除現有資料。收件者或組織刪除後，不會在下次啟動時由歷史資料重新建立。
+
+全新安裝若 `ADMIN_ALLOWED_EMAILS` 留空，不會自動建立網站帳號。先從桌面控制台「收件者與發送」進入本機管理頁，在「帳號與設定」新增第一個平台管理員，再用「設定登入」完成密碼設定，依[網站登入與切換](../網站登入與切換.md)啟用遠端網站登入。LINE Token、Tunnel 與網站帳號是分開設定的。
 
 `.env.example` 供設定參考；直接執行 `app.py` 不會自動載入 `.env`。若使用此啟動方式並需要自訂資料庫位置，請在啟動前設定：
 
@@ -104,3 +110,10 @@ python -m unittest discover -s tests -v
 - [接收 LINE 訊息](https://developers.line.biz/en/docs/messaging-api/receiving-messages/)
 - [驗證 LINE Webhook 簽章](https://developers.line.biz/en/docs/messaging-api/verify-webhook-signature/)
 - [Python SQLite 模組](https://docs.python.org/3/library/sqlite3.html)
+
+
+## 多 OA 管理
+
+管理網站的「LINE OA 管理」提供個人／組織多 OA 設定、驗證、憑證更新與啟停。每個 OA 使用獨立 `/webhook/{channel_id}`；匯入的原始 OA 保留 `/webhook`。頂端選定 OA 後，報告、收件者、素材及預約皆限定該 OA。
+
+原本單 OA 安裝升級：停止 LINE 服務，執行 `python upgrade_multi_oa.py --apply`，再啟動服務並從管理頁匯入既有 OA。正常啟動不執行歷史遷移。請連同資料庫保存 `instance/line-credentials.key`，否則無法解密 OA 憑證。多 OA 命令列發送必須指定 `--oa <channel_id>`。

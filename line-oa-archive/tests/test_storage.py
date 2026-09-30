@@ -71,6 +71,15 @@ class StorageTests(unittest.TestCase):
         app.save_events([])
         self.assertEqual(self.rows(), [])
 
+    def test_restart_does_not_restore_deleted_recipients_from_archive(self):
+        app.save_events([self.message()])
+        with app.database_connection() as conn:
+            conn.execute('DELETE FROM recipients')
+        app.initialize_database()
+        self.assertEqual(len(self.rows()), 1)
+        with app.database_connection() as conn:
+            self.assertEqual(conn.execute('SELECT COUNT(*) FROM recipients').fetchone()[0], 0)
+
 
 if __name__ == "__main__":
     unittest.main()

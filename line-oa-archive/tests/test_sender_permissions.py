@@ -159,15 +159,8 @@ class SenderTests(unittest.TestCase):
                 self.assertEqual(push.call_count,0 if revoke else 1)
                 if not revoke:self.assertEqual(push.call_args.args[1],USER)
 
-    def test_legacy_role_migration_preserves_accounts_and_memberships(self):
+    def test_restart_preserves_accounts_and_memberships(self):
         before_users=reports.users();before_members=reports.memberships()
-        with app.database_connection() as conn:
-            for table in ('workspace_users','organization_members'):
-                sql=conn.execute('SELECT sql FROM sqlite_master WHERE name=?',(table,)).fetchone()[0]
-                conn.execute(sql.replace(table,table+'_old',1).replace(",'sender'",''))
-                conn.execute(f'INSERT INTO {table}_old SELECT * FROM {table}')
-                conn.execute(f'DROP TABLE {table}')
-                conn.execute(f'ALTER TABLE {table}_old RENAME TO {table}')
         app.initialize_database();app.initialize_database()
         self.assertEqual(reports.users(),before_users)
         self.assertEqual(reports.memberships(),before_members)
