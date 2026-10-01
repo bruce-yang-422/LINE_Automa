@@ -31,15 +31,15 @@ class ContactTagTests(unittest.TestCase):
 
         with app.database_connection() as conn:
             conn.execute(
-                "INSERT INTO recipients (recipient_id, kind, display_name, active) VALUES (?, 'user', 'Alice', 1)",
+                "INSERT INTO recipients (recipient_id, kind, display_name, active, company) VALUES (?, 'user', 'Alice', 1, 'A')",
                 (USER1,)
             )
             conn.execute(
-                "INSERT INTO recipients (recipient_id, kind, display_name, active) VALUES (?, 'user', 'Bob', 1)",
+                "INSERT INTO recipients (recipient_id, kind, display_name, active, company) VALUES (?, 'user', 'Bob', 1, 'A')",
                 (USER2,)
             )
             conn.execute(
-                "INSERT INTO recipients (recipient_id, kind, display_name, active) VALUES (?, 'group', 'Sales Team', 1)",
+                "INSERT INTO recipients (recipient_id, kind, display_name, active, company) VALUES (?, 'group', 'Sales Team', 1, 'A')",
                 (GROUP1,)
             )
 
@@ -150,7 +150,15 @@ class ContactTagTests(unittest.TestCase):
 
     def test_http_api_tag_endpoints_and_bulk(self):
         from urllib.request import Request, urlopen
+        class TestHandler(admin_server.AdminHandler):
+            def authorized(handler, require_token=True):
+                ok = super().authorized(require_token)
+                if ok:
+                    handler.user = {"email": "boss@test.com", "role": "company_admin", "company": "A", "display_name": "Boss"}
+                    handler.identity = handler.user["email"]
+                return ok
         server = admin_server.AdminServer(0)
+        server.RequestHandlerClass = TestHandler
         server.start()
         self.addCleanup(server.close)
         base = f"http://127.0.0.1:{server.server_port}"
@@ -172,7 +180,7 @@ class ContactTagTests(unittest.TestCase):
             self.assertEqual(data["tags"][0]["id"], tag_id)
 
         # 3. Update contact with notes and tag via POST /api/contact
-        payload = {"id": USER1, "alias": "Alice VIP", "subscribed": False, "notes": "VIP 專屬客服", "tag_ids": [tag_id]}
+        payload = {"id": USER1, "alias": "Alice VIP", "notes": "VIP 專屬客服", "tag_ids": [tag_id]}
         req = Request(f"{base}/api/contact", data=json.dumps(payload).encode(), headers=headers)
         with urlopen(req) as resp:
             data = json.load(resp)
@@ -302,7 +310,15 @@ class ContactTagTests(unittest.TestCase):
 
     def test_http_api_contact_type_and_info_fields(self):
         from urllib.request import Request, urlopen
+        class TestHandler(admin_server.AdminHandler):
+            def authorized(handler, require_token=True):
+                ok = super().authorized(require_token)
+                if ok:
+                    handler.user = {"email": "boss@test.com", "role": "company_admin", "company": "A", "display_name": "Boss"}
+                    handler.identity = handler.user["email"]
+                return ok
         server = admin_server.AdminServer(0)
+        server.RequestHandlerClass = TestHandler
         server.start()
         self.addCleanup(server.close)
         base = f"http://127.0.0.1:{server.server_port}"
@@ -311,7 +327,6 @@ class ContactTagTests(unittest.TestCase):
         payload = {
             "id": USER1,
             "alias": "陳副理",
-            "subscribed": False,
             "contact_type": "person_business",
             "phone": "0988-111-222",
             "email": "chen@private.com",

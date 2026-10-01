@@ -27,6 +27,8 @@ from send_image import publish_image, verify_public_image, send_push
 import composer
 import cases
 import chat_notes
+import chat
+import template_packs
 
 
 def contact_label(row):
@@ -319,7 +321,7 @@ class AdminHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass
 
-    def respond(self, code, data, content_type="application/json; charset=utf-8"):
+    def respond(self, code, data, content_type="application/json; charset=utf-8", headers=None):
         body = data if isinstance(data, bytes) else json.dumps(data, ensure_ascii=False).encode()
         self.send_response(code)
         self.send_header("Content-Type", content_type)
@@ -327,6 +329,9 @@ class AdminHandler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
+        if headers:
+            for k, v in headers.items():
+                self.send_header(k, v)
         if getattr(self, 'response_cookie', None):
             self.send_header('Set-Cookie', self.response_cookie)
             self.response_cookie = None
@@ -381,6 +386,7 @@ class AdminHandler(BaseHTTPRequestHandler):
     def apply_view(self):
         self.principal = self.identity
         self.preview = False
+        self.preview_edit = False
         org=self.headers.get('X-Workspace-Organization')
         if org and self.user['role']!='administrator':
             # Header values are ASCII; legacy organization keys may contain Chinese.
@@ -401,6 +407,11 @@ class AdminHandler(BaseHTTPRequestHandler):
         if not user or (target,user['company']) not in {(row['email'],row['company']) for row in reports.view_options(self.user)}:
             self.respond(403, {"error": "此成員帳號已停用或角色已變更，請返回管理員視角。"})
             return False
+        
+        # 乙級管理員視角切換編輯狀態判斷（甲級只能檢視）
+        if self.user['role'] == 'company_admin' and self.headers.get('X-Workspace-Preview-Edit') in ('1', 'true'):
+            self.preview_edit = True
+
         self.identity, self.user, self.preview = user["email"], user, True
         return True
 
@@ -413,7 +424,8 @@ class AdminHandler(BaseHTTPRequestHandler):
             return False
         channel_id = ids[0] if ids else ''
         globals_ = {'/api/session', '/api/organizations', '/api/view-options', '/api/settings',
-                    '/api/accounts/save', '/api/organizations/save', '/api/memberships/save'}
+                    '/api/accounts/save', '/api/organizations/save', '/api/memberships/save',
+                    '/api/oa-list', '/api/personnel', '/api/personnel/save', '/api/org-settings/save'}
         registry = self.path.startswith('/api/channels')
         if registry:
             return True
@@ -468,6 +480,7 @@ class AdminHandler(BaseHTTPRequestHandler):
                  "/admin.js": (app.BASE_DIR / "web" / "admin.js", "text/javascript; charset=utf-8"),
                  "/app.css": (app.BASE_DIR / "web" / "app.css", "text/css; charset=utf-8"),
                  "/channels.js": (app.BASE_DIR / "web" / "channels.js", "text/javascript; charset=utf-8"),
+                 "/chat.js": (app.BASE_DIR / "web" / "chat.js", "text/javascript; charset=utf-8"),
                  "/workspace.js": (app.BASE_DIR / "web" / "workspace.js", "text/javascript; charset=utf-8"),
                  "/account-security.js": (app.BASE_DIR / "web" / "account-security.js", "text/javascript; charset=utf-8"),
                  "/composer.js": (app.BASE_DIR / "web" / "composer.js", "text/javascript; charset=utf-8"),
@@ -485,14 +498,20 @@ class AdminHandler(BaseHTTPRequestHandler):
             return
         if self.path not in files and not self.select_line_channel():
             return
-        read_routes = {"/api/channels", "/api/session", "/api/reports", "/api/organizations", "/api/chat-notes", "/api/saved-filters", "/api/cases"}
+        read_routes = {"/api/channels", "/api/session", "/api/reports", "/api/organizations", "/api/chat-notes", "/api/chat-notes/trash", "/api/saved-filters", "/api/cases", "/api/cases/prefix", "/api/cases/export", "/api/template-packs", "/api/template-packs/templates", "/api/categories", "/api/chat/rooms", "/api/chat/messages", "/api/chat/canned-replies", "/api/chat/response-hours"}
         if self.path not in files and self.path not in read_routes and not re.fullmatch(r"/api/reports/(weather|[0-9a-f]{32})", self.path) and not re.fullmatch(r"/api/cases/[0-9a-f]{32}", self.path):
-            if self.user['role']=='sender' and self.path in {'/api/view-options','/api/settings'}:
+            if self.user['role'] in {'sender', 'assistant'} and self.path in {'/api/view-options','/api/settings'}:
                 self.respond(403, {'error':'此功能僅供管理員使用。'})
                 return
             if not reports.operator(self.user):
                 self.respond(403, {'error':'沒有此功能的存取權限。'})
                 return
+
+        # 甲級平台管理員查閱客戶營運內容時寫入操作紀錄
+        if self.user['role'] == 'administrator' and self.path in {'/api/chat-notes', '/api/cases', '/api/chat/messages', '/api/contacts'}:
+            with app.database_connection() as conn:
+                reports.audit(conn, self.identity, "vendor.view", channels.current_id() or "all", f"平台管理員檢視客戶營運內容（{self.path}）")
+
         if self.path in files:
             path, mime = files[self.path]
             self.respond(200, path.read_bytes(), mime)
@@ -506,7 +525,7 @@ class AdminHandler(BaseHTTPRequestHandler):
         elif self.path == "/api/session":
             self.respond(200, {"identity": self.identity, "user": self.user, "role": self.user["role"],
                                "principal": self.principal, "preview": self.preview, "auth": site_auth.status(self),
-                               "memberships": [m for m in reports.memberships(self.identity) if m['active'] and m['org_active'] and m['role'] in {'company_admin','sender'}] if not self.preview and self.server.workspace_ready else [],
+                               "memberships": [m for m in reports.memberships(self.identity) if m['active'] and m['org_active'] and m['role'] in {'company_admin','sender','assistant'}] if not self.preview and self.server.workspace_ready else [],
                                "modules": {m:reports.module_enabled(self.user,m) for m in ('reports','messaging','weather')}})
         elif self.path == '/api/organizations':
             self.respond(200,{'organizations':[o for o in reports.organizations() if self.user['role']=='administrator' or reports.same_company(self.user,o['org_id'])],
@@ -541,17 +560,115 @@ class AdminHandler(BaseHTTPRequestHandler):
         elif self.path == "/api/chat-notes":
             with app.database_connection() as conn:
                 self.respond(200, chat_notes.list_chat_notes(conn, query.get('recipient_id', '')))
+        elif self.path == "/api/chat-notes/trash":
+            with app.database_connection() as conn:
+                self.respond(200, {"trash": chat_notes.list_trash_notes(conn, query.get('recipient_id', ''))})
         elif self.path == "/api/saved-filters":
             with app.database_connection() as conn:
                 self.respond(200, chat_notes.list_saved_filters(conn))
         elif self.path == "/api/cases":
             with app.database_connection() as conn:
-                self.respond(200, {"cases": cases.list_cases(conn, status=query.get('status'), subject_id=query.get('subject_id'), query=query.get('q'))})
+                self.respond(200, {"cases": cases.list_cases(conn, status=query.get('status'), category=query.get('category'), subject_id=query.get('subject_id'), query=query.get('q'))})
+        elif self.path == "/api/cases/prefix":
+            with app.database_connection() as conn:
+                self.respond(200, {"prefix": cases.get_or_init_prefix(conn)})
+        elif self.path == "/api/cases/export":
+            if self.user['role'] != 'company_admin':
+                self.respond(403, {'error': '只有組織管理員可以匯出案件。'})
+                return
+            with app.database_connection() as conn:
+                content, mime, filename = cases.export_cases(
+                    conn, query, query.get('format', 'csv'),
+                    include_activities=query.get('include_activities') in ('1', 'true'),
+                    include_contacts=query.get('include_contacts') in ('1', 'true'),
+                    actor=self.identity
+                )
+                from urllib.parse import quote
+                self.respond(200, content, content_type=mime, headers={'Content-Disposition': f'attachment; filename="{filename}"; filename*=UTF-8\'\'{quote(filename)}'})
         elif re.fullmatch(r"/api/cases/[0-9a-f]{32}", self.path):
             case_id = self.path.rsplit("/", 1)[1]
             with app.database_connection() as conn:
                 c = cases.get_case(conn, case_id)
                 self.respond(200 if c else 404, {"case": c} if c else {"error": "找不到此案件。"})
+        elif self.path == "/api/template-packs":
+            with app.database_connection() as conn:
+                self.respond(200, {"packs": template_packs.list_all_packs(conn, self.user.get('company'), channels.current_id())})
+        elif self.path == "/api/template-packs/templates":
+            with app.database_connection() as conn:
+                self.respond(200, template_packs.get_oa_enabled_templates(conn, channels.current_id(), query.get('contact_name', '')))
+        elif self.path == "/api/categories":
+            with app.database_connection() as conn:
+                self.respond(200, template_packs.list_oa_categories(conn, channels.current_id()))
+        elif self.path == "/api/chat/rooms":
+            with app.database_connection() as conn:
+                res = chat.list_chat_rooms(conn, status=query.get('status'), query=query.get('q'), limit=query.get('limit'), offset=query.get('offset'))
+            self.respond(200, res)
+        elif self.path == "/api/oa-list":
+            self.respond(200, {"channels": channels.oa_list(self.user)})
+        elif self.path == "/api/personnel":
+            org_id = self.user.get('company')
+            if not org_id and self.user['role'] != 'administrator':
+                self.respond(403, {'error': '尚未指定組織。'})
+                return
+            with app.database_connection() as conn:
+                conn.row_factory = sqlite3.Row
+                members = conn.execute("""
+                    SELECT m.email, m.role, m.department, m.active, u.display_name, u.recipient_id
+                    FROM organization_members m
+                    JOIN workspace_users u ON u.email = m.email
+                    WHERE m.org_id=?
+                    ORDER BY m.role, m.email
+                """, (org_id,)).fetchall()
+                member_list = []
+                for m in members:
+                    md = dict(m)
+                    access_rows = conn.execute("SELECT channel_id FROM oa_member_access WHERE email=? AND org_id=?", (m['email'], org_id)).fetchall()
+                    md['channel_ids'] = [r[0] for r in access_rows]
+                    member_list.append(md)
+                org_channels = conn.execute("SELECT channel_id, name, basic_id FROM line_channels WHERE org_id=? AND active=1", (org_id,)).fetchall()
+                self.respond(200, {
+                    "members": member_list,
+                    "channels": [dict(c) for c in org_channels],
+                    "dispatch_scopes": [dict(s) for s in conn.execute("SELECT * FROM dispatch_scopes WHERE company=? AND active=1", (org_id,)).fetchall()]
+                })
+        elif self.path == "/api/chat/messages":
+            cid = query.get('recipient_id') or query.get('chat_id') or ''
+            if self.user['role'] == 'administrator' and channels.current_id():
+                with app.database_connection() as conn:
+                    tz_taipei = timezone(timedelta(hours=8))
+                    t_str = datetime.now(tz_taipei).strftime('%Y-%m-%d %H:%M')
+                    org_id = channels.organization_id() or ''
+                    last = conn.execute("SELECT created_at FROM audit_events WHERE actor=? AND action='vendor.view' AND channel_id=? ORDER BY event_id DESC LIMIT 1", (self.identity, channels.current_id())).fetchone()
+                    should_log = True
+                    if last:
+                        try:
+                            from datetime import datetime as dt
+                            last_time = dt.fromisoformat(last[0].replace('Z', '+00:00'))
+                            if (datetime.now(timezone.utc) - last_time).total_seconds() < 60:
+                                should_log = False
+                        except Exception:
+                            pass
+                    if should_log:
+                        reports.audit(conn, self.identity, "vendor.view", channels.current_id(), f"供應商曾於 {t_str} 查看", org_id)
+            with app.database_connection() as conn:
+                res = chat.list_messages(conn, chat_id=cid, limit=query.get('limit'), before_id=query.get('before_id'))
+            self.respond(200, res)
+        elif self.path == "/api/chat/canned-replies":
+            with app.database_connection() as conn:
+                res = chat.list_canned_replies(conn, category=query.get('category'), search=query.get('q'))
+            self.respond(200, res)
+        elif self.path == "/api/chat/response-hours":
+            with app.database_connection() as conn:
+                res = chat.get_response_hours(conn)
+            self.respond(200, res)
+        elif re.fullmatch(r"/api/chat/media/[0-9a-zA-Z_]+", self.path):
+            msg_id = self.path.rsplit('/', 1)[1]
+            try:
+                with app.database_connection() as conn:
+                    data, content_type = chat.get_chat_media(conn, msg_id)
+                    self.respond(200, data, content_type=content_type)
+            except ValueError as exc:
+                self.respond(404, {"error": str(exc)})
         elif self.path == "/api/jobs":
             self.respond(200, {"jobs": job_status(user=self.user)})
         elif re.fullmatch(r"/api/jobs/[0-9a-f-]{36}", self.path):
@@ -572,18 +689,55 @@ class AdminHandler(BaseHTTPRequestHandler):
         if not self.select_line_channel():
             return
         if not reports.operator(self.user):
-            self.respond(403, {'error':'沒有發送操作權限。'})
+            self.respond(403, {'error':'沒有操作權限。'})
             return
-        allowed_sender_posts = {'/api/send','/api/jobs/cancel','/api/assets/upload','/api/channels/save','/api/channels/verify','/api/channels/active', '/api/contacts/bulk', '/api/chat-notes/save', '/api/chat-notes/delete', '/api/saved-filters/save', '/api/saved-filters/delete', '/api/cases/save', '/api/cases/transition', '/api/cases/activity'}
-        if self.user['role']=='sender' and self.path not in allowed_sender_posts:
-            self.respond(403, {'error':'發送人員不能修改聯絡對象分類、來源或帳號授權。'})
+
+        if self.preview and not getattr(self, 'preview_edit', False):
+            self.respond(403, {'error': '視角預覽僅供檢視，請先切換為編輯狀態或返回原帳號操作。'})
             return
-        if self.preview:
-            self.respond(403, {'error': '視角預覽僅供檢視，請返回原帳號操作。'})
+
+        allowed_assistant_posts = {
+            '/api/contacts/bulk', '/api/contact', '/api/tags/save', '/api/tags/delete',
+            '/api/chat-notes', '/api/chat-notes/save', '/api/chat-notes/delete',
+            '/api/chat-notes/pin', '/api/chat-notes/lock', '/api/chat-notes/restore', '/api/chat-notes/convert-to-case',
+            '/api/saved-filters', '/api/saved-filters/save', '/api/saved-filters/delete',
+            '/api/cases', '/api/cases/save', '/api/cases/transition', '/api/cases/activity',
+            '/api/template-packs/toggle', '/api/categories/preview', '/api/categories/apply',
+            '/api/chat/mark-read', '/api/chat/status'
+        }
+        allowed_sender_posts = allowed_assistant_posts | {
+            '/api/send', '/api/jobs/cancel', '/api/assets/upload', '/api/channels/save',
+            '/api/channels/verify', '/api/channels/active', '/api/chat/send',
+            '/api/chat/canned-replies/save', '/api/chat/canned-replies/delete', '/api/chat/response-hours/save'
+        }
+
+        if self.user['role'] == 'assistant' and (self.path not in allowed_assistant_posts and not re.fullmatch(r'/api/cases/[0-9a-f]{32}(/lock)?', self.path)):
+            self.respond(403, {'error': '協助人員無法傳送訊息或變更系統發送設定。'})
             return
-        if self.path in {'/api/accounts/save', '/api/reports/save', '/api/reports/remove', '/api/reports/restore-weather', '/api/organizations/save', '/api/memberships/save', '/api/dispatch-scopes/save', '/api/sender-grants/save'} and self.user['role'] != 'administrator':
-            self.respond(403, {'error': '帳號授權、模組歸屬及來源設定由平台管理員管理。'})
+
+        if self.user['role'] == 'sender' and (self.path not in allowed_sender_posts and not re.fullmatch(r'/api/cases/[0-9a-f]{32}(/lock)?', self.path)):
+            self.respond(403, {'error': '營運人員不能修改聯絡對象分類、來源或帳號授權。'})
             return
+
+        admin_only_posts = {'/api/reports/save', '/api/reports/remove', '/api/reports/restore-weather', '/api/organizations/save', '/api/memberships/save', '/api/dispatch-scopes/save', '/api/sender-grants/save'}
+        if self.path in admin_only_posts and self.user['role'] != 'administrator':
+            self.respond(403, {'error': '模組歸屬及來源設定由平台管理員管理。'})
+            return
+
+        # 平台管理員對客戶營運內容只有閱讀權，禁止傳送訊息與建立/修改客戶案件/記事/聯絡人
+        customer_write_paths = {
+            '/api/chat/send', '/api/send', '/api/jobs/cancel', '/api/contact', '/api/contacts/bulk',
+            '/api/tags/save', '/api/tags/delete', '/api/chat-notes', '/api/chat-notes/save',
+            '/api/chat-notes/delete', '/api/chat-notes/pin', '/api/chat-notes/lock', '/api/chat-notes/restore',
+            '/api/chat-notes/convert-to-case', '/api/saved-filters', '/api/saved-filters/save',
+            '/api/saved-filters/delete', '/api/cases', '/api/cases/save', '/api/cases/transition',
+            '/api/cases/activity', '/api/categories/apply', '/api/chat/canned-replies/save',
+            '/api/chat/canned-replies/delete', '/api/chat/response-hours/save', '/api/chat/status'
+        }
+        if self.user['role'] == 'administrator' and (self.path in customer_write_paths or re.fullmatch(r'/api/cases/[0-9a-f]{32}(/lock)?', self.path)):
+            self.respond(403, {'error': '平台管理員對客戶營運內容只有閱讀權，無法修改或傳送。'})
+            return
+
         try:
             size = int(self.headers.get("Content-Length", "0"))
             maximum = 12 * 1024 * 1024 if self.path == '/api/assets/upload' else 65536
@@ -592,6 +746,11 @@ class AdminHandler(BaseHTTPRequestHandler):
             payload = json.loads(self.rfile.read(size))
             if not isinstance(payload, dict):
                 raise ValueError("請求格式不正確。")
+
+            actor_label = self.identity
+            if self.preview:
+                actor_label = f"{self.principal}（於 {self.identity} 視角下）"
+
             if self.path == '/api/channels/save':
                 self.respond(200, channels.save(payload, self.user))
             elif self.path == '/api/channels/verify':
@@ -605,18 +764,14 @@ class AdminHandler(BaseHTTPRequestHandler):
             elif self.path == '/api/channels/transfer':
                 self.respond(200, channels.transfer(payload, self.user))
             elif self.path == '/api/tags/save':
-                if not reports.manager(self.user):
-                    raise ValueError('只有管理員可以管理標籤。')
                 with app.database_connection() as conn:
                     tid = recipients.save_tag(conn, payload.get('name'), payload.get('color'), payload.get('id'))
-                    reports.audit(conn, self.identity, "tag.save", tid, f"儲存標籤「{payload.get('name')}」", self.user['company'])
+                    reports.audit(conn, actor_label, "tag.save", tid, f"儲存標籤「{payload.get('name')}」", self.user.get('company', ''))
                 self.respond(200, {'ok': True, 'tag_id': tid, 'tag': {'id': tid, 'name': payload.get('name'), 'color': payload.get('color')}})
             elif self.path == '/api/tags/delete':
-                if not reports.manager(self.user):
-                    raise ValueError('只有管理員可以刪除標籤。')
                 with app.database_connection() as conn:
                     recipients.delete_tag(conn, payload.get('id'))
-                    reports.audit(conn, self.identity, "tag.delete", str(payload.get('id')), "刪除標籤", self.user['company'])
+                    reports.audit(conn, actor_label, "tag.delete", str(payload.get('id')), "刪除標籤", self.user.get('company', ''))
                 self.respond(200, {'ok': True})
             elif self.path == '/api/contacts/bulk':
                 action = payload.get('action')
@@ -626,62 +781,186 @@ class AdminHandler(BaseHTTPRequestHandler):
                     if action in {'add_tags', 'remove_tags'}:
                         tag_ids = payload.get('tag_ids', [])
                         res = recipients.bulk_update_tags(conn, ids, tag_ids, 'add' if action == 'add_tags' else 'remove')
-                        reports.audit(conn, self.identity, "contacts.bulk_tag", f"{len(ids)} contacts", "批次更新標籤", self.user['company'])
+                        reports.audit(conn, actor_label, "contacts.bulk_tag", f"{len(ids)} contacts", "批次更新標籤", self.user.get('company', ''))
                         res_data.update(res)
                     elif action == 'set_subscription':
                         if self.user['role'] != 'administrator':
                             raise ValueError('天氣訂閱由平台管理員設定。')
                         sub = bool(payload.get('subscribed'))
                         recipients.bulk_update_subscription(conn, ids, sub)
-                        reports.audit(conn, self.identity, "contacts.bulk_sub", f"{len(ids)} contacts", "批次更新訂閱", self.user['company'])
+                        reports.audit(conn, actor_label, "contacts.bulk_sub", f"{len(ids)} contacts", "批次更新訂閱", self.user.get('company', ''))
                     else:
                         raise ValueError('不支援的操作。')
                 self.respond(200, res_data)
-            elif self.path == '/api/chat-notes/save':
+            elif self.path in ('/api/chat-notes', '/api/chat-notes/save'):
+                action = payload.get('action', 'save')
                 with app.database_connection() as conn:
-                    res = chat_notes.save_chat_note(conn, payload, self.identity)
-                    reports.audit(conn, self.identity, "chat_note.save", res.get('recipient_id', ''), "儲存對話記事", self.user['company'])
-                self.respond(200, {'ok': True, 'note': res})
+                    if action == 'delete':
+                        chat_notes.delete_chat_note(conn, payload.get('note_id') or payload.get('id'))
+                        reports.audit(conn, actor_label, "chat_note.delete", payload.get('note_id') or payload.get('id', ''), "刪除對話記事", self.user.get('company', ''))
+                        self.respond(200, {'ok': True})
+                    else:
+                        res = chat_notes.save_chat_note(conn, payload, actor_label)
+                        reports.audit(conn, actor_label, "chat_note.save", res.get('recipient_id', ''), "儲存對話記事", self.user.get('company', ''))
+                        self.respond(200, {'ok': True, 'note': res})
             elif self.path == '/api/chat-notes/delete':
                 with app.database_connection() as conn:
                     chat_notes.delete_chat_note(conn, payload.get('note_id') or payload.get('id'))
-                    reports.audit(conn, self.identity, "chat_note.delete", payload.get('id', ''), "刪除對話記事", self.user['company'])
+                    reports.audit(conn, actor_label, "chat_note.delete", payload.get('id', ''), "刪除對話記事", self.user.get('company', ''))
                 self.respond(200, {'ok': True})
-            elif self.path == '/api/saved-filters/save':
+            elif self.path == '/api/chat-notes/pin':
                 with app.database_connection() as conn:
-                    res = chat_notes.save_saved_filter(conn, payload)
-                    reports.audit(conn, self.identity, "saved_filter.save", res.get('name', ''), "儲存自訂篩選條件", self.user['company'])
-                self.respond(200, {'ok': True, 'filter': res})
+                    res = chat_notes.toggle_note_pin(conn, payload.get('note_id') or payload.get('id'))
+                    self.respond(200, {'ok': True, **res})
+            elif self.path == '/api/chat-notes/lock':
+                with app.database_connection() as conn:
+                    res = chat_notes.toggle_note_lock(conn, payload.get('note_id') or payload.get('id'))
+                    self.respond(200, {'ok': True, **res})
+            elif self.path == '/api/chat-notes/restore':
+                with app.database_connection() as conn:
+                    ok = chat_notes.restore_chat_note(conn, payload.get('note_id') or payload.get('id'))
+                    self.respond(200, {'ok': ok})
+            elif self.path == '/api/chat-notes/convert-to-case':
+                with app.database_connection() as conn:
+                    new_case = chat_notes.convert_note_to_case(conn, payload.get('note_id') or payload.get('id'), actor_label)
+                    reports.audit(conn, actor_label, "chat_note.convert_to_case", new_case.get('case_id', ''), f"記事轉為案件 {new_case.get('case_no')}", self.user.get('company', ''))
+                    self.respond(200, {'ok': True, 'case': new_case})
+            elif self.path in ('/api/saved-filters', '/api/saved-filters/save'):
+                action = payload.get('action', 'save')
+                with app.database_connection() as conn:
+                    if action == 'delete':
+                        chat_notes.delete_saved_filter(conn, payload.get('filter_id') or payload.get('id'))
+                        reports.audit(conn, actor_label, "saved_filter.delete", payload.get('filter_id') or payload.get('id', ''), "刪除自訂篩選條件", self.user.get('company', ''))
+                        self.respond(200, {'ok': True})
+                    else:
+                        res = chat_notes.save_saved_filter(conn, payload)
+                        reports.audit(conn, actor_label, "saved_filter.save", res.get('name', ''), "儲存自訂篩選條件", self.user.get('company', ''))
+                        self.respond(200, {'ok': True, 'filter': res})
             elif self.path == '/api/saved-filters/delete':
                 with app.database_connection() as conn:
                     chat_notes.delete_saved_filter(conn, payload.get('filter_id') or payload.get('id'))
-                    reports.audit(conn, self.identity, "saved_filter.delete", payload.get('id', ''), "刪除自訂篩選條件", self.user['company'])
+                    reports.audit(conn, actor_label, "saved_filter.delete", payload.get('id', ''), "刪除自訂篩選條件", self.user.get('company', ''))
                 self.respond(200, {'ok': True})
-            elif self.path == '/api/cases/save':
+            elif self.path in ('/api/cases', '/api/cases/save'):
                 case_id = payload.get('case_id') or payload.get('id')
                 with app.database_connection() as conn:
                     if case_id:
-                        res = cases.update_case(conn, case_id, payload, self.identity)
-                        reports.audit(conn, self.identity, "case.update", case_id, f"更新案件 {res.get('case_no')}", self.user['company'])
+                        res = cases.update_case(conn, case_id, payload, actor_label)
+                        reports.audit(conn, actor_label, "case.update", case_id, f"更新案件 {res.get('case_no')}", self.user.get('company', ''))
                     else:
-                        res = cases.create_case(conn, payload, self.identity)
-                        reports.audit(conn, self.identity, "case.create", res.get('case_id', ''), f"建立案件 {res.get('case_no')}", self.user['company'])
+                        res = cases.create_case(conn, payload, actor_label)
+                        reports.audit(conn, actor_label, "case.create", res.get('case_id', ''), f"建立案件 {res.get('case_no')}", self.user.get('company', ''))
                 self.respond(200, {'ok': True, 'case': res})
+            elif self.path == '/api/cases/prefix':
+                if self.user['role'] not in {'company_admin', 'administrator'}:
+                    raise ValueError('只有管理員可以修改案件編號前綴。')
+                with app.database_connection() as conn:
+                    res = cases.update_case_prefix(conn, payload.get('prefix'), payload.get('mode', 'apply_new_only'), actor_label)
+                self.respond(200, {'ok': True, **res})
+            elif re.fullmatch(r'/api/cases/[0-9a-f]{32}/lock', self.path):
+                case_id = self.path.split('/')[3]
+                with app.database_connection() as conn:
+                    res = cases.toggle_case_lock(conn, case_id, actor_label)
+                self.respond(200, {'ok': True, 'case': res})
+            elif re.fullmatch(r'/api/cases/[0-9a-f]{32}', self.path):
+                case_id = self.path.rsplit('/', 1)[1]
+                action = payload.get('action')
+                with app.database_connection() as conn:
+                    if action == 'add_note' or (payload.get('note') and 'status' not in payload):
+                        res = cases.add_activity(conn, case_id, 'note', actor_label, payload.get('note', ''))
+                        reports.audit(conn, actor_label, "case.activity", case_id, "新增案件處理紀錄", self.user.get('company', ''))
+                        self.respond(200, {'ok': True, 'activity': res})
+                    elif 'status' in payload:
+                        to_status = payload.get('status')
+                        res = cases.transition_case(conn, case_id, to_status, payload, actor_label)
+                        reports.audit(conn, actor_label, "case.transition", case_id, f"案件 {res.get('case_no')} 狀態變更為 {to_status}", self.user.get('company', ''))
+                        self.respond(200, {'ok': True, 'case': res})
+                    else:
+                        res = cases.update_case(conn, case_id, payload, actor_label)
+                        reports.audit(conn, actor_label, "case.update", case_id, f"更新案件 {res.get('case_no')}", self.user.get('company', ''))
+                        self.respond(200, {'ok': True, 'case': res})
             elif self.path == '/api/cases/transition':
                 case_id = payload.get('case_id') or payload.get('id')
                 to_status = payload.get('status')
                 with app.database_connection() as conn:
-                    res = cases.transition_case(conn, case_id, to_status, payload, self.identity)
-                    reports.audit(conn, self.identity, "case.transition", case_id, f"案件 {res.get('case_no')} 狀態變更為 {to_status}", self.user['company'])
+                    res = cases.transition_case(conn, case_id, to_status, payload, actor_label)
+                    reports.audit(conn, actor_label, "case.transition", case_id, f"案件 {res.get('case_no')} 狀態變更為 {to_status}", self.user.get('company', ''))
                 self.respond(200, {'ok': True, 'case': res})
             elif self.path == '/api/cases/activity':
                 case_id = payload.get('case_id') or payload.get('id')
                 activity_type = payload.get('activity_type') or 'note'
-                content = payload.get('content')
+                content = payload.get('content') or payload.get('note') or ''
                 with app.database_connection() as conn:
-                    res = cases.add_activity(conn, case_id, activity_type, self.identity, content)
-                    reports.audit(conn, self.identity, "case.activity", case_id, "新增案件處理紀錄", self.user['company'])
+                    res = cases.add_activity(conn, case_id, activity_type, actor_label, content)
+                    reports.audit(conn, actor_label, "case.activity", case_id, "新增案件處理紀錄", self.user.get('company', ''))
                 self.respond(200, {'ok': True, 'activity': res})
+            elif self.path == '/api/template-packs/toggle':
+                with app.database_connection() as conn:
+                    ok = template_packs.toggle_oa_pack(conn, channels.current_id(), payload.get('pack_key'), bool(payload.get('enabled')))
+                self.respond(200, {'ok': ok})
+            elif self.path == '/api/categories/preview':
+                with app.database_connection() as conn:
+                    res = template_packs.preview_apply_category_set(conn, channels.current_id(), payload.get('pack_key'), payload.get('mode', 'replace'))
+                self.respond(200, res)
+            elif self.path == '/api/categories/apply':
+                with app.database_connection() as conn:
+                    res = template_packs.apply_category_set(conn, channels.current_id(), payload.get('pack_key'), payload.get('mode', 'replace'), actor_label)
+                self.respond(200, {'ok': True, 'categories': res})
+            elif self.path == '/api/chat/send':
+                cid = payload.get('recipient_id') or payload.get('chat_id') or ''
+                text = payload.get('text') or payload.get('message') or ''
+                use_reply = bool(payload.get('use_reply_token', True))
+                with app.database_connection() as conn:
+                    res = chat.send_chat_message(conn, cid, text, actor_label, use_reply_token=use_reply)
+                    reports.audit(conn, actor_label, "chat.send", cid, f"傳送訊息（{res.get('send_method')}）", self.user.get('company', ''))
+                self.respond(200, res)
+            elif self.path == '/api/chat/mark-read':
+                cid = payload.get('recipient_id') or payload.get('chat_id') or ''
+                with app.database_connection() as conn:
+                    res = chat.mark_chat_read(conn, cid)
+                self.respond(200, res)
+            elif self.path == '/api/chat/status':
+                cid = payload.get('recipient_id') or payload.get('chat_id') or ''
+                status = payload.get('status') or 'open'
+                with app.database_connection() as conn:
+                    res = chat.set_chat_status(conn, cid, status, actor_label)
+                    reports.audit(conn, actor_label, "chat.status", cid, f"變更聊天狀態為 {status}", self.user.get('company', ''))
+                self.respond(200, res)
+            elif self.path == '/api/chat/canned-replies/save':
+                with app.database_connection() as conn:
+                    res = chat.save_canned_reply(conn, payload, actor_label)
+                    reports.audit(conn, actor_label, "canned_reply.save", res.get('id', ''), "儲存預設訊息", self.user.get('company', ''))
+                self.respond(200, {'ok': True, 'reply': res})
+            elif self.path == '/api/chat/canned-replies/delete':
+                rid = payload.get('id') or payload.get('reply_id') or ''
+                with app.database_connection() as conn:
+                    chat.delete_canned_reply(conn, rid)
+                    reports.audit(conn, actor_label, "canned_reply.delete", rid, "刪除預設訊息", self.user.get('company', ''))
+                self.respond(200, {'ok': True})
+            elif self.path == '/api/chat/response-hours/save':
+                with app.database_connection() as conn:
+                    res = chat.save_response_hours(conn, payload)
+                    reports.audit(conn, actor_label, "response_hours.save", "", "儲存回應時間設定", self.user.get('company', ''))
+                self.respond(200, res)
+
+            elif self.path == '/api/personnel/save':
+                if self.user['role'] not in {'company_admin', 'administrator'}:
+                    self.respond(403, {'error': '只有組織管理員可以管理組織人員。'})
+                    return
+                org_id = self.user.get('company') if self.user['role'] == 'company_admin' else payload.get('org_id', self.user.get('company'))
+                payload['org_id'] = org_id
+                payload['company'] = org_id
+                reports.save_user(payload, actor_label)
+                reports.save_membership(payload, actor_label)
+                self.respond(200, {'ok': True})
+            elif self.path == '/api/org-settings/save':
+                if self.user['role'] not in {'company_admin', 'administrator'}:
+                    self.respond(403, {'error': '只有組織管理員可以修改組織設定。'})
+                    return
+                org_id = self.user.get('company') if self.user['role'] == 'company_admin' else payload.get('org_id', self.user.get('company'))
+                payload['org_id'] = org_id
+                reports.save_organization(payload, actor_label)
+                self.respond(200, {'ok': True})
 
             elif self.path == '/api/assets/upload':
                 if not reports.module_enabled(self.user, 'messaging'):
@@ -737,7 +1016,7 @@ class AdminHandler(BaseHTTPRequestHandler):
                         if not isinstance(company, str) or len(company.strip()) > 60:
                             raise ValueError("組織名稱請限制在 60 字以內。")
                         conn.execute('UPDATE recipients SET company=? WHERE recipients.channel_id=current_channel() AND recipient_id=?', (company.strip(), payload["id"]))
-                    reports.audit(conn, self.identity, "contact.update", payload["id"], "更新備註與分類",self.user['company'])
+                    reports.audit(conn, actor_label, "contact.update", payload["id"], "更新備註與分類", self.user.get('company', ''))
                 self.respond(200, {"ok": True})
             elif self.path == "/api/profiles":
                 load_settings()
@@ -755,7 +1034,7 @@ class AdminHandler(BaseHTTPRequestHandler):
                     elif result == 'failed':
                         failed += 1
                 with app.database_connection() as conn:
-                    reports.audit(conn, self.identity, "profiles.update", "recipients", f"更新 {updated} 個 LINE 名稱，{failed} 個未完成",self.user['company'])
+                    reports.audit(conn, actor_label, "profiles.update", "recipients", f"更新 {updated} 個 LINE 名稱，{failed} 個未完成", self.user.get('company', ''))
                 self.respond(200, {"updated": updated, "failed": failed})
             elif self.path == "/api/send":
                 self.respond(202, self.server.dispatcher.submit(payload, actor=self.identity, organization=self.user['company']))

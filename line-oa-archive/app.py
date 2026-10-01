@@ -46,6 +46,110 @@ def initialize_database() -> None:
                 conn.execute(f"ALTER TABLE recipients ADD COLUMN {col} TEXT NOT NULL DEFAULT ''")
             except sqlite3.OperationalError:
                 pass
+        for col in ("direction", "sent_by", "send_method", "delivery_status", "media_path", "reply_token"):
+            try:
+                conn.execute(f"ALTER TABLE line_messages ADD COLUMN {col} TEXT NOT NULL DEFAULT ''")
+            except sqlite3.OperationalError:
+                pass
+        try:
+            conn.execute("ALTER TABLE line_channels ADD COLUMN case_prefix TEXT NOT NULL DEFAULT ''")
+        except sqlite3.OperationalError:
+            pass
+        for col in ("ref_no", "continued_from_id", "source_note_id", "due_date"):
+            try:
+                conn.execute(f"ALTER TABLE cases ADD COLUMN {col} TEXT NOT NULL DEFAULT ''")
+            except sqlite3.OperationalError:
+                pass
+        try:
+            conn.execute("ALTER TABLE cases ADD COLUMN is_locked INTEGER NOT NULL DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
+        for col in ("source_message_id", "source_snapshot"):
+            try:
+                conn.execute(f"ALTER TABLE case_activities ADD COLUMN {col} TEXT NOT NULL DEFAULT ''")
+            except sqlite3.OperationalError:
+                pass
+        for col in ("title", "note_type", "tags_json", "about_member_id", "due_date", "deleted_at"):
+            try:
+                conn.execute(f"ALTER TABLE chat_notes ADD COLUMN {col} TEXT NOT NULL DEFAULT ''")
+            except sqlite3.OperationalError:
+                pass
+        for col in ("is_pinned", "is_locked", "is_completed"):
+            try:
+                conn.execute(f"ALTER TABLE chat_notes ADD COLUMN {col} INTEGER NOT NULL DEFAULT 0")
+            except sqlite3.OperationalError:
+                pass
+
+        # 遷移 workspace_users / organization_members CHECK 限制以支援 assistant 角色
+        try:
+            cur = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='workspace_users'")
+            row = cur.fetchone()
+            if row and "'assistant'" not in row[0]:
+                conn.execute("ALTER TABLE workspace_users RENAME TO workspace_users_old")
+                conn.execute("""CREATE TABLE workspace_users (
+                    email TEXT PRIMARY KEY,
+                    display_name TEXT NOT NULL DEFAULT '',
+                    role TEXT NOT NULL CHECK(role IN ('administrator','company_admin','sender','assistant')),
+                    company TEXT NOT NULL DEFAULT '',
+                    department TEXT NOT NULL DEFAULT '',
+                    recipient_id TEXT NOT NULL DEFAULT '',
+                    active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1))
+                )""")
+                conn.execute("INSERT INTO workspace_users SELECT * FROM workspace_users_old")
+                conn.execute("DROP TABLE workspace_users_old")
+        except Exception:
+            pass
+
+        try:
+            cur = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='organization_members'")
+            row = cur.fetchone()
+            if row and "'assistant'" not in row[0]:
+                conn.execute("ALTER TABLE organization_members RENAME TO organization_members_old")
+                conn.execute("""CREATE TABLE organization_members (
+                    email TEXT NOT NULL,
+                    org_id TEXT NOT NULL,
+                    role TEXT NOT NULL CHECK(role IN ('company_admin','sender','assistant')),
+                    department TEXT NOT NULL DEFAULT '',
+                    recipient_id TEXT NOT NULL DEFAULT '',
+                    active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)),
+                    PRIMARY KEY(email,org_id)
+                )""")
+                conn.execute("INSERT INTO organization_members SELECT * FROM organization_members_old")
+                conn.execute("DROP TABLE organization_members_old")
+        except Exception:
+            pass
+
+        # 建立 oa_member_access 表
+        conn.execute("""CREATE TABLE IF NOT EXISTS oa_member_access (
+            channel_id TEXT NOT NULL,
+            email TEXT NOT NULL,
+            org_id TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+            PRIMARY KEY (channel_id, email, org_id)
+        )""")
+
+        # 遷移舊版個人 OA 至「個人」組織
+        try:
+            pers_channels = conn.execute("SELECT channel_id, owner_email, name FROM line_channels WHERE (org_id='' OR org_id IS NULL) AND owner_email<>''").fetchall()
+            for cid, owner_email, cname in pers_channels:
+                user_row = conn.execute("SELECT display_name FROM workspace_users WHERE email=?", (owner_email,)).fetchone()
+                display_name = user_row[0] if user_row and user_row[0] else owner_email
+                org_name = f"{display_name}（個人）"
+                member_row = conn.execute("SELECT m.org_id FROM organization_members m JOIN organizations o ON o.org_id=m.org_id WHERE m.email=? AND o.kind='personal'", (owner_email,)).fetchone()
+                if member_row:
+                    org_id = member_row[0]
+                else:
+                    import uuid
+                    org_id = uuid.uuid4().hex[:12]
+                    conn.execute("INSERT INTO organizations (org_id, name, kind, active, reports_enabled, messaging_enabled, weather_enabled) VALUES (?, ?, 'personal', 1, 1, 1, 0)",
+                                 (org_id, org_name))
+                conn.execute("INSERT OR IGNORE INTO organization_members (email, org_id, role, active) VALUES (?, ?, 'company_admin', 1)",
+                             (owner_email, org_id))
+                conn.execute("UPDATE line_channels SET org_id=?, owner_email='' WHERE channel_id=?", (org_id, cid))
+                conn.execute("UPDATE report_sources SET company=? WHERE channel_id=?", (org_id, cid))
+        except Exception:
+            pass
+
         # 已移除「一般收件者」(employee) 角色：這類人只在 LINE 收訊，不應有後台帳號。
         # 舊資料庫的 CHECK 仍允許此值，故每次啟動清除殘留資料；仍有其他組織身分的帳號只移除 employee 成員資格。
         conn.execute("DELETE FROM organization_members WHERE role='employee'")
@@ -53,6 +157,7 @@ def initialize_database() -> None:
         for table in ("site_sessions", "site_activation", "site_credentials", "sender_grants"):
             conn.execute(f"DELETE FROM {table} WHERE email IN ({orphans})")
         conn.execute(f"DELETE FROM workspace_users WHERE email IN ({orphans})")
+
 
 
 def valid_signature(body: bytes, signature: str, secret=None) -> bool:
@@ -93,6 +198,7 @@ def save_events(events: list[dict]) -> list:
                     message_type = message.get("type") or "unknown"
                     text = message.get("text") if message_type == "text" else None
                     timestamp = event.get("timestamp")
+                    reply_token = event.get("replyToken") or ""
                     sent_at = (
                         datetime.fromtimestamp(timestamp / 1000, tz=timezone.utc).isoformat(timespec="milliseconds")
                         if isinstance(timestamp, (int, float))
@@ -101,13 +207,26 @@ def save_events(events: list[dict]) -> list:
                     cur.execute(
                         """
                         INSERT INTO line_messages
-                            (channel_id,message_id, conversation_type, conversation_id,
-                             sender_user_id, message_type, text_content, sent_at)
-                        VALUES (current_channel(),?, ?, ?, ?, ?, ?, ?)
-                        ON CONFLICT (channel_id,message_id) DO NOTHING
+                            (channel_id, message_id, conversation_type, conversation_id,
+                             sender_user_id, message_type, text_content, sent_at,
+                             direction, reply_token)
+                        VALUES (current_channel(), ?, ?, ?, ?, ?, ?, ?, 'inbound', ?)
+                        ON CONFLICT (channel_id, message_id) DO NOTHING
                         """,
                         (message_id, source_type, conversation_id,
-                         sender_user_id, message_type, text, sent_at),
+                         sender_user_id, message_type, text, sent_at, reply_token),
+                    )
+                    now_iso = datetime.now(timezone.utc).isoformat()
+                    cur.execute(
+                        """
+                        INSERT INTO chat_state (channel_id, chat_id, status, last_inbound_at, updated_at)
+                        VALUES (current_channel(), ?, 'open', ?, ?)
+                        ON CONFLICT (channel_id, chat_id) DO UPDATE
+                        SET last_inbound_at = excluded.last_inbound_at,
+                            status = CASE WHEN chat_state.status = 'done' THEN 'open' ELSE chat_state.status END,
+                            updated_at = excluded.updated_at
+                        """,
+                        (conversation_id, sent_at or now_iso, now_iso),
                     )
                 elif event_type == "unsend":
                     message_id = (event.get("unsend") or {}).get("messageId")

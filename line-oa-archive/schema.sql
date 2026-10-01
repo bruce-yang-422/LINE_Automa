@@ -11,6 +11,12 @@ CREATE TABLE IF NOT EXISTS line_messages (
     sent_at TEXT,
     received_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f+00:00', 'now')),
     unsent_at TEXT,
+    direction TEXT NOT NULL DEFAULT 'inbound',
+    sent_by TEXT NOT NULL DEFAULT '',
+    send_method TEXT NOT NULL DEFAULT '',
+    delivery_status TEXT NOT NULL DEFAULT '',
+    media_path TEXT NOT NULL DEFAULT '',
+    reply_token TEXT NOT NULL DEFAULT '',
     channel_id TEXT NOT NULL DEFAULT '',
     PRIMARY KEY(channel_id,message_id)
 );
@@ -109,7 +115,7 @@ CREATE TABLE IF NOT EXISTS audit_events (
 CREATE TABLE IF NOT EXISTS workspace_users (
     email TEXT PRIMARY KEY,
     display_name TEXT NOT NULL DEFAULT '',
-    role TEXT NOT NULL CHECK(role IN ('administrator','company_admin','sender')),
+    role TEXT NOT NULL CHECK(role IN ('administrator','company_admin','sender','assistant')),
     company TEXT NOT NULL DEFAULT '',
     department TEXT NOT NULL DEFAULT '',
     recipient_id TEXT NOT NULL DEFAULT '',
@@ -152,7 +158,7 @@ CREATE TABLE IF NOT EXISTS organizations (
 CREATE TABLE IF NOT EXISTS organization_members (
     email TEXT NOT NULL,
     org_id TEXT NOT NULL,
-    role TEXT NOT NULL CHECK(role IN ('company_admin','sender')),
+    role TEXT NOT NULL CHECK(role IN ('company_admin','sender','assistant')),
     department TEXT NOT NULL DEFAULT '',
     recipient_id TEXT NOT NULL DEFAULT '',
     active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)),
@@ -168,18 +174,18 @@ CREATE TABLE IF NOT EXISTS upload_assets (
 );
 
 CREATE TABLE IF NOT EXISTS dispatch_scopes (
- scope_id TEXT PRIMARY KEY, company TEXT NOT NULL, name TEXT NOT NULL,
- kind TEXT NOT NULL CHECK(kind IN ('department','project','group')),
- department TEXT NOT NULL DEFAULT '', recipients_json TEXT NOT NULL DEFAULT '[]',
- active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)),
+	scope_id TEXT PRIMARY KEY, company TEXT NOT NULL, name TEXT NOT NULL,
+	kind TEXT NOT NULL CHECK(kind IN ('department','project','group')),
+	department TEXT NOT NULL DEFAULT '', recipients_json TEXT NOT NULL DEFAULT '[]',
+	active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)),
     channel_id TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS sender_grants (
- email TEXT NOT NULL, company TEXT NOT NULL,
- scopes_json TEXT NOT NULL DEFAULT '[]', reports_json TEXT NOT NULL DEFAULT '[]',
- messaging INTEGER NOT NULL DEFAULT 0, reports INTEGER NOT NULL DEFAULT 0, weather INTEGER NOT NULL DEFAULT 0,
- channel_id TEXT NOT NULL DEFAULT '',
- PRIMARY KEY(channel_id,email,company)
+	email TEXT NOT NULL, company TEXT NOT NULL,
+	scopes_json TEXT NOT NULL DEFAULT '[]', reports_json TEXT NOT NULL DEFAULT '[]',
+	messaging INTEGER NOT NULL DEFAULT 0, reports INTEGER NOT NULL DEFAULT 0, weather INTEGER NOT NULL DEFAULT 0,
+	channel_id TEXT NOT NULL DEFAULT '',
+	PRIMARY KEY(channel_id,email,company)
 );
 CREATE TABLE IF NOT EXISTS builtin_report_state (
     report_id TEXT NOT NULL,
@@ -196,6 +202,7 @@ CREATE TABLE IF NOT EXISTS line_channels (
     name TEXT NOT NULL,
     bot_user_id TEXT NOT NULL UNIQUE,
     basic_id TEXT NOT NULL DEFAULT '',
+    case_prefix TEXT NOT NULL DEFAULT '',
     token_cipher TEXT NOT NULL,
     secret_cipher TEXT NOT NULL,
     active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)),
@@ -220,6 +227,14 @@ CREATE TABLE IF NOT EXISTS line_channel_shares (
     UNIQUE(channel_id, org_id, owner_email)
 );
 
+CREATE TABLE IF NOT EXISTS oa_member_access (
+    channel_id TEXT NOT NULL REFERENCES line_channels(channel_id) ON DELETE CASCADE,
+    email TEXT NOT NULL REFERENCES workspace_users(email) ON DELETE CASCADE,
+    org_id TEXT NOT NULL REFERENCES organizations(org_id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    PRIMARY KEY (channel_id, email, org_id)
+);
+
 CREATE TABLE IF NOT EXISTS contact_tags (
     tag_id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -239,8 +254,17 @@ CREATE TABLE IF NOT EXISTS chat_notes (
     note_id TEXT PRIMARY KEY,
     channel_id TEXT NOT NULL DEFAULT '',
     recipient_id TEXT NOT NULL,
-    author TEXT NOT NULL,
+    title TEXT NOT NULL DEFAULT '',
+    note_type TEXT NOT NULL DEFAULT '一般',
+    tags_json TEXT NOT NULL DEFAULT '[]',
     content TEXT NOT NULL,
+    is_pinned INTEGER NOT NULL DEFAULT 0,
+    is_locked INTEGER NOT NULL DEFAULT 0,
+    about_member_id TEXT NOT NULL DEFAULT '',
+    due_date TEXT NOT NULL DEFAULT '',
+    is_completed INTEGER NOT NULL DEFAULT 0,
+    deleted_at TEXT NOT NULL DEFAULT '',
+    author TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
@@ -256,10 +280,10 @@ CREATE TABLE IF NOT EXISTS saved_filters (
 
 CREATE TABLE IF NOT EXISTS cases (
     case_id TEXT PRIMARY KEY,
-    case_no TEXT NOT NULL,
+    case_no TEXT NOT NULL UNIQUE,
     channel_id TEXT NOT NULL DEFAULT '',
     title TEXT NOT NULL,
-    category TEXT NOT NULL DEFAULT 'general',
+    category TEXT NOT NULL DEFAULT '一般',
     status TEXT NOT NULL CHECK(status IN ('pending','processing','waiting','ready_to_close','closed')) DEFAULT 'pending',
     priority TEXT NOT NULL CHECK(priority IN ('low','medium','high','urgent')) DEFAULT 'medium',
     case_subject_id TEXT NOT NULL,
@@ -268,6 +292,11 @@ CREATE TABLE IF NOT EXISTS cases (
     waiting_party TEXT NOT NULL DEFAULT '' CHECK(waiting_party IN ('','internal','case_subject','third_party')),
     waiting_reason TEXT NOT NULL DEFAULT '',
     waiting_since TEXT NOT NULL DEFAULT '',
+    ref_no TEXT NOT NULL DEFAULT '',
+    continued_from_id TEXT NOT NULL DEFAULT '',
+    is_locked INTEGER NOT NULL DEFAULT 0,
+    due_date TEXT NOT NULL DEFAULT '',
+    source_note_id TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     closed_at TEXT NOT NULL DEFAULT ''
@@ -280,7 +309,135 @@ CREATE TABLE IF NOT EXISTS case_activities (
     activity_type TEXT NOT NULL,
     actor TEXT NOT NULL,
     content TEXT NOT NULL,
+    source_message_id TEXT NOT NULL DEFAULT '',
+    source_snapshot TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+CREATE TABLE IF NOT EXISTS case_number_sequences (
+    prefix TEXT NOT NULL,
+    period TEXT NOT NULL,
+    last_number INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (prefix, period)
+);
+
+CREATE TABLE IF NOT EXISTS case_number_aliases (
+    case_id TEXT NOT NULL,
+    old_case_no TEXT NOT NULL UNIQUE,
+    replaced_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    PRIMARY KEY (case_id, old_case_no)
+);
+
+CREATE TABLE IF NOT EXISTS template_packs (
+    pack_id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    note_types_json TEXT NOT NULL DEFAULT '[]',
+    case_categories_json TEXT NOT NULL DEFAULT '[]',
+    is_locked INTEGER NOT NULL DEFAULT 0,
+    created_by TEXT NOT NULL DEFAULT '',
+    updated_by TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+CREATE TABLE IF NOT EXISTS case_templates (
+    template_id TEXT PRIMARY KEY,
+    pack_id TEXT NOT NULL REFERENCES template_packs(pack_id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    category_name TEXT NOT NULL DEFAULT '一般',
+    title TEXT NOT NULL DEFAULT '',
+    body TEXT NOT NULL DEFAULT '',
+    defaults_json TEXT NOT NULL DEFAULT '{}',
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    is_locked INTEGER NOT NULL DEFAULT 0,
+    created_by TEXT NOT NULL DEFAULT '',
+    updated_by TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+CREATE TABLE IF NOT EXISTS note_templates (
+    template_id TEXT PRIMARY KEY,
+    pack_id TEXT NOT NULL REFERENCES template_packs(pack_id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    category_name TEXT NOT NULL DEFAULT '一般',
+    title TEXT NOT NULL DEFAULT '',
+    body TEXT NOT NULL DEFAULT '',
+    defaults_json TEXT NOT NULL DEFAULT '{}',
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    is_locked INTEGER NOT NULL DEFAULT 0,
+    created_by TEXT NOT NULL DEFAULT '',
+    updated_by TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+CREATE TABLE IF NOT EXISTS oa_enabled_packs (
+    channel_id TEXT NOT NULL,
+    pack_key TEXT NOT NULL,
+    PRIMARY KEY (channel_id, pack_key)
+);
+
+CREATE TABLE IF NOT EXISTS oa_case_categories (
+    category_id TEXT PRIMARY KEY,
+    channel_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(channel_id, name)
+);
+
+CREATE TABLE IF NOT EXISTS oa_note_categories (
+    category_id TEXT PRIMARY KEY,
+    channel_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(channel_id, name)
+);
+
+CREATE TABLE IF NOT EXISTS chat_state (
+    channel_id TEXT NOT NULL DEFAULT '',
+    chat_id TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'pending', 'done')),
+    last_inbound_at TEXT,
+    last_read_at TEXT,
+    updated_by TEXT NOT NULL DEFAULT '',
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    PRIMARY KEY (channel_id, chat_id)
+);
+
+CREATE TABLE IF NOT EXISTS group_member_cache (
+    channel_id TEXT NOT NULL DEFAULT '',
+    group_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    display_name TEXT NOT NULL DEFAULT '',
+    picture_url TEXT NOT NULL DEFAULT '',
+    fetched_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    PRIMARY KEY (channel_id, group_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS canned_replies (
+    reply_id TEXT NOT NULL,
+    channel_id TEXT NOT NULL DEFAULT '',
+    title TEXT NOT NULL,
+    category TEXT NOT NULL DEFAULT '',
+    content TEXT NOT NULL,
+    created_by TEXT NOT NULL DEFAULT '',
+    updated_by TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    PRIMARY KEY (channel_id, reply_id)
+);
+
+CREATE TABLE IF NOT EXISTS response_hours (
+    channel_id TEXT NOT NULL DEFAULT '',
+    enabled INTEGER NOT NULL DEFAULT 0,
+    timezone TEXT NOT NULL DEFAULT 'Asia/Taipei',
+    weekly TEXT NOT NULL DEFAULT '{}',
+    holidays TEXT NOT NULL DEFAULT '[]',
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    PRIMARY KEY (channel_id)
 );
 
 CREATE INDEX IF NOT EXISTS audit_events_channel_idx ON audit_events(channel_id);
@@ -300,3 +457,10 @@ CREATE INDEX IF NOT EXISTS saved_filters_channel_idx ON saved_filters(channel_id
 CREATE INDEX IF NOT EXISTS cases_channel_idx ON cases(channel_id, status);
 CREATE INDEX IF NOT EXISTS cases_subject_idx ON cases(channel_id, case_subject_id);
 CREATE INDEX IF NOT EXISTS case_activities_case_idx ON case_activities(case_id, created_at);
+CREATE INDEX IF NOT EXISTS chat_state_channel_idx ON chat_state(channel_id, status);
+CREATE INDEX IF NOT EXISTS group_member_cache_idx ON group_member_cache(channel_id, group_id);
+CREATE INDEX IF NOT EXISTS canned_replies_channel_idx ON canned_replies(channel_id);
+CREATE INDEX IF NOT EXISTS case_templates_pack_idx ON case_templates(pack_id);
+CREATE INDEX IF NOT EXISTS note_templates_pack_idx ON note_templates(pack_id);
+
+

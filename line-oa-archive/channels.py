@@ -112,17 +112,18 @@ def workspace_key(channel):
 def workspace_options(user):
     import reports
     platform = user['role'] == 'administrator'
-    people = reports.users() if platform else [user]
-    result = [{'id': 'p:' + p['email'], 'name': (p.get('display_name') or p['email']) + ' · 個人',
-               'kind': 'personal', 'org_id': '', 'owner_email': p['email'], 'can_manage': True}
-              for p in people if p.get('active', True) and reports.operator(p)]
+    result = []
     members = reports.memberships(user['email'])
     for org in reports.organizations():
         member = next((m for m in members if m['org_id'] == org['org_id'] and m['active']), None)
-        if org['active'] and (platform or (member and member['role'] in {'company_admin', 'sender'})):
-            result.append({'id': 'o:' + org['org_id'], 'name': org['name'], 'kind': 'organization',
+        if org['active'] and (platform or (member and member['role'] in {'company_admin', 'sender', 'assistant'})):
+            result.append({'id': 'o:' + org['org_id'], 'name': org['name'], 'kind': org.get('kind', 'organization'),
                            'org_id': org['org_id'], 'owner_email': '',
-                           'can_manage': platform or member['role'] == 'company_admin'})
+                           'can_manage': platform or (member and member['role'] == 'company_admin')})
+    if user.get('email') and (platform or personal_owner(user)):
+        result.append({'id': 'p:' + user['email'], 'name': (user.get('display_name') or user['email']) + ' · 個人',
+                       'kind': 'personal', 'org_id': '', 'owner_email': user['email'],
+                       'can_manage': True})
     return result
 
 
@@ -140,7 +141,75 @@ def authorize(channel_id, user, *, manage=False, enabled=True):
     workspace(row, user, manage)
     if enabled and not row['active']:
         raise ValueError('此 LINE OA 已停用。')
+    # Check OA member access for sender and assistant
+    if user['role'] in {'sender', 'assistant'} and row.get('org_id'):
+        import app
+        with app.database_connection() as conn:
+            assigned = conn.execute("SELECT 1 FROM oa_member_access WHERE email=? AND org_id=?", (user['email'], row['org_id'])).fetchone()
+            if assigned:
+                allowed = conn.execute("SELECT 1 FROM oa_member_access WHERE channel_id=? AND email=? AND org_id=?", (channel_id, user['email'], row['org_id'])).fetchone()
+                if not allowed:
+                    raise ValueError('您未獲授權使用此 LINE OA。')
     return row
+
+
+def oa_list(user):
+    """Returns list of OAs accessible to the user with unread, cases, and friend stats."""
+    import reports, app, sqlite3
+    platform = user['role'] == 'administrator'
+    members = reports.memberships(user['email'])
+    user_org_map = {m['org_id']: m for m in members if m['active']}
+    all_orgs = {o['org_id']: o for o in reports.organizations() if o['active']}
+    
+    with app.database_connection() as conn:
+        conn.row_factory = sqlite3.Row
+        all_channels = conn.execute("SELECT * FROM line_channels WHERE active=1").fetchall()
+        
+        # Check assigned OAs for sender/assistant
+        assigned_oas = {}
+        for r in conn.execute("SELECT channel_id, org_id FROM oa_member_access WHERE email=?", (user['email'],)).fetchall():
+            assigned_oas.setdefault(r['org_id'], set()).add(r['channel_id'])
+            
+        results = []
+        for ch in all_channels:
+            org_id = ch['org_id']
+            if not org_id or org_id not in all_orgs:
+                continue
+            
+            user_role = 'administrator' if platform else (user_org_map.get(org_id, {}).get('role'))
+            if not platform:
+                if not user_role:
+                    continue
+                if user_role in {'sender', 'assistant'}:
+                    allowed_set = assigned_oas.get(org_id)
+                    if allowed_set is not None and len(allowed_set) > 0 and ch['channel_id'] not in allowed_set:
+                        continue
+            
+            # Unread chat count
+            unread_row = conn.execute("SELECT COUNT(*) FROM line_chat_status WHERE channel_id=? AND is_read=0", (ch['channel_id'],)).fetchone()
+            unread_count = unread_row[0] if unread_row else 0
+            
+            # Pending cases count
+            pending_row = conn.execute("SELECT COUNT(*) FROM cases WHERE channel_id=? AND status IN ('pending', 'processing', 'waiting')", (ch['channel_id'],)).fetchone()
+            pending_cases_count = pending_row[0] if pending_row else 0
+            
+            # Friends count
+            friends_row = conn.execute("SELECT COUNT(*) FROM recipients WHERE channel_id=? AND active=1 AND kind='user'", (ch['channel_id'],)).fetchone()
+            friends_count = friends_row[0] if friends_row else 0
+            
+            results.append({
+                'channel_id': ch['channel_id'],
+                'name': ch['name'],
+                'basic_id': ch['basic_id'],
+                'bot_user_id': ch['bot_user_id'],
+                'org_id': org_id,
+                'org_name': all_orgs[org_id]['name'],
+                'user_role': user_role,
+                'unread_count': unread_count,
+                'pending_cases_count': pending_cases_count,
+                'friends_count': friends_count
+            })
+        return results
 
 
 def operational(channel):

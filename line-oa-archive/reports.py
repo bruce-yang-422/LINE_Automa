@@ -91,7 +91,13 @@ def save_organization(payload, actor):
 def save_membership(payload, actor):
     email=payload.get('email');org_id=payload.get('org_id');role=payload.get('role');active=payload.get('active')
     department=payload.get('department','');recipient=payload.get('recipient_id','')
-    if role not in {'company_admin','sender'} or type(active) is not bool or any(not isinstance(v,str) or len(v)>80 for v in (department,recipient)):
+    actor_acc = account(actor)
+    if actor_acc and actor_acc['role'] == 'company_admin':
+        if org_id != actor_acc.get('company'):
+            raise ValueError("只能管理本組織的成員。")
+        if role not in {'sender', 'assistant'}:
+            raise ValueError("組織管理員只能建立營運人員或協助人員。")
+    if role not in {'company_admin','sender','assistant'} or type(active) is not bool or any(not isinstance(v,str) or len(v)>80 for v in (department,recipient)):
         raise ValueError('成員角色或欄位格式不正確。')
     with app.database_connection() as conn:
         if not conn.execute('SELECT 1 FROM workspace_users WHERE email=?',(email,)).fetchone() or not conn.execute('SELECT 1 FROM organizations WHERE org_id=?',(org_id,)).fetchone():
@@ -103,6 +109,11 @@ def save_membership(payload, actor):
                      (email,org_id,role,department.strip(),recipient,int(active)))
         conn.execute("UPDATE workspace_users SET role=?,department=?,recipient_id=? WHERE email=? AND company=? AND role<>'administrator'",
                      (role,department.strip(),recipient,email,org_id))
+        if 'channel_ids' in payload and isinstance(payload['channel_ids'], list):
+            conn.execute("DELETE FROM oa_member_access WHERE email=? AND org_id=?", (email, org_id))
+            for ch_id in payload['channel_ids']:
+                conn.execute("INSERT OR IGNORE INTO oa_member_access (channel_id, email, org_id) VALUES (?, ?, ?)",
+                             (ch_id, email, org_id))
         audit(conn,actor,'membership.update',org_id,email+' · '+role)
 
 
@@ -111,7 +122,11 @@ def manager(user):
 
 
 def operator(user):
-    return bool(user) and user['role'] in {'administrator', 'company_admin', 'sender'}
+    return bool(user) and user['role'] in {'administrator', 'company_admin', 'sender', 'assistant'}
+
+
+def can_send(user):
+    return bool(user) and user['role'] in {'company_admin', 'sender'}
 
 
 def login_account(email, company=None):
@@ -241,8 +256,11 @@ def view_options(user):
     result=[]
     for member in memberships():
         row=account(member['email'],member['org_id'])
-        if row and row['role']!='administrator' and (user['role']=='administrator' or (row['role']=='sender' and same_company(user,row['company']))):
-            result.append(row)
+        if row and row['role']!='administrator':
+            if user['role']=='administrator':
+                result.append(row)
+            elif user['role']=='company_admin' and same_company(user,row['company']) and row['role'] in {'sender','assistant'}:
+                result.append(row)
     return result
 
 
@@ -252,8 +270,23 @@ def save_user(payload, actor):
         raise ValueError("請填入完整 Email。")
     role = payload.get("role")
     active = payload.get("active")
-    if role not in {"administrator", "company_admin", "sender"} or type(active) is not bool:
+    if role not in {"administrator", "company_admin", "sender", "assistant"} or type(active) is not bool:
         raise ValueError("角色或啟用狀態不正確。")
+    
+    actor_acc = account(actor) if actor != '本機管理員' else {'role': 'administrator', 'company': ''}
+    if not actor_acc:
+        actor_acc = next((u for u in users() if u['email'] == actor), None)
+    
+    if actor_acc and actor_acc['role'] == 'company_admin':
+        # 乙級只能在本組織新增/修改丙級 (sender) 或丁級 (assistant)
+        if role not in {'sender', 'assistant'}:
+            raise ValueError("組織管理員只能建立營運人員或協助人員。")
+        if payload.get("company") and payload.get("company") != actor_acc.get("company"):
+            raise ValueError("只能管理本組織的帳號。")
+        payload["company"] = actor_acc.get("company")
+    elif actor_acc and actor_acc['role'] not in {'administrator'}:
+        raise ValueError("權限不足。")
+
     fields = {}
     for key in ("display_name", "company", "department", "recipient_id"):
         value = payload.get(key, "")
@@ -268,8 +301,13 @@ def save_user(payload, actor):
             contact = conn.execute('SELECT kind,company FROM recipients WHERE recipients.channel_id=current_channel() AND recipient_id=?', (fields["recipient_id"],)).fetchone()
             if not contact or contact[0] != "user" or contact[1] != fields["company"]:
                 raise ValueError("請先在「聯絡對象」設定該個人的組織，再連結到帳號。")
-        previous = conn.execute("SELECT role,active FROM workspace_users WHERE email=?", (email,)).fetchone()
-        if previous and previous == ("administrator", 1) and (role != "administrator" or not active):
+        previous = conn.execute("SELECT role,active,company FROM workspace_users WHERE email=?", (email,)).fetchone()
+        if actor_acc and actor_acc['role'] == 'company_admin' and previous:
+            if previous[0] in {'administrator', 'company_admin'} and email != actor:
+                raise ValueError("無法修改管理員帳號。")
+            if previous[2] and previous[2] != actor_acc.get('company'):
+                raise ValueError("無法修改其他組織帳號。")
+        if previous and previous[0] == "administrator" and previous[1] == 1 and (role != "administrator" or not active):
             remaining = conn.execute("SELECT COUNT(*) FROM workspace_users WHERE role='administrator' AND active=1 AND email<>?", (email,)).fetchone()[0]
             if not remaining:
                 raise ValueError("至少必須保留一位啟用中的管理員。")
@@ -292,6 +330,7 @@ def save_user(payload, actor):
             conn.execute('DELETE FROM site_sessions WHERE email=?', (email,))
             conn.execute('DELETE FROM site_activation WHERE email=?', (email,))
         audit(conn, actor, "account.update", email, role + (" · 啟用" if active else " · 停用"))
+
 
 
 def can_view(source, user):

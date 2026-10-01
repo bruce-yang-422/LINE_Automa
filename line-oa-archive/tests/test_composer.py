@@ -1,8 +1,10 @@
 import base64
+import os, sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
 import json
-from pathlib import Path
 import threading
 import unittest
 from unittest.mock import Mock, patch

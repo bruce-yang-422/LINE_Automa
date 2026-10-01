@@ -5,13 +5,15 @@ const workspaceUI={reportQuery:"",reportLayout:"list",reportDetail:"",contactDet
 function workspaceHeader(){
   if(!state.contacts.some(r=>r.recipient_id===workspaceUI.contactDetail))workspaceUI.contactDetail="";
   if(!state.reports.some(r=>r.report_id===workspaceUI.reportDetail))workspaceUI.reportDetail="";
-  const user=state.session.user;
+  const user=state.session?.user;
   const context=document.getElementById("workspace-context-name");
-  context.textContent=superAdmin()?"平台工作區":orgName(user.company);
-  document.getElementById("workspace-context-kind").textContent=superAdmin()?"跨組織管理":roleName(state.session.role);
-  document.getElementById("workspace-context").hidden=lineUI.registry||!document.getElementById("organization-select").hidden;
-  if(lineUI.registry)document.getElementById("organization-select").hidden=true;
-  document.querySelector('nav [data-view="schedule"]').hidden=!admin();
+  const ch = typeof selectedOA === "function" ? selectedOA() : null;
+  if(context) context.textContent=ch ? ch.name : (superAdmin()?"平台管理":orgName(user?.company));
+  const kind = document.getElementById("workspace-context-kind");
+  if(kind) kind.textContent=ch ? orgName(ch.org_id) : (superAdmin()?"跨組織":roleName(state.session?.role));
+  const wrap = document.getElementById("workspace-context");
+  if(wrap) wrap.hidden=false;
+  if(document.getElementById("organization-select")) document.getElementById("organization-select").hidden=true;
 }
 
 function reportDetailPanel(r){
@@ -92,18 +94,54 @@ function contactDetailPanel(){
         ${renderContactCases(r.recipient_id)}
       </div>
       <details style="margin-top:14px;"><summary class="muted" style="font-size:12px;">查看聊天室識別資料</summary><p class="contact-id">${esc(r.recipient_id)}</p></details>
-      ${manager()?`<div class="detail-actions">${button("編輯聯絡對象","edit-contact","primary",`data-id="${esc(r.recipient_id)}"`)}</div>`:""}
+      <div class="detail-actions">
+        ${button(icon("message")+"開啟聊天","open-chat-from-contact","primary",`data-id="${esc(r.recipient_id)}"`)}
+        ${manager()?button("編輯聯絡對象","edit-contact","",`data-id="${esc(r.recipient_id)}"`):""}
+      </div>
     </div>
   </aside>`;
 }
 
 function renderChatNotesList(recipient_id){
   const notes = state.chatNotes?.get(recipient_id) || [];
-  if(!notes.length) return '<p class="muted" style="font-size:12px;margin:4px 0 0;">目前尚無對話記事，可點選上方「新增記事」記錄重要交辦或對話事項。</p>';
-  return `<div class="chat-notes-container">${notes.map(n=>`<div class="chat-note-item">
-    <div class="chat-note-meta"><span><strong>${esc(n.author||"管理員")}</strong> · ${when(n.created_at)}</span><div><button class="btn text small" data-action="edit-chat-note" data-id="${esc(n.note_id)}" data-recipient="${esc(recipient_id)}">編輯</button><button class="btn text small danger" data-action="delete-chat-note" data-id="${esc(n.note_id)}" data-recipient="${esc(recipient_id)}">刪除</button></div></div>
-    <div class="chat-note-content">${esc(n.content)}</div>
-  </div>`).join("")}</div>`;
+  if(!notes.length) return `<div class="chat-notes-empty"><p class="muted" style="font-size:12px;margin:4px 0;">目前尚無對話記事，可點選上方「新增記事」記錄重要事項。</p><button class="btn text small" data-action="view-chat-notes-trash" data-recipient="${esc(recipient_id)}" style="font-size:11px;padding:2px 0;">🗑️ 查看最近刪除 (30 天內可還原)</button></div>`;
+  
+  const pinned = notes.filter(n => n.is_pinned);
+  const normal = notes.filter(n => !n.is_pinned);
+  const ordered = [...pinned, ...normal];
+
+  return `<div class="chat-notes-container">
+    <div class="chat-notes-toolbar" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+      <small class="muted">共 ${notes.length} 筆（置頂 ${pinned.length}/5）</small>
+      <button class="btn text small" data-action="view-chat-notes-trash" data-recipient="${esc(recipient_id)}" style="font-size:11px;padding:0;">🗑️ 回收筒</button>
+    </div>
+    ${ordered.map(n=>`
+      <div class="chat-note-item ${n.is_pinned?'pinned':''} ${n.is_locked?'locked':''}" style="border:1px solid var(--line, #e2e8f0);border-radius:8px;padding:8px 10px;margin-bottom:8px;background:${n.is_pinned?'rgba(254, 240, 138, 0.2)':'var(--card-bg, #fff)'};">
+        <div class="chat-note-meta" style="display:flex;justify-content:space-between;align-items:center;font-size:12px;">
+          <span>
+            ${n.is_pinned?'<span title="已置頂">📌</span> ':''}
+            ${n.is_locked?'<span title="防誤觸鎖定中">🔒</span> ':''}
+            <strong>${esc(n.title||n.author||"記事")}</strong> · <span class="muted">${when(n.created_at)}</span>
+          </span>
+          <div class="note-actions" style="display:flex;gap:4px;">
+            <button class="btn text small" data-action="toggle-chat-note-pin" data-id="${esc(n.note_id)}" data-recipient="${esc(recipient_id)}" title="${n.is_pinned?'取消置頂':'置頂'}">${n.is_pinned?'取消置頂':'📌 置頂'}</button>
+            <button class="btn text small" data-action="toggle-chat-note-lock" data-id="${esc(n.note_id)}" data-recipient="${esc(recipient_id)}" title="${n.is_locked?'解除鎖定':'鎖定'}">${n.is_locked?'🔓':'🔒'}</button>
+            ${!n.is_locked ? `<button class="btn text small" data-action="edit-chat-note" data-id="${esc(n.note_id)}" data-recipient="${esc(recipient_id)}">編輯</button>` : ''}
+            <button class="btn text small" data-action="convert-note-to-case" data-id="${esc(n.note_id)}" data-recipient="${esc(recipient_id)}" title="轉為案件">轉為案件</button>
+            ${!n.is_locked ? `<button class="btn text small danger" data-action="delete-chat-note" data-id="${esc(n.note_id)}" data-recipient="${esc(recipient_id)}">刪除</button>` : ''}
+          </div>
+        </div>
+        ${n.title ? `<div style="font-weight:600;font-size:13px;margin:4px 0 2px;">${esc(n.title)}</div>` : ''}
+        <div class="chat-note-content" style="font-size:13px;white-space:pre-wrap;margin:4px 0;line-height:1.4;">${esc(n.content)}</div>
+        ${(n.tags && n.tags.length) || n.due_date ? `
+          <div class="chat-note-footer" style="display:flex;gap:6px;align-items:center;margin-top:4px;font-size:11px;">
+            ${(n.tags || []).map(t => `<span class="badge" style="font-size:10px;">${esc(t)}</span>`).join(" ")}
+            ${n.due_date ? `<span class="muted">📅 期限：${esc(n.due_date)}</span>` : ''}
+          </div>
+        ` : ''}
+      </div>
+    `).join("")}
+  </div>`;
 }
 
 function renderContactCases(recipient_id){
@@ -114,9 +152,14 @@ function renderContactCases(recipient_id){
       <div class="case-title-row">
         <span class="case-no-badge">${esc(c.case_no)}</span>
         <strong>${esc(c.title)}</strong>
+        ${c.is_locked ? '<span title="防誤觸鎖定">🔒</span>' : ''}
         ${badge(caseStatusNames[c.status]||c.status, caseStatusTones[c.status]||"")}
       </div>
-      <small class="muted">更新：${when(c.updated_at)}</small>
+      <div style="font-size:11px;margin-top:2px;">
+        ${c.category ? `<span class="badge" style="font-size:10px;">${esc(c.category)}</span> ` : ''}
+        ${c.ref_no ? `<span class="muted">參考號：${esc(c.ref_no)}</span> · ` : ''}
+        <small class="muted">更新：${when(c.updated_at)}</small>
+      </div>
     </div>
     ${button("查看","open-case-detail","btn small",`data-id="${esc(c.case_id)}"`)}
   </div>`).join("")}</div>`;

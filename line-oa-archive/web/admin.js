@@ -1,7 +1,7 @@
 "use strict";
 const $ = id => document.getElementById(id);
 const esc = value => String(value ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const paths = {grid:'<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',file:'<path d="M14 2H5v20h14V7zM14 2v6h5M8 12h8M8 16h6"/>',send:'<path d="m22 2-7 20-4-9-9-4zM11 13 22 2"/>',users:'<circle cx="9" cy="7" r="3"/><path d="M3 21v-3a6 6 0 0 1 12 0v3M17 4a3 3 0 0 1 0 6M18 14a5 5 0 0 1 3 5v2"/>',bell:'<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M9 21h6"/>',clock:'<circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/>',settings:'<path d="M3 7h18M3 17h18"/><rect x="6" y="4" width="4" height="6" rx="1"/><rect x="14" y="14" width="4" height="6" rx="1"/>',menu:'<path d="M4 6h16M4 12h16M4 18h16"/>',refresh:'<path d="M20 7a9 9 0 1 0 1 8M20 2v6h-6"/>',arrow:'<path d="M5 12h14m-5-5 5 5-5 5"/>',search:'<circle cx="10" cy="10" r="6"/><path d="m15 15 6 6"/>',plus:'<path d="M12 4v16M4 12h16"/>',image:'<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="1"/><path d="m3 17 6-6 4 4 3-3 5 5"/>',check:'<path d="m5 12 4 4L19 6"/>',copy:'<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>',shield:'<path d="m12 2 8 3v6c0 6-8 11-8 11S4 17 4 11V5zM8 12l3 3 5-6"/>',folder:'<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>'};
+const paths = {grid:'<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',layers:'<path d="m12 2 10 5-10 5L2 7zM2 17l10 5 10-5M2 12l10 5 10-5"/>',file:'<path d="M14 2H5v20h14V7zM14 2v6h5M8 12h8M8 16h6"/>',send:'<path d="m22 2-7 20-4-9-9-4zM11 13 22 2"/>',users:'<circle cx="9" cy="7" r="3"/><path d="M3 21v-3a6 6 0 0 1 12 0v3M17 4a3 3 0 0 1 0 6M18 14a5 5 0 0 1 3 5v2"/>',bell:'<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M9 21h6"/>',clock:'<circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/>',settings:'<path d="M3 7h18M3 17h18"/><rect x="6" y="4" width="4" height="6" rx="1"/><rect x="14" y="14" width="4" height="6" rx="1"/>',menu:'<path d="M4 6h16M4 12h16M4 18h16"/>',refresh:'<path d="M20 7a9 9 0 1 0 1 8M20 2v6h-6"/>',arrow:'<path d="M5 12h14m-5-5 5 5-5 5"/>',search:'<circle cx="10" cy="10" r="6"/><path d="m15 15 6 6"/>',plus:'<path d="M12 4v16M4 12h16"/>',image:'<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="1"/><path d="m3 17 6-6 4 4 3-3 5 5"/>',check:'<path d="m5 12 4 4L19 6"/>',copy:'<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>',shield:'<path d="m12 2 8 3v6c0 6-8 11-8 11S4 17 4 11V5zM8 12l3 3 5-6"/>',folder:'<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>',message:'<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>'};
 const icon = name => `<svg viewBox="0 0 24 24" aria-hidden="true">${paths[name] || paths.file}</svg>`;
 document.querySelectorAll("[data-icon]").forEach(el => {el.innerHTML=icon(el.dataset.icon);});
 const remote = location.hostname !== "127.0.0.1";
@@ -10,12 +10,12 @@ const token = remote ? "" : location.hash.slice(1) || sessionStorage.getItem("li
 if(location.hash){if(!remote)sessionStorage.setItem("lineAdminToken",token);history.replaceState(null,"",location.pathname+location.search);}
 $("logout").hidden=!remote;
 const state={session:null,view:new URLSearchParams(location.search).get("view")||"overview",reports:[],contacts:[],tags:[],jobs:[],cases:[],caseFilter:"all",casePriority:"all",caseQuery:"",savedFilters:[],chatNotes:new Map(),settings:{users:[]},events:[],previews:new Map(),selected:new Set(),report:null,step:1,audience:"selected",search:"",kind:"all",company:"",department:"",tagFilter:"",page:1,reportFilter:"all",historyFilter:"all",subFilter:"all",busy:false,loaded:false,authLost:false};
-const titles={overview:"工作總覽",reports:"報告中心",send:"建立發送",cases:"案件管理",contacts:"聯絡對象",subscriptions:"天氣訂閱",history:"發送紀錄",schedule:"排程管理",settings:"帳號與設定",organizations:"組織管理",channels:"LINE OA 管理"};
-const admin=()=>["administrator","company_admin","sender"].includes(state.session?.role);
+const titles={overview:"工作總覽","oa-list":"OA 一覽",chat:"聊天對話",reports:"報告中心",send:"建立發送",cases:"案件管理",contacts:"聯絡對象",subscriptions:"天氣訂閱",history:"發送紀錄",schedule:"排程管理",personnel:"人員與權限","org-settings":"組織設定",settings:"平台設定",organizations:"組織管理",channels:"LINE OA 管理"};
+const admin=()=>["administrator","company_admin","sender","assistant"].includes(state.session?.role);
 const manager=()=>["administrator","company_admin"].includes(state.session?.role);
-const canSend=()=>admin()&&Boolean(state.session?.modules?.messaging);
+const canSend=()=>["company_admin","sender"].includes(state.session?.role)&&Boolean(state.session?.modules?.messaging);
 const superAdmin=()=>state.session?.role==="administrator";
-const roleName=role=>({administrator:"平台管理員",company_admin:"組織管理員",sender:"發送人員"}[role]||role);
+const roleName=role=>({administrator:"平台管理員",company_admin:"組織管理員",sender:"營運人員",assistant:"協助人員"}[role]||role);
 const weatherModule=()=>superAdmin()&&state.reports.some(r=>r.report_id==="weather");
 let viewAs="",viewKey="",viewOptions=[],principalSession=null,organization="",previewOrganization="",organizationKey="";
 const orgName=id=>(state.organizations||[]).find(o=>o.org_id===id)?.name||id||"未指定組織";
@@ -107,6 +107,7 @@ async function load(){
     const results=await Promise.all([api("/api/contacts"),api("/api/jobs"),(manager()?api("/api/settings"):Promise.resolve({users:[]})),api("/api/activity"),api("/api/cases"),api("/api/saved-filters")]);
     state.contacts=results[0].contacts;state.tags=results[0].tags||[];state.jobs=results[1].jobs;state.settings=results[2];state.events=results[3].events;state.cases=results[4].cases||[];state.savedFilters=results[5].saved_filters||[];
     state.selected=new Set([...state.selected].filter(id=>state.contacts.some(r=>r.recipient_id===id&&r.active)));
+    if(typeof loadChatRooms==="function")await loadChatRooms();
   }else{state.contacts=[];state.tags=[];state.jobs=[];state.cases=[];state.savedFilters=[];state.chatNotes.clear();state.events=[];state.settings=manager()?await api("/api/settings"):{users:[]};state.selected.clear();}
   document.querySelector('nav [data-view="subscriptions"]').hidden=!weatherModule();
   document.querySelector('nav [data-view="send"]').hidden=!admin()||!state.session.modules.messaging;
@@ -135,14 +136,50 @@ async function hydratePreviews(){
 }
 function stat(title,value,unit,note,symbol){return `<div class="stat"><div class="stat-top">${title}${icon(symbol)}</div><div class="stat-value">${value}<span>${unit}</span></div><p class="stat-note">${note}</p></div>`;}
 function quick(title,description,view,symbol){return `<button class="quick" data-view="${view}"><span class="quick-icon">${icon(symbol)}</span><span><strong>${title}</strong><small>${description}</small></span>${icon("arrow")}</button>`;}
+function renderOnboardingCard(){
+  if(state.session?.role !== "company_admin") return "";
+  const orgId = state.session?.user?.company || "";
+  let dismissed = false;
+  try{ dismissed = Boolean(localStorage.getItem("lineOnboardingDismissed_" + orgId)); }catch(_){}
+  if(dismissed) return "";
+  
+  const hasConnectedOA = (state.channels||[]).some(c => c.org_id === orgId && c.active);
+  const hasTemplate = true;
+  const hasColleagues = (state.memberships||[]).filter(m => m.org_id === orgId && m.active).length > 1;
+  
+  if(hasConnectedOA && hasTemplate && hasColleagues) return "";
+  
+  return `<section class="panel onboarding-panel" style="background:linear-gradient(135deg, #f0fdf4, #e6f4ea);border:1px solid #86efac;border-radius:16px;padding:16px 20px;margin-bottom:20px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+      <h3 style="margin:0;font-size:15px;font-weight:700;color:#166534;display:flex;align-items:center;gap:6px;">🚀 開始使用</h3>
+      <button type="button" class="btn text small" data-action="dismiss-onboarding" style="color:#166534;padding:2px 8px;">略過</button>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;">
+      <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#fff;border-radius:8px;border:1px solid ${hasConnectedOA?'#86efac':'#e2e8f0'};">
+        <span style="font-size:16px;color:${hasConnectedOA?'#16a34a':'#94a3b8'};">${hasConnectedOA?'☑':'☐'}</span>
+        <div><strong style="font-size:13px;display:block;">1. 確認 LINE OA 連線</strong><small style="color:#64748b;font-size:11px;">${hasConnectedOA?'已連結 OA':'請至 LINE OA 管理完成連線'}</small></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#fff;border-radius:8px;border:1px solid ${hasTemplate?'#86efac':'#e2e8f0'};">
+        <span style="font-size:16px;color:${hasTemplate?'#16a34a':'#94a3b8'};">${hasTemplate?'☑':'☐'}</span>
+        <div><strong style="font-size:13px;display:block;">2. 選擇範本包</strong><small style="color:#64748b;font-size:11px;">已預設啟用通用範本包</small></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#fff;border-radius:8px;border:1px solid ${hasColleagues?'#86efac':'#e2e8f0'};">
+        <span style="font-size:16px;color:${hasColleagues?'#16a34a':'#94a3b8'};">${hasColleagues?'☑':'☐'}</span>
+        <div><strong style="font-size:13px;display:block;">3. 新增同事</strong><small style="color:#64748b;font-size:11px;">${hasColleagues?'已建立同事帳號':'至人員與權限新增營運/協助人員'}</small></div>
+      </div>
+    </div>
+  </section>`;
+}
+
 function overview(){
   const ready=state.reports.filter(r=>r.status==="ready").length, active=state.contacts.filter(r=>r.active).length, subscribed=state.contacts.filter(r=>r.active&&r.weather_subscribed).length;
   const pending=state.jobs.filter(j=>["scheduled","queued","running"].includes(j.status)).length;
   const date=new Date().toLocaleDateString("zh-TW",{month:"long",day:"numeric",weekday:"long"});
   const r=state.reports[0];
   return heading(admin()?"今天的工作，一目了然":"你的報告，都在這裡",`${esc(date)}　·　${admin()?"檢查報告、安排收件對象，掌握每次發送結果。":"依照你的公司、部門與個人權限，查看最新內容。"}`,canSend()?button(icon("plus")+"建立發送","start-send","primary"):button("瀏覽報告 "+icon("arrow"),"go-reports","primary"),"YOUR DAILY WORKSPACE")+
+    renderOnboardingCard()+
     `<div class="stats">${stat("可用報告",ready,"份",`已登記 ${state.reports.length} 份報告`,"file")}${admin()?stat("有效聯絡對象",active,"個",`${state.contacts.filter(r=>r.active&&r.kind!=="user").length} 個群組聊天室`,"users")+(weatherModule()?stat("天氣訂閱",subscribed,"個","發送時檢查最新訂閱狀態","bell"):stat("所屬組織",esc(state.session.user?.company||"—"),"","資料依公司隔離","shield"))+stat("進行中的發送",pending,"筆","結果不明的請求不自動重送","send"):stat("所屬部門",esc(state.session.user?.department||"未指定"),"","只顯示獲授權內容","shield")}</div>
-    <div class="dashboard-grid"><div class="stack"><section class="panel"><div class="panel-head"><div><h2>報告焦點</h2><p>先確認內容，再開始下一步</p></div><button class="btn text small" data-view="reports">所有報告 ${icon("arrow")}</button></div>${r?`<div class="feature"><div data-preview="${esc(r.report_id)}">${tile(r)}</div><div>${reportBadge(r)}<h3>${esc(r.title)}</h3><p>最後更新　${when(r.modified_at)}</p><p>${esc(scope(r))}</p>${r.stale?'<p>此報告不是今日更新，發送前請確認。</p>':""}${button(canSend()?"預覽並建立發送 "+icon("arrow"):"開啟報告 "+icon("arrow"),canSend()?"choose-report":"preview","dark",`data-id="${esc(r.report_id)}" ${r.status!=="ready"?"disabled":""}`)}</div></div>`:empty("還沒有可用報告","管理員設定報告來源與權限後，就會顯示在這裡。")}</section>${admin()?`<section class="panel"><div class="panel-head"><h2>最近發送</h2><button class="btn text small" data-view="history">查看全部 ${icon("arrow")}</button></div>${historyList(state.jobs.slice(0,3))}</section>`:""}</div><div class="stack"><section class="panel"><div class="panel-head"><h2>快速前往</h2></div><div class="quick-list">${quick("報告中心","預覽獲授權的模組報告","reports","file")}${admin()?quick("聯絡對象","整理公司、部門與群組","contacts","users")+(weatherModule()?quick("天氣訂閱","管理持續接收通知的對象","subscriptions","bell"):""):""}</div></section><aside class="insight"><h3>${icon("shield")}${admin()?"分對對象，送對報告":"你的資料範圍"}</h3><p>${admin()?"組織報表依公司、部門或個人範圍選擇發送對象。聯絡對象只需在 LINE 收訊，不需後台帳號；需要操作後台的發送人員才須登入授權。":"此處只列出你獲授權的報告。若缺少需要的內容，請聯絡管理員確認公司及部門設定。"}</p></aside></div></div>`;
+    <div class="dashboard-grid"><div class="stack"><section class="panel"><div class="panel-head"><div><h2>報告焦點</h2><p>先確認內容，再開始下一步</p></div><button class="btn text small" data-view="reports">所有報告 ${icon("arrow")}</button></div>${r?`<div class="feature"><div data-preview="${esc(r.report_id)}">${tile(r)}</div><div>${reportBadge(r)}<h3>${esc(r.title)}</h3><p>最後更新　${when(r.modified_at)}</p><p>${esc(scope(r))}</p>${r.stale?'<p>此報告不是今日更新，發送前請確認。</p>':""}${button(canSend()?"預覽並建立發送 "+icon("arrow"):"開啟報告 "+icon("arrow"),canSend()?"choose-report":"preview","dark",`data-id="${esc(r.report_id)}" ${r.status!=="ready"?"disabled":""}`)}</div></div>`:empty("還沒有可用報告","管理員設定報告來源與權限後，就會顯示在這裡。")}</section>${admin()?`<section class="panel"><div class="panel-head"><h2>最近發送</h2><button class="btn text small" data-view="history">查看全部 ${icon("arrow")}</button></div>${historyList(state.jobs.slice(0,3))}</section>`:""}</div><div class="stack"><section class="panel"><div class="panel-head"><h2>快速前往</h2></div><div class="quick-list">${admin()?quick("聊天對話","查看與回覆 LINE 即時訊息","chat","message"):""}${quick("報告中心","預覽獲授權的模組報告","reports","file")}${admin()?quick("聯絡對象","整理公司、部門與群組","contacts","users")+(weatherModule()?quick("天氣訂閱","管理持續接收通知的對象","subscriptions","bell"):""):""}</div></section><aside class="insight"><h3>${icon("shield")}${admin()?"分對對象，送對報告":"你的資料範圍"}</h3><p>${admin()?"組織報表依公司、部門或個人範圍選擇發送對象。聯絡對象只需在 LINE 收訊，不需後台帳號；需要操作後台的發送人員才須登入授權。":"此處只列出你獲授權的報告。若缺少需要的內容，請聯絡管理員確認公司及部門設定。"}</p></aside></div></div>`;
 }
 function reportsPage(wizard=false){
   if(!wizard)return workspaceReports();
@@ -191,13 +228,16 @@ function filteredCases(){
 function caseCard(c){
   const subject=state.contacts.find(x=>x.recipient_id===c.case_subject_id);
   const subjectName=subject?label(subject):(c.case_subject_id||"未知對象");
-  return `<article class="case-card">
+
+  return `<article class="case-card ${c.is_locked?'locked':''}">
     <div class="case-card-head">
       <div class="case-card-main-title">
         <span class="case-no-badge">${esc(c.case_no)}</span>
         <h3 class="case-title">${esc(c.title)}</h3>
+        ${c.is_locked?'<span title="防誤觸鎖定中">🔒</span>':''}
       </div>
       <div class="case-card-badges">
+        ${c.category?`<span class="badge">${esc(c.category)}</span>`:""}
         ${c.priority?`<span class="badge ${casePriorityTones[c.priority]||""}">${casePriorityNames[c.priority]||c.priority}優先度</span>`:""}
         <span class="badge ${caseStatusTones[c.status]||""}">${caseStatusNames[c.status]||c.status}</span>
       </div>
@@ -205,6 +245,8 @@ function caseCard(c){
     ${c.description?`<p class="case-desc">${esc(c.description)}</p>`:""}
     <div class="case-card-meta">
       <span><strong>案件主體：</strong><button class="btn text small link-style" data-action="contact-detail-from-case" data-id="${esc(c.case_subject_id)}">${esc(subjectName)}</button></span>
+      ${c.ref_no?`<span><strong>參考號：</strong>${esc(c.ref_no)}</span>`:""}
+      ${c.due_date?`<span><strong>期限：</strong>${esc(c.due_date)}</span>`:""}
       <span><strong>建立：</strong>${when(c.created_at)}</span>
       <span><strong>更新：</strong>${when(c.updated_at)}</span>
     </div>
@@ -216,6 +258,8 @@ function caseCard(c){
       ${c.status==="waiting"?button("恢復處理","case-resume-processing","primary small",`data-id="${esc(c.case_id)}"`):""}
       ${c.status==="ready_to_close"?button("退回處理","case-back-processing","small",`data-id="${esc(c.case_id)}"`)+button("執行結案","open-case-close-modal","good primary small",`data-id="${esc(c.case_id)}"`):""}
       ${c.status==="closed"?badge("已完成結案","good"):""}
+      <button class="btn text small" data-action="toggle-case-lock" data-id="${esc(c.case_id)}">${c.is_locked?'🔓 解鎖':'🔒 鎖定'}</button>
+      <button class="btn text small" data-action="create-continuation-case" data-id="${esc(c.case_id)}">+ 延續案件</button>
       ${button("完整歷程","open-case-detail","small",`data-id="${esc(c.case_id)}"`)}
     </div>
   </article>`;
@@ -229,7 +273,14 @@ function casesPage(){
   const readyCount=state.cases.filter(c=>c.status==="ready_to_close").length;
   const closedCount=state.cases.filter(c=>c.status==="closed").length;
 
-  return heading("案件管理","追蹤從對話與聯絡對象建立的案件，掌握各階段進度。",button(icon("plus")+"建立案件","new-case-modal","primary"),"CASE MANAGEMENT")+
+  const exportButtons = manager() ? `
+    <div style="display:flex;gap:6px;">
+      <button class="btn small" data-action="export-cases-csv">${icon("download")} 匯出 CSV</button>
+      <button class="btn small" data-action="export-cases-xlsx">${icon("download")} 匯出 XLSX</button>
+    </div>
+  ` : '';
+
+  return heading("案件管理","追蹤從對話與聯絡對象建立的案件，掌握各階段進度。",`<div style="display:flex;gap:8px;">${exportButtons}${button(icon("plus")+"建立案件","new-case-modal","primary")}</div>`,"CASE MANAGEMENT")+
     `<div class="stats">
       ${stat("待處理",pendingCount,"件","尚未開始處理的案件","clock")}
       ${stat("處理中",processingCount,"件","進行中需主動跟進","send")}
@@ -238,7 +289,7 @@ function casesPage(){
     </div>
     <section class="panel section-space">
       <div class="toolbar">
-        <label class="search-field">${icon("search")}<input id="case-search" value="${esc(state.caseQuery)}" placeholder="搜尋案件編號、標題、描述或聯絡對象" aria-label="搜尋案件"></label>
+        <label class="search-field">${icon("search")}<input id="case-search" value="${esc(state.caseQuery)}" placeholder="搜尋案件編號、標題、描述、參考號或聯絡對象" aria-label="搜尋案件"></label>
         <select id="case-priority-filter" aria-label="優先度篩選">
           ${options([["all","所有優先度"],["urgent","緊急"],["high","高"],["normal","一般"],["low","低"]],state.casePriority)}
         </select>
@@ -252,16 +303,29 @@ function casesPage(){
     </section>`;
 }
 
-function createCaseModal(subject_id=""){
+function createCaseModal(subject_id="", prefill={}){
   const contactOpts=[["","請選擇關聯的聯絡對象"],...state.contacts.filter(r=>r.active).map(r=>[r.recipient_id,label(r)+(r.kind==="user"?" (個人)":" (群組)")])];
-  modal("建立新案件",`<form id="case-create-form">
-    <div class="form-grid">
-      <div class="full">${field("案件標題","title","",'required maxlength="100" placeholder="例如：詢問 10 月發票開立方式、報表格式問題"')}</div>
-      ${selectField("案件主體（聯絡對象）","case_subject_id",contactOpts,subject_id)}
-      ${selectField("優先度","priority",[["normal","一般"],["low","低"],["high","高"],["urgent","緊急"]],"normal")}
-      <div class="full"><label class="field">問題或需求描述（選填）<textarea name="description" rows="4" maxlength="2000" placeholder="詳細說明對方需求、對話重點、目前已知資訊..."></textarea></label></div>
+  const title = prefill.title || "";
+  const desc = prefill.description || "";
+  const cat = prefill.category || "一般";
+  const continuedFrom = prefill.continued_from_id || "";
+
+  modal(continuedFrom ? "建立延續案件" : "建立新案件", `<form id="case-create-form">
+    ${continuedFrom ? `<input type="hidden" name="continued_from_id" value="${esc(continuedFrom)}"><div class="callout" style="margin-bottom:12px;">🔗 此案件將作為延續案件關聯至前案歷程。</div>` : ''}
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+      <span class="muted" style="font-size:13px;">填寫案件需求或從範本包帶入</span>
+      <button type="button" class="btn text small" data-action="open-template-picker" data-subject="${esc(subject_id)}">📋 從範本帶入</button>
     </div>
-    <p class="callout">建立案件後初始狀態為「待處理」，可於案件管理隨時流轉進度並記錄 Timeline 歷程。</p>
+    <div class="form-grid">
+      <div class="full">${field("案件標題","title",title,'required maxlength="100" placeholder="例如：詢問 10 月發票開立方式、報表格式問題"')}</div>
+      ${selectField("案件主體（聯絡對象）","case_subject_id",contactOpts,subject_id)}
+      ${field("案件類別","category",cat,'maxlength="50" placeholder="例如：一般、諮詢、維修、訂單"')}
+      ${selectField("優先度","priority",[["normal","一般"],["low","低"],["high","高"],["urgent","緊急"]],prefill.priority||"normal")}
+      ${field("參考編號（選填）","ref_no",prefill.ref_no||"",'maxlength="50" placeholder="例如：訂單號 #202610-A01、發票號"')}
+      ${field("預計完成期限（選填）","due_date",prefill.due_date||"",'type="date"')}
+      <div class="full"><label class="field">問題或需求描述（選填）<textarea name="description" rows="4" maxlength="2000" placeholder="詳細說明對方需求、對話重點、目前已知資訊...">${esc(desc)}</textarea></label></div>
+    </div>
+    <p class="callout">建立案件後初始狀態為「待處理」，自動編號格式為 {前綴}-{年月}-{4位流水號}。</p>
     <div class="form-actions"><button class="btn primary" type="submit">確認建立案件</button></div>
   </form>`);
 }
@@ -321,14 +385,18 @@ async function caseDetailModal(case_id){
         <div>
           <span class="case-no-badge">${esc(c.case_no)}</span>
           <h2>${esc(c.title)}</h2>
+          ${c.is_locked?'<span title="防誤觸鎖定中">🔒 已鎖定</span>':''}
         </div>
-        <div>
+        <div style="display:flex;gap:6px;align-items:center;">
+          ${c.category?`<span class="badge">${esc(c.category)}</span>`:""}
           ${badge(casePriorityNames[c.priority]||c.priority,casePriorityTones[c.priority]||"")}
           ${badge(caseStatusNames[c.status]||c.status,caseStatusTones[c.status]||"")}
         </div>
       </div>
       <dl class="case-info-dl">
         <dt>案件主體</dt><dd>${esc(subjectName)} <small class="muted">(${esc(c.case_subject_id)})</small></dd>
+        ${c.ref_no?`<dt>參考編號</dt><dd>${esc(c.ref_no)}</dd>`:""}
+        ${c.due_date?`<dt>期限</dt><dd>${esc(c.due_date)}</dd>`:""}
         <dt>建立時間</dt><dd>${when(c.created_at)}</dd>
         <dt>最後更新</dt><dd>${when(c.updated_at)}</dd>
         ${c.status==="waiting"?`<dt>等待對象</dt><dd>${waitingPartyNames[c.waiting_party]||c.waiting_party}（自 ${when(c.waiting_since)}）</dd><dt>等待原因</dt><dd>${esc(c.waiting_reason)}</dd>`:""}
@@ -341,10 +409,10 @@ async function caseDetailModal(case_id){
         <div class="case-timeline">${timelineHtml}</div>
       </div>
 
-      ${c.status!=="closed"?`<form id="case-add-note-form" data-id="${esc(c.case_id)}" class="section-space">
+      ${c.status!=="closed" && !c.is_locked ? `<form id="case-add-note-form" data-id="${esc(c.case_id)}" class="section-space">
         <label class="field">新增處理紀錄 / 備忘<textarea name="note" rows="2" required maxlength="1000" placeholder="記錄最新溝通進度、待辦項目或內部確認事項..."></textarea></label>
         <div class="form-actions">${button("送出紀錄","","primary small",'type="submit"')}</div>
-      </form>`:""}
+      </form>` : ''}
     </div>`);
   }catch(e){
     modal("載入失敗",`<p class="callout warn">${esc(e.message)}</p>`);
@@ -362,16 +430,90 @@ async function loadChatNotes(recipient_id){
   }
 }
 
-function chatNoteModal(recipient_id,note_id=""){
+function chatNoteModal(recipient_id,note_id="",prefill={}){
   const notes=state.chatNotes.get(recipient_id)||[];
   const existing=note_id?notes.find(n=>n.note_id===note_id):null;
-  modal(existing?"編輯對話記事":"新增對話記事",`<form id="chat-note-form" data-recipient="${esc(recipient_id)}" data-note-id="${esc(note_id)}">
-    <div class="form-grid">
-      <div class="full"><label class="field">記事內容（1–1,000 字）<textarea name="content" rows="4" required minlength="1" maxlength="1000" placeholder="記錄該聊天室的重要交辦、對話摘要、待確認事項...">${esc(existing?.content||"")}</textarea></label></div>
+  const title = prefill.title || existing?.title || "";
+  const content = prefill.content || existing?.content || "";
+  const note_type = prefill.note_type || existing?.note_type || "一般";
+  const due_date = prefill.due_date || existing?.due_date || "";
+  const tagsStr = prefill.tags || (existing?.tags ? existing.tags.join(", ") : "");
+  const updated_at = existing?.updated_at || "";
+
+  const typeOptions = [["一般","一般"], ["待辦","待辦"], ["約定事項","約定事項"], ["重要提醒","重要提醒"], ["交接","交接"]];
+
+  modal(existing ? "編輯對話記事" : "新增對話記事", `<form id="chat-note-form" data-recipient="${esc(recipient_id)}" data-note-id="${esc(note_id)}">
+    ${updated_at ? `<input type="hidden" name="expected_updated_at" value="${esc(updated_at)}">` : ''}
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+      <span class="muted" style="font-size:13px;">填寫對話重要記事或從範本包帶入</span>
+      <button type="button" class="btn text small" data-action="open-note-template-picker" data-recipient="${esc(recipient_id)}">📋 從範本帶入</button>
     </div>
-    <p class="callout">對話記事本獨立於聯絡對象筆記，專屬於此 OA 聊天室對話。最新記事顯示於最上方。</p>
-    <div class="form-actions"><button class="btn primary" type="submit">${existing?"儲存變更":"新增記事"}</button></div>
+    <div class="form-grid">
+      <div class="full">${field("記事標題（選填）", "title", title, 'maxlength="50" placeholder="例如：客戶詢問保固條件、確認發票開立"')}</div>
+      ${selectField("記事類型", "note_type", typeOptions, note_type)}
+      ${field("完成期限（選填）", "due_date", due_date, 'type="date"')}
+      <div class="full">${field("記事標籤（以逗號分隔，最多 5 個）", "tags", tagsStr, 'maxlength="100" placeholder="例如：重要, 報修, 聯絡紀錄"')}</div>
+      <div class="full"><label class="field">記事內容（1–1,000 字）<textarea name="content" rows="4" required minlength="1" maxlength="1000" placeholder="記錄該聊天室的重要交辦、對話摘要、待確認事項...">${esc(content)}</textarea></label></div>
+    </div>
+    <p class="callout">對話記事本獨立於聯絡對象筆記，專屬於此 OA 聊天室對話。支援置頂 (最多 5 筆)、鎖定防誤改與 30 天回收筒還原。</p>
+    <div class="form-actions"><button class="btn primary" type="submit">${existing ? "儲存變更" : "新增記事"}</button></div>
   </form>`);
+}
+
+async function templatePickerModal(subject_id="", target_type="case"){
+  modal(target_type === "note" ? "選擇範本帶入記事" : "選擇範本帶入案件", '<div class="loading-panel"><span class="spinner"></span><p>讀取範本庫…</p></div>');
+  try{
+    const res = await api('/api/template-packs/templates');
+    const groups = (target_type === "note" ? res.note_template_groups : res.case_template_groups) || [];
+    
+    let totalCount = 0;
+    groups.forEach(g => { totalCount += (g.templates || []).length; });
+
+    if(!totalCount){
+      modal("選擇範本", '<p class="muted" style="padding:1rem;">尚未啟用含有此類型範本的範本包。</p>');
+      return;
+    }
+
+    const html = `<div class="template-picker-container" style="max-height:60vh;overflow-y:auto;padding-right:4px;">
+      ${groups.map(g => `
+        <div class="template-pack-group" style="margin-bottom:16px;">
+          <h4 style="font-size:13px;font-weight:700;color:var(--text-subtle,#64748b);margin-bottom:8px;border-bottom:1px solid var(--line,#e2e8f0);padding-bottom:4px;">📦 範本包：${esc(g.pack_name)}</h4>
+          <div style="display:grid;gap:8px;">
+            ${(g.templates || []).map(t => {
+              const title = t.rendered_title || t.title || "";
+              const body = t.rendered_body || t.body || "";
+              const cat = t.category_name || "一般";
+              const pri = t.defaults?.priority || "normal";
+              const tags = (t.defaults?.tags || []).join(", ");
+
+              if (target_type === "note") {
+                return `<div class="template-card" style="border:1px solid var(--line, #e2e8f0);border-radius:8px;padding:10px;background:var(--card-bg,#fff);">
+                  <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <strong>${esc(t.name || t.title)}</strong>
+                    <button type="button" class="btn small primary" data-action="apply-note-template" data-recipient="${esc(subject_id)}" data-title="${esc(title)}" data-body="${esc(body)}" data-cat="${esc(cat)}" data-tags="${esc(tags)}">套用此記事範本</button>
+                  </div>
+                  <div style="margin:4px 0;"><span class="badge" style="font-size:11px;">${esc(cat)}</span></div>
+                  <p style="font-size:12px;color:var(--text-subtle,#64748b);margin:4px 0 0;white-space:pre-wrap;">${esc(body)}</p>
+                </div>`;
+              } else {
+                return `<div class="template-card" style="border:1px solid var(--line, #e2e8f0);border-radius:8px;padding:10px;background:var(--card-bg,#fff);">
+                  <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <strong>${esc(t.name || t.title)}</strong>
+                    <button type="button" class="btn small primary" data-action="apply-case-template" data-subject="${esc(subject_id)}" data-title="${esc(title)}" data-desc="${esc(body)}" data-cat="${esc(cat)}" data-pri="${esc(pri)}">套用此案件範本</button>
+                  </div>
+                  <div style="margin:4px 0;"><span class="badge" style="font-size:11px;">${esc(cat)}</span></div>
+                  <p style="font-size:12px;color:var(--text-subtle,#64748b);margin:4px 0 0;white-space:pre-wrap;">${esc(body)}</p>
+                </div>`;
+              }
+            }).join("")}
+          </div>
+        </div>
+      `).join("")}
+    </div>`;
+    modal(target_type === "note" ? "選擇記事範本帶入" : "選擇案件範本帶入", html);
+  }catch(e){
+    modal("載入失敗", `<p class="callout warn">${esc(e.message)}</p>`);
+  }
 }
 
 function saveFilterModal(){
@@ -397,13 +539,254 @@ function saveFilterModal(){
 }
 
 function render(){
-  if(lineUI.registry&&!lineDataReady()&&!["settings","organizations","channels"].includes(state.view))state.view="channels";
-  if(!titles[state.view]||(state.view==="settings"&&!manager())||(state.view==="organizations"&&!superAdmin()))state.view="overview";
-  if((!admin()&&!['overview','reports'].includes(state.view))||(state.view==="subscriptions"&&!weatherModule()))state.view="reports";
-  $("crumb").textContent=titles[state.view];document.title=titles[state.view]+" · LINE 自動化";
+  if(lineUI.registry&&!lineDataReady()&&!["settings","organizations","channels","oa-list"].includes(state.view))state.view="channels";
+  if(!titles[state.view])state.view="overview";
+  $("crumb").textContent=titles[state.view]||"工作空間";document.title=(titles[state.view]||"工作台")+" · LINE 自動化";
   document.querySelectorAll("nav [data-view]").forEach(el=>{const current=el.dataset.view===state.view;el.classList.toggle("active",current);if(current)el.setAttribute("aria-current","page");else el.removeAttribute("aria-current");});
-  const pages={overview,reports:reportsPage,send:sendPage,cases:casesPage,contacts:()=>contactsPage(false),subscriptions:()=>contactsPage(true),history:historyPage,schedule:schedulePage,settings:settingsPage,channels:channelsPage,organizations:organizationsPage};
-  $("page").innerHTML=pages[state.view]();hydratePreviews();
+  const pages={
+    overview,
+    "oa-list": oaListPage,
+    chat:()=>chatPage(),
+    reports:reportsPage,
+    send:sendPage,
+    cases:casesPage,
+    contacts:()=>contactsPage(false),
+    subscriptions:()=>contactsPage(true),
+    history:historyPage,
+    schedule:schedulePage,
+    personnel:personnelPage,
+    "org-settings":orgSettingsPage,
+    settings:settingsPage,
+    channels:channelsPage,
+    organizations:organizationsPage
+  };
+  const pageFn = pages[state.view] || overview;
+  $("page").innerHTML=pageFn();
+  hydratePreviews();
+}
+
+function oaListPage(){
+  const channelsList = state.channels || [];
+  const q = (state.oaSearch || "").toLowerCase().trim();
+  const filtered = channelsList.filter(c => !q || c.name.toLowerCase().includes(q) || (orgName(c.org_id)||"").toLowerCase().includes(q) || (c.basic_id||"").toLowerCase().includes(q));
+  const currentId = channels.current_id();
+
+  return heading("LINE OA 一覽", "查看並快速進入您獲授權存取的 LINE 官方帳號", `<div class="mg-tools" style="margin:0;"><input type="search" id="oa-list-search" value="${esc(state.oaSearch||"")}" placeholder="搜尋 OA 名稱或組織…" style="padding:6px 14px;border-radius:20px;border:1px solid var(--line,#e2e8f0);background:var(--card-bg,#fff);min-width:240px;"></div>`)+`
+  <div class="dashboard-grid" style="grid-template-columns:1fr;">
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px;margin-top:8px;">
+      ${filtered.map(c => `
+        <div class="oa-card panel" style="display:flex;flex-direction:column;justify-content:space-between;padding:20px;border-radius:18px;background:var(--card-bg,#fff);border:1px solid ${c.channel_id===currentId?'#00B900':'var(--line,#e2e8f0)'};box-shadow:0 2px 10px rgba(0,0,0,0.03);position:relative;">
+          ${c.channel_id===currentId ? '<span class="badge good" style="position:absolute;top:16px;right:16px;">目前使用中</span>' : ''}
+          <div>
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">
+              <div class="avatar" style="width:46px;height:46px;font-size:18px;background:#00B900;color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;">${esc(c.name.slice(0,1))}</div>
+              <div>
+                <strong style="font-size:16px;display:block;">${esc(c.name)}</strong>
+                <small style="color:var(--text-subtle,#64748b);font-size:12px;">${esc(c.basic_id || c.bot_user_id || "")} · ${esc(orgName(c.org_id))}</small>
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:12px;background:var(--soft,#f8fafc);border-radius:12px;margin-bottom:16px;text-align:center;">
+              <div><small style="color:var(--text-subtle,#64748b);font-size:11px;display:block;">有效好友</small><strong style="font-size:14px;">${state.contacts.filter(r=>r.channel_id===c.channel_id&&r.active).length || '—'}</strong></div>
+              <div><small style="color:var(--text-subtle,#64748b);font-size:11px;display:block;">未讀訊息</small><strong style="font-size:14px;">${state.chatNotes.get(c.channel_id)?.length || 0}</strong></div>
+              <div><small style="color:var(--text-subtle,#64748b);font-size:11px;display:block;">進行中案件</small><strong style="font-size:14px;">${state.cases.filter(cs=>cs.channel_id===c.channel_id&&cs.status!=='closed').length || 0}</strong></div>
+            </div>
+          </div>
+          <div>
+            <button class="btn ${c.channel_id===currentId?'dark':'primary'}" style="width:100%;justify-content:center;" data-action="switch-oa-direct" data-channel="${esc(c.channel_id)}" data-org="${esc(c.org_id)}">${c.channel_id===currentId?'進入工作總覽':'切換至此 OA'}</button>
+          </div>
+        </div>
+      `).join("") || empty("查無符合的 LINE OA", "請確認是否已新增 LINE OA 或調整搜尋條件。")}
+    </div>
+  </div>`;
+}
+
+function personnelPage(){
+  const org = mgCurrentOrg();
+  if(!org) return empty("尚未選擇組織", "請先建立或選擇組織。");
+  const members = state.memberships.filter(m => m.org_id === org.org_id);
+  const rows = members.filter(m => mgMatches(management.peopleQuery, m.email, mgUser(m.email)?.display_name, m.department));
+  const orgChannels = state.channels.filter(c => c.org_id === org.org_id);
+  
+  return heading("人員與權限", `管理「${esc(org.name)}」的營運與協助人員，指定可用 LINE OA。`, button("新增人員","new-personnel","primary"))+`
+  <div class="management">
+    <div class="mg-summary">
+      <div class="mg-stat"><strong>${members.filter(m=>m.active).length}</strong><span>位後台人員</span></div>
+      <div class="mg-stat"><strong>${members.filter(m=>m.active&&m.role==='sender').length}</strong><span>位營運人員</span></div>
+      <div class="mg-stat"><strong>${members.filter(m=>m.active&&m.role==='assistant').length}</strong><span>位協助人員</span></div>
+    </div>
+    <section class="mg-card">
+      <div class="mg-head">
+        <div><h2>組織人員清單</h2><p>乙級組織管理員固定可存取本組織所有 OA；丙級（營運）與丁級（協助）可指定可用 OA。</p></div>
+        <div class="mg-tools">${mgTools("mg-people-search","搜尋組織人員",management.peopleQuery,"姓名、Email 或部門")}</div>
+      </div>
+      <div class="mg-body">
+        ${rows.map(m => {
+          const u = mgUser(m.email);
+          const key = esc(m.email + "|" + m.org_id);
+          const enabled = m.active && u?.active;
+          return `<div class="mg-row">
+            <div class="mg-person">
+              <span class="avatar" aria-hidden="true">${esc((u?.display_name || m.email).slice(0, 1))}</span>
+              <div>
+                <strong>${esc(u?.display_name || m.email)}</strong>
+                <p>${esc(m.email)} · ${esc(m.department || "未分部門")}</p>
+                <div class="mg-tags">
+                  ${badge(roleName(m.role))}
+                  ${!enabled ? badge("已停用") : badge("啟用中", "good")}
+                </div>
+              </div>
+            </div>
+            <div class="mg-actions">
+              ${m.role !== 'administrator' ? button("編輯與 OA 授權", "edit-personnel", "small", `data-id="${key}"`) : ""}
+              ${u?.active ? button("產生登入連結", "unused", "small", `data-security="invite" data-email="${esc(m.email)}"`) : ""}
+            </div>
+          </div>`;
+        }).join("") || mgEmpty("尚無符合人員", "點選右上角「新增人員」開始指派夥伴。")}
+      </div>
+    </section>
+  </div>`;
+}
+
+function orgSettingsPage(){
+  const org = mgCurrentOrg();
+  if(!org) return empty("尚未選擇組織", "請先建立或選擇組織。");
+  return heading("組織設定", `檢視與設定「${esc(org.name)}」的基本資料、範本包與操作紀錄。`, "")+`
+  <div class="management">
+    <section class="mg-card">
+      <div class="mg-head">
+        <div><h2>組織基本資料</h2><p>組織代碼：${esc(org.org_id)} · 組織類型：${esc(orgKinds[org.kind]||org.kind)}</p></div>
+        ${button("編輯組織資料", "edit-organization", "small", `data-id="${esc(org.org_id)}"`)}
+      </div>
+    </section>
+    <section class="mg-card">
+      <div class="mg-head">
+        <div><h2>自訂範本包管理</h2><p>為組織建立自訂案件與記事範本包，各 OA 可勾選啟用。</p></div>
+        ${button("管理自訂範本包", "open-template-packs-mgr", "primary small")}
+      </div>
+    </section>
+    <section class="mg-card">
+      <div class="mg-head">
+        <div><h2>組織操作與查閱紀錄</h2><p>包含內部人員操作與供應商查看紀錄（透明稽核）。</p></div>
+        ${badge(state.events.length + " 筆紀錄")}
+      </div>
+      <div class="mg-body">
+        ${state.events.map(e => `
+          <div class="activity-row" style="padding:10px 0;border-bottom:1px solid var(--line,#e2e8f0);">
+            <div style="display:flex;justify-content:space-between;">
+              <strong>${esc(e.detail || e.action)}</strong>
+              <small class="muted">${when(e.created_at)}</small>
+            </div>
+            <small style="color:var(--text-subtle,#64748b);">${esc(e.actor)} · ${esc(e.action)}</small>
+          </div>
+        `).join("") || '<p class="muted">尚無操作紀錄。</p>'}
+      </div>
+    </section>
+  </div>`;
+}
+
+function personnelForm(id){
+  const org = mgCurrentOrg();
+  if(!org) return;
+  const m = id ? state.memberships.find(x => x.email + "|" + x.org_id === id) : null;
+  const u = m ? mgUser(m.email) : null;
+  const orgChannels = state.channels.filter(c => c.org_id === org.org_id);
+  const existingChannelIds = m?.channel_ids || orgChannels.map(c => c.channel_id);
+  
+  const oaCheckboxes = orgChannels.map(c => `
+    <label class="check-label" style="display:flex;align-items:center;gap:8px;padding:6px 0;">
+      <input type="checkbox" name="channel_ids" value="${esc(c.channel_id)}" ${existingChannelIds.includes(c.channel_id) ? "checked" : ""}>
+      <span><strong>${esc(c.name)}</strong> <small style="color:var(--text-subtle,#64748b);">${esc(c.basic_id||"")}</small></span>
+    </label>
+  `).join("") || '<p class="muted">此組織尚未連結任何 LINE OA。</p>';
+  
+  modal(id ? "編輯組織人員" : "新增組織人員", `<form id="personnel-form" data-id="${esc(id||"")}">
+    <input type="hidden" name="org_id" value="${esc(org.org_id)}">
+    <div class="form-grid">
+      ${field("登入 Email", "email", m?.email || "", `type="email" required ${id ? "readonly" : ""} placeholder="user@example.com"`)}
+      ${field("顯示名稱", "display_name", u?.display_name || "", 'maxlength="80" placeholder="方便同事識別的姓名"')}
+      ${selectField("人員角色", "role", [["sender", "丙級 · 營運人員（可讀取並回覆對話、發送訊息、管理案件）"], ["assistant", "丁級 · 協助人員（可讀取對話、管理記事與案件，不可傳送訊息）"]], m?.role || "sender")}
+      ${field("部門／分組（選填）", "department", m?.department || "", 'maxlength="80" placeholder="例如：客服組、維修部"')}
+      <div class="full">
+        <label class="field">
+          <span>可使用的 LINE OA</span>
+          <div class="permission-choices" style="margin-top:6px;max-height:160px;overflow-y:auto;border:1px solid var(--line,#e2e8f0);border-radius:10px;padding:8px 12px;background:var(--soft,#f8fafc);">
+            ${oaCheckboxes}
+          </div>
+          <small class="muted">勾選該人員可操作的 LINE OA。未勾選的 OA 該人員登入後無法檢視或操作。</small>
+        </label>
+      </div>
+      <div class="full">
+        <label class="check-label" style="display:flex;align-items:center;gap:8px;">
+          <input type="checkbox" name="active" ${m?.active !== 0 ? "checked" : ""}>
+          <span>啟用此人員帳號</span>
+        </label>
+      </div>
+    </div>
+    <div class="form-actions">
+      <button class="btn primary" type="submit">${id ? "儲存設定" : "建立人員"}</button>
+    </div>
+  </form>`);
+}
+
+function myAccountModal(){
+  const user = state.session?.user || {};
+  const email = state.session?.identity || "";
+  const role = state.session?.role || "";
+  
+  modal("我的帳號", `<div style="padding:4px 0;">
+    <div style="display:flex;align-items:center;gap:14px;margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid var(--line,#e2e8f0);">
+      <div class="avatar" style="width:50px;height:50px;font-size:22px;">${esc((user.display_name||email).slice(0,1).toUpperCase())}</div>
+      <div>
+        <h3 style="margin:0 0 4px;font-size:17px;">${esc(user.display_name || email)}</h3>
+        <p style="margin:0;color:var(--text-subtle,#64748b);font-size:13px;">${esc(email)} · ${badge(roleName(role))}</p>
+      </div>
+    </div>
+    <div style="display:grid;gap:12px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 14px;background:var(--soft,#f8fafc);border-radius:12px;">
+        <div>
+          <strong style="font-size:14px;display:block;">登入密碼</strong>
+          <small style="color:var(--text-subtle,#64748b);font-size:12px;">定期更新密碼以維護帳號安全</small>
+        </div>
+        <button type="button" class="btn small" data-security="password">修改密碼</button>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 14px;background:var(--soft,#f8fafc);border-radius:12px;">
+        <div>
+          <strong style="font-size:14px;display:block;">登入裝置與階段</strong>
+          <small style="color:var(--text-subtle,#64748b);font-size:12px;">查看目前已登入的瀏覽器與裝置</small>
+        </div>
+        <button type="button" class="btn small" data-security="devices">裝置清單</button>
+      </div>
+    </div>
+    <div class="form-actions" style="margin-top:24px;border-top:1px solid var(--line,#e2e8f0);padding-top:16px;display:flex;justify-content:space-between;">
+      <button type="button" class="btn text" onclick="$('modal').close()">關閉</button>
+      <button type="button" class="btn danger small" data-action="confirm-logout">登出帳號</button>
+    </div>
+  </div>`);
+}
+
+function openOaSwitcherModal(){
+  const allOas = state.channels || [];
+  const currentId = channels.current_id();
+  modal("切換 LINE OA", `<div class="oa-switcher-modal">
+    <div style="margin-bottom:12px;display:flex;gap:8px;">
+      <input type="search" id="oa-switcher-filter" placeholder="搜尋 LINE OA 名稱或組織…" style="flex:1;padding:8px 12px;border-radius:8px;border:1px solid var(--line,#e2e8f0);">
+      <button type="button" class="btn" data-action="go-oa-list-from-switcher">📋 OA 一覽</button>
+    </div>
+    <div id="oa-switcher-items" style="max-height:55vh;overflow-y:auto;display:grid;gap:8px;">
+      ${allOas.map(c => `
+        <button type="button" class="oa-switcher-item" data-action="switch-oa-direct" data-channel="${esc(c.channel_id)}" data-org="${esc(c.org_id)}" style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-radius:10px;border:1px solid ${c.channel_id===currentId?'#00B900':'var(--line,#e2e8f0)'};background:${c.channel_id===currentId?'#f0fdf4':'var(--card-bg,#fff)'};cursor:pointer;text-align:left;width:100%;">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <div class="avatar" style="width:32px;height:32px;font-size:14px;background:#00B900;color:#fff;">${esc(c.name.slice(0,1))}</div>
+            <div>
+              <strong style="font-size:14px;display:block;">${esc(c.name)} ${c.channel_id===currentId?'(目前)':''}</strong>
+              <small style="color:var(--text-subtle,#64748b);font-size:11px;">${esc(orgName(c.org_id))}</small>
+            </div>
+          </div>
+          ${c.channel_id===currentId ? '<span style="color:#16a34a;font-weight:700;">✓</span>' : ''}
+        </button>
+      `).join("") || '<p class="muted">尚無可切換的 LINE OA。</p>'}
+    </div>
+  </div>`);
 }
 function navigate(view){if(state.busy)return;notice("");state.view=view;state.search="";state.kind="all";state.company="";state.department="";state.tagFilter="";state.page=1;setSidebarOpen(false);history.replaceState(null,"","/?view="+encodeURIComponent(view));render();window.scrollTo({top:0});}
 function modal(title,html){$("modal-title").textContent=title;$("modal-body").innerHTML=html;$("modal-error").hidden=true;if(!$("modal").open)$("modal").showModal();$("modal").scrollTop=0;$("modal-close").focus({preventScroll:true});}
@@ -523,6 +906,8 @@ function switchView(email){
   location.replace(location.pathname+"?view="+(email?"reports":"overview"));
 }
 document.addEventListener("click",async event=>{
+  if(event.target.closest("#my-account-btn")){myAccountModal();return;}
+  if(event.target.closest("#workspace-context")){openOaSwitcherModal();return;}
   const nav=event.target.closest("[data-view]");if(nav){navigate(nav.dataset.view);return;}
   const target=event.target.closest("[data-action]");if(!target||target.disabled||state.busy)return;
   const action=target.dataset.action,id=target.dataset.id;
@@ -530,10 +915,64 @@ document.addEventListener("click",async event=>{
     if(workspaceAction(action,id))return;
     if(managementAction(action,id))return;
     if(composerAction(action,id))return;
-    if(action==="case-filter"){state.caseFilter=id;render();}
+    if(typeof chatAction==="function"&&chatAction(action,id,target))return;
+    if(action==="switch-oa-direct"){
+      const channelId=target.dataset.channel;
+      const orgId=target.dataset.org;
+      if(channelId){
+        localStorage.setItem("lineSelectedChannel",channelId);
+        if(orgId)localStorage.setItem(organizationKey,orgId);
+        location.replace(location.pathname+"?view="+encodeURIComponent(state.view||"overview"));
+      }
+    }
+    else if(action==="go-oa-list-from-switcher"){$("modal").close();navigate("oa-list");}
+    else if(action==="dismiss-onboarding"){
+      const orgId=state.session?.user?.company||"";
+      if(orgId)localStorage.setItem("lineOnboardingDismissed_"+orgId,"1");
+      render();
+    }
+    else if(action==="new-personnel")personnelForm();
+    else if(action==="edit-personnel")personnelForm(id);
+    else if(action==="open-template-packs-mgr"){navigate("channels");$("modal").close();}
+    else if(action==="confirm-logout"){
+      if(principalSession?.auth?.method!=="password"){location.href="/cdn-cgi/access/logout";return;}
+      try{await api('/api/auth/logout',{},true,true);sessionStorage.removeItem('lineAdminToken');location.replace('/login');}catch(error){notice(error.message,true);}
+    }
+    else if(action==="case-filter"){state.caseFilter=id;render();}
     else if(action==="new-case-modal")createCaseModal(id||"");
     else if(action==="open-case-detail")await caseDetailModal(id);
     else if(action==="contact-detail-from-case"){workspaceUI.contactDetail=id;navigate("contacts");await loadChatNotes(id);}
+    else if(action==="export-cases-csv"){window.open('/api/cases/export?format=csv', '_blank');notice("已開始匯出 CSV。");}
+    else if(action==="export-cases-xlsx"){window.open('/api/cases/export?format=xlsx', '_blank');notice("已開始匯出 XLSX。");}
+    else if(action==="toggle-case-lock"){await api(`/api/cases/${id}/lock`);await load();render();notice("已更新案件鎖定狀態。");}
+    else if(action==="create-continuation-case"){
+      const c = state.cases.find(x=>x.case_id===id);
+      if(c) createCaseModal(c.case_subject_id, {
+        title: `延續：${c.title}`,
+        description: `[延續前案 ${c.case_no}]\n`,
+        continued_from_id: c.case_id,
+        category: c.category || "一般",
+        priority: c.priority || "normal"
+      });
+    }
+    else if(action==="open-template-picker")await templatePickerModal(target.dataset.subject||"","case");
+    else if(action==="open-note-template-picker")await templatePickerModal(target.dataset.recipient||"","note");
+    else if(action==="apply-case-template"){
+      createCaseModal(target.dataset.subject||"", {
+        title: target.dataset.title||"",
+        description: target.dataset.desc||"",
+        category: target.dataset.cat||"一般",
+        priority: target.dataset.pri||"normal"
+      });
+    }
+    else if(action==="apply-note-template"){
+      chatNoteModal(target.dataset.recipient||"", "", {
+        title: target.dataset.title||"",
+        content: target.dataset.body||"",
+        note_type: target.dataset.cat||"一般",
+        tags: target.dataset.tags||""
+      });
+    }
     else if(action==="case-to-processing"){await api(`/api/cases/${id}`,{status:"processing"});await load();render();notice("案件已轉為「處理中」。");}
     else if(action==="open-case-waiting-modal")caseWaitingModal(id);
     else if(action==="case-to-ready"){await api(`/api/cases/${id}`,{status:"ready_to_close"});await load();render();notice("案件已轉為「待結案」。");}
@@ -606,8 +1045,17 @@ document.addEventListener("click",async event=>{
   }catch(error){if($("modal").open){$("modal-error").textContent=error.message;$("modal-error").hidden=false;}else notice(error.message,true);target.disabled=false;}
 });
 function updateSelection(){if($("contact-list"))$("contact-list").innerHTML=contactList();if($("selection-summary"))$("selection-summary").innerHTML=selectionSummary();if($("review-button"))$("review-button").disabled=!selectedRows().length;}
-document.addEventListener("input",event=>{if(event.target.id==="contact-search"){state.search=event.target.value;state.page=1;if($("contact-list"))$("contact-list").innerHTML=contactList();}
-  if(event.target.id==="case-search"){state.caseQuery=event.target.value;if(state.view==="cases")render();}});
+document.addEventListener("input",event=>{
+  if(event.target.id==="contact-search"){state.search=event.target.value;state.page=1;if($("contact-list"))$("contact-list").innerHTML=contactList();}
+  if(event.target.id==="case-search"){state.caseQuery=event.target.value;if(state.view==="cases")render();}
+  if(event.target.id==="chat-list-search"){if(typeof chatUI!=="undefined"){chatUI.query=event.target.value;if($("chat-room-list"))$("chat-room-list").innerHTML=renderChatRoomItems();}}
+  if(event.target.id==="oa-switcher-filter"){
+    const q=event.target.value.toLowerCase();
+    document.querySelectorAll(".oa-switcher-item").forEach(item=>{
+      item.style.display=item.textContent.toLowerCase().includes(q)?"flex":"none";
+    });
+  }
+});
 document.addEventListener("change",event=>{
   const el=event.target;
   if(el.name==="color"&&el.closest(".color-swatch-card")){
@@ -640,7 +1088,18 @@ document.addEventListener("change",event=>{
 });
 document.addEventListener("submit",async event=>{if(event.target.id==="password-form")return;event.preventDefault();const form=event.target,values=Object.fromEntries(new FormData(form)),submit=form.querySelector('[type="submit"]');if(!submit||submit.disabled)return;submit.disabled=true;$("modal-error").hidden=true;
   try{
-    if(form.id==="case-create-form"){
+    if(form.id==="chat-send-form"){
+      const text=$("chat-message-input")?.value?.trim();
+      if(!text)return;
+      $("chat-message-input").value="";
+      await sendChatMessage(form.dataset.id, text);
+      return;
+    }else if(form.id==="canned-reply-create-form"){
+      await api("/api/chat/canned-replies/save", values);
+      await cannedRepliesModal();
+      notice("預設訊息已建立。");
+      return;
+    }else if(form.id==="case-create-form"){
       await api('/api/cases', values);
       $("modal").close();
       await load();
@@ -670,10 +1129,16 @@ document.addEventListener("submit",async event=>{if(event.target.id==="password-
     }else if(form.id==="chat-note-form"){
       const recipient_id = form.dataset.recipient;
       const note_id = form.dataset.noteId;
+      const tags = values.tags ? values.tags.split(/[,，]/).map(s=>s.trim()).filter(Boolean) : [];
       await api('/api/chat-notes', {
         action: note_id ? "edit" : "add",
         recipient_id,
         note_id: note_id || undefined,
+        title: values.title?.trim() || "",
+        note_type: values.note_type || "一般",
+        due_date: values.due_date || "",
+        tags,
+        expected_updated_at: values.expected_updated_at || undefined,
         content: values.content
       });
       await loadChatNotes(recipient_id);
@@ -732,6 +1197,18 @@ document.addEventListener("submit",async event=>{if(event.target.id==="password-
     else if(form.id==="membership-form")await api('/api/memberships/save',{...values,active:form.elements.active.checked});
     else if(form.id==="dispatch-scope-form")await api('/api/dispatch-scopes/save',{...values,scope_id:form.dataset.id||undefined,active:form.elements.active.checked,recipient_ids:new FormData(form).getAll('recipient_ids')});
     else if(form.id==="sender-grant-form")await api('/api/sender-grants/save',{...values,scope_ids:new FormData(form).getAll('scope_ids'),report_ids:new FormData(form).getAll('report_ids'),...Object.fromEntries(['messaging','reports','weather'].map(k=>[k,form.elements[k].checked]))});
+    else if(form.id==="personnel-form"){
+      const channel_ids=new FormData(form).getAll('channel_ids');
+      await api('/api/personnel/save',{
+        email:values.email,
+        org_id:values.org_id,
+        display_name:values.display_name,
+        role:values.role,
+        department:values.department,
+        active:form.elements.active.checked,
+        channel_ids
+      });
+    }else if(form.id==="org-settings-form")await api('/api/org-settings/save',values);
     else if(form.id==="account-form")await api('/api/accounts/save',{...values,active:form.elements.active.checked});
     else return;
     $("modal").close();await load();managementAfterSave(form,values);render();notice("設定已儲存。");
@@ -739,7 +1216,14 @@ document.addEventListener("submit",async event=>{if(event.target.id==="password-
 });
 $("modal-close").addEventListener("click",()=>$("modal").close());
 $("menu").addEventListener("click",()=>setSidebarOpen(!$("sidebar").classList.contains("open")));
-document.addEventListener("keydown",event=>{if(event.key==="Escape"){setSidebarOpen(false);}});
+document.addEventListener("keydown",event=>{
+  if(event.key==="Escape"){setSidebarOpen(false);}
+  if(event.key==="Enter"&&!event.shiftKey&&event.target.id==="chat-message-input"){
+    event.preventDefault();
+    const form=$("chat-send-form");
+    if(form)form.requestSubmit();
+  }
+});
 $("logout").addEventListener("click",async()=>{if(principalSession?.auth?.method!=="password"){location.href="/cdn-cgi/access/logout";return;}try{await api('/api/auth/logout',{},true,true);sessionStorage.removeItem('lineAdminToken');location.replace('/login');}catch(error){notice(error.message,true);}});
 $("refresh").addEventListener("click",async()=>{if(state.busy)return;$("refresh").disabled=true;try{await load();render();notice("資料已更新。");await recoverSubmission();}catch(error){notice(error.message,true);}finally{$("refresh").disabled=false;}});
 async function boot(){try{await load();render();await recoverSubmission();}catch(error){$("page").innerHTML=empty("暫時無法開啟工作台",remote?"請重新整理登入，或聯絡管理員確認帳號已啟用。":"請確認 LINE 服務已更新並啟動，再從控制台重新開啟管理頁。");notice(error.message,true);$("connection").textContent="連線未完成";}}

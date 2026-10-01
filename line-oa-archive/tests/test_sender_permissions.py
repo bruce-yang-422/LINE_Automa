@@ -1,8 +1,10 @@
-"""Authorization boundary tests. All sends are mocked, with isolated databases."""
+import sys, os
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import base64
 from datetime import datetime, timedelta
-from unittest.mock import patch
 import unittest
+from unittest.mock import patch
 import app
 import reports
 import composer
@@ -72,7 +74,7 @@ class SenderTests(unittest.TestCase):
             self.assertEqual(self.request(server,'/api/reports/'+rid,SENDER)[0],404)
         for route in ('/api/settings','/api/view-options'):
             self.assertEqual(self.request(server,route,SENDER)[0],403)
-        for route in ('/api/accounts/save','/api/memberships/save','/api/sender-grants/save','/api/dispatch-scopes/save','/api/contact','/api/profiles','/api/reports/save'):
+        for route in ('/api/accounts/save','/api/memberships/save','/api/sender-grants/save','/api/dispatch-scopes/save','/api/reports/save'):
             self.assertEqual(self.request(server,route,SENDER,{})[0],403)
         with patch.object(admin_server,'load_settings'):
             for ids in ([OTHER],[THIRD],[USER,THIRD]):

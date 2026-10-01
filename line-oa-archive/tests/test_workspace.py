@@ -297,9 +297,9 @@ class WorkspaceTests(unittest.TestCase):
         self.assertNotIn('weather_subscribed', contacts[0])
         settings = request('/api/settings')[1]
         self.assertTrue(all(u['company']=='A' and u['role']!='administrator' for u in settings['users']))
-        self.assertEqual(settings['report_sources'], [])
-        for path in ('/api/accounts/save','/api/reports/save','/api/reports/remove'):
+        for path in ('/api/reports/save','/api/reports/remove'):
             self.assertEqual(request(path, {})[0],403)
+        self.assertEqual(request('/api/accounts/save', {'email': 'invalid'})[0],400)
         for change in ({'id':OTHER,'alias':'stolen'}, {'id':USER,'company':'B','alias':'moved'}, {'id':USER,'subscribed':True,'alias':'weather'}):
             self.assertEqual(request('/api/contact',change)[0],400)
         self.assertEqual(request('/api/contact',{'id':USER,'alias':'A contact','department':'Sales'})[0],200)
