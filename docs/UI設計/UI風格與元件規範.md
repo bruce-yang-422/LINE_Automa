@@ -8,7 +8,7 @@
 
 ## 全站改版首版
 
-已實作全站「Tailwind CSS＋Apple iOS／macOS UI／UX」首版並串接既有功能；桌面以側欄、工具列及分欄詳情為主，手機以單欄、分組設定與底部短表單為主。詳細方向見 [SaaS平台與全站Tailwind改版規劃.md](SaaS平台與全站Tailwind改版規劃.md) 第 5 節。站內登入已接續套用同一主題；多 OA 及審核仍屬後續功能。
+已實作全站「Tailwind CSS＋Apple iOS／macOS UI／UX」首版並串接既有功能；桌面以側欄、工具列及分欄詳情為主，手機以單欄、分組設定與底部短表單為主。詳細方向見 [SaaS平台與全站Tailwind改版規劃.md](../需求與規劃/SaaS平台與全站Tailwind改版規劃.md) 第 5 節。站內登入已接續套用同一主題；多 OA 及審核仍屬後續功能。
 
 ## 已套用的介面
 

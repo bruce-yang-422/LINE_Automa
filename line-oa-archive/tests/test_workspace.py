@@ -51,7 +51,7 @@ class WorkspaceTests(unittest.TestCase):
             conn.executemany("INSERT INTO recipients(recipient_id,kind,company,department) VALUES (?,'user',?,?)",
                              [(USER, 'A', 'Sales'), (OTHER, 'B', 'Sales')])
         for email, company, department in [('alice@example.com', 'A', 'Sales'), ('bob@example.com', 'A', 'Finance'), ('eve@example.com', 'B', 'Sales')]:
-            reports.save_user({'email': email, 'role': 'employee', 'company': company, 'department': department, 'active': True,
+            reports.save_user({'email': email, 'role': 'sender', 'company': company, 'department': department, 'active': True,
                                'recipient_id': USER if email.startswith('alice') else ''}, 'admin@example.com')
 
     def add_report(self, scope='company', company='A', department='Sales', owner_email='alice@example.com'):
@@ -86,11 +86,12 @@ class WorkspaceTests(unittest.TestCase):
         finally:
             conn.close()
 
-    def test_report_visibility_company_department_personal_and_direct_api(self):
+    def test_report_visibility_by_company_and_direct_api(self):
         company, department, personal, other = self.add_report(), self.add_report('department'), self.add_report('personal'), self.add_report(company='B')
+        self.company_admins()
         server = self.server()
-        for email, expected in [('alice@example.com', {company['report_id'], department['report_id'], personal['report_id']}),
-                                ('bob@example.com', {company['report_id']}), ('eve@example.com', {other['report_id']})]:
+        for email, expected in [('a-admin@example.com', {company['report_id'], department['report_id'], personal['report_id']}),
+                                ('b-admin@example.com', {other['report_id']}), ('alice@example.com', set())]:
             status, data = self.request(server, '/api/reports', 'admin@example.com', view_as=email)
             self.assertEqual(status, 200)
             self.assertEqual({r['report_id'] for r in data['reports']}, expected)
@@ -148,18 +149,18 @@ class WorkspaceTests(unittest.TestCase):
             self.assertEqual(self.request(server, '/api/reports/restore-weather', 'admin@example.com', {})[0], 400)
             self.assertTrue(reports.weather_removed())
 
-    def test_employee_cannot_read_or_modify_administration(self):
+    def test_contact_without_account_cannot_read_or_modify_administration(self):
         server = self.server()
         for route in ('/api/contacts', '/api/jobs', '/api/settings', '/api/activity'):
-            self.assertEqual(self.request(server, route)[0], 403)
+            self.assertEqual(self.request(server, route, 'nobody@example.com')[0], 403)
         for route in ('/api/send', '/api/contact', '/api/profiles', '/api/accounts/save', '/api/reports/save', '/api/reports/remove'):
-            self.assertEqual(self.request(server, route, payload={})[0], 403)
+            self.assertEqual(self.request(server, route, 'nobody@example.com', payload={})[0], 403)
         self.assertEqual(self.request(server, '/api/settings', 'admin@example.com')[0], 200)
         self.assertEqual(self.request(server, '/api/reports', 'unlisted@example.com')[0], 403)
-        reports.save_user({'email': 'alice@example.com', 'company': 'A', 'role': 'employee', 'active': False}, 'admin@example.com')
+        reports.save_user({'email': 'alice@example.com', 'company': 'A', 'role': 'sender', 'active': False}, 'admin@example.com')
         self.assertEqual(self.request(server, '/api/reports')[0], 403)
 
-    def test_admin_employee_preview_is_scoped_readonly_and_revalidated(self):
+    def test_admin_sender_preview_is_scoped_readonly_and_revalidated(self):
         mine, other = self.add_report('personal'), self.add_report(company='B')
         server = self.server()
         def preview(path, payload=None):
@@ -169,10 +170,13 @@ class WorkspaceTests(unittest.TestCase):
         self.assertTrue(session['preview'])
         self.assertEqual(session['principal'], 'admin@example.com')
         self.assertEqual(session['identity'], 'alice@example.com')
-        self.assertEqual(session['role'], 'employee')
-        self.assertEqual({r['report_id'] for r in preview('/api/reports')[1]['reports']}, {mine['report_id']})
+        self.assertEqual(session['role'], 'sender')
+        # A sender sees only granted reports; none are granted here.
+        self.assertEqual({r['report_id'] for r in preview('/api/reports')[1]['reports']}, set())
+        self.assertEqual(preview('/api/reports/' + mine['report_id'])[0], 404)
         self.assertEqual(preview('/api/reports/' + other['report_id'])[0], 404)
-        for path in ('/api/settings', '/api/contacts', '/api/jobs', '/api/view-options'):
+        # Senders may read their scoped contacts and jobs; admin pages stay closed and the preview never writes.
+        for path in ('/api/settings', '/api/view-options'):
             self.assertEqual(preview(path)[0], 403)
         for path in ('/api/send', '/api/contact', '/api/accounts/save'):
             self.assertEqual(preview(path, {})[0], 403)
@@ -181,21 +185,41 @@ class WorkspaceTests(unittest.TestCase):
         self.assertEqual(self.request(server, '/api/settings', 'admin@example.com')[0], 200)
         choices = self.request(server, '/api/view-options', 'admin@example.com')[1]['users']
         self.assertEqual({u['email'] for u in choices}, {'alice@example.com','bob@example.com','eve@example.com'})
-        reports.save_user({'email':'alice@example.com','role':'employee','company':'A','active':False},'admin@example.com')
+        reports.save_user({'email':'alice@example.com','role':'sender','company':'A','active':False},'admin@example.com')
         self.assertEqual(preview('/api/reports')[0], 403)
         reports.save_user({'email':'admin2@example.com','role':'administrator','active':True},'本機管理員')
-        reports.save_user({'email':'admin@example.com','role':'employee','company':'A','active':True},'本機管理員')
+        reports.save_user({'email':'admin@example.com','role':'sender','company':'A','active':True},'本機管理員')
         self.assertEqual(self.request(server, '/api/session', 'admin@example.com', view_as='bob@example.com')[0], 403)
 
     def test_last_admin_and_bootstrap_do_not_restore_revoked_permissions(self):
         with self.assertRaises(ValueError):
-            reports.save_user({'email': 'admin@example.com', 'role': 'employee', 'company': 'A', 'active': True}, '本機管理員')
+            reports.save_user({'email': 'admin@example.com', 'role': 'sender', 'company': 'A', 'active': True}, '本機管理員')
         reports.save_user({'email': 'admin2@example.com', 'role': 'administrator', 'active': True}, '本機管理員')
-        reports.save_user({'email': 'admin@example.com', 'role': 'employee', 'company': 'A', 'active': False}, '本機管理員')
+        reports.save_user({'email': 'admin@example.com', 'role': 'sender', 'company': 'A', 'active': False}, '本機管理員')
         reports.bootstrap_users({'admin@example.com'})
         self.assertIsNone(reports.account('admin@example.com'))
         with self.assertRaises(ValueError):
-            reports.save_user({'email': 'invalid', 'role': 'employee', 'active': True}, 'admin2@example.com')
+            reports.save_user({'email': 'invalid', 'role': 'sender', 'active': True}, 'admin2@example.com')
+
+    def test_employee_role_is_rejected_and_legacy_rows_are_removed(self):
+        with self.assertRaises(ValueError):
+            reports.save_user({'email': 'legacy@example.com', 'role': 'employee', 'company': 'A', 'active': True}, 'admin@example.com')
+        with self.assertRaises(ValueError):
+            reports.save_membership({'email': 'alice@example.com', 'org_id': 'A', 'role': 'employee', 'active': True}, 'admin@example.com')
+        # Simulate a database created before the role was removed, whose CHECK constraints still allowed it.
+        with app.database_connection() as conn:
+            conn.execute('PRAGMA ignore_check_constraints=ON')
+            conn.execute("INSERT INTO workspace_users(email,role,company,active) VALUES ('legacy@example.com','employee','A',1)")
+            conn.execute("INSERT INTO site_credentials(email,password_hash,changed_at) VALUES ('legacy@example.com','x',0)")
+            conn.execute("INSERT INTO workspace_users(email,role,company,active) VALUES ('both@example.com','employee','A',1)")
+            conn.execute("INSERT INTO organization_members(email,org_id,role,active) VALUES ('both@example.com','A','employee',1),('both@example.com','B','sender',1)")
+        app.initialize_database()
+        with app.database_connection() as conn:
+            self.assertIsNone(conn.execute("SELECT 1 FROM workspace_users WHERE email='legacy@example.com'").fetchone())
+            self.assertIsNone(conn.execute("SELECT 1 FROM site_credentials WHERE email='legacy@example.com'").fetchone())
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM organization_members WHERE role='employee'").fetchone()[0], 0)
+            # An account that still operates in another organization keeps that membership.
+            self.assertEqual(conn.execute("SELECT org_id,role FROM organization_members WHERE email='both@example.com'").fetchall(), [('B', 'sender')])
 
     def scheduled_text(self, stamp=None):
         return {'job_id':str(uuid4()), 'audience':'selected', 'ids':[USER], 'message_text':'Meeting reminder',
@@ -207,7 +231,6 @@ class WorkspaceTests(unittest.TestCase):
 
     def test_multiple_organization_roles_switch_and_revoke(self):
         self.company_admins()
-        reports.save_membership({'email':'a-admin@example.com','org_id':'B','role':'employee','active':True},'admin@example.com')
         own,other=self.add_report(),self.add_report(company='B')
         server=self.server()
         def get(path,org):
@@ -244,7 +267,7 @@ class WorkspaceTests(unittest.TestCase):
             dispatcher.submit(self.scheduled_text(),'a-admin@example.com',organization='A')
         config['weather_enabled']=True
         reports.save_organization(config,'admin@example.com')
-        self.assertTrue(reports.can_view(reports.find('weather'),reports.account('alice@example.com')))
+        self.assertTrue(reports.can_view(reports.find('weather'),reports.account('a-admin@example.com')))
         config['active']=False
         reports.save_organization(config,'admin@example.com')
         self.assertIsNone(reports.account('alice@example.com','A'))
@@ -283,7 +306,7 @@ class WorkspaceTests(unittest.TestCase):
         self.assertEqual({u['email'] for u in request('/api/view-options')[1]['users']},{'alice@example.com','bob@example.com'})
         self.assertEqual(request('/api/session',view='eve@example.com')[0],403)
         self.assertEqual(request('/api/session',view='admin@example.com')[0],403)
-        self.assertEqual(request('/api/session',view='alice@example.com')[1]['role'],'employee')
+        self.assertEqual(request('/api/session',view='alice@example.com')[1]['role'],'sender')
         preview = self.request(server,'/api/session','admin@example.com',view_as='a-admin@example.com')
         self.assertEqual(preview[1]['role'],'company_admin')
         self.assertEqual(self.request(server,'/api/contact','admin@example.com',{'id':USER,'alias':'preview'},'a-admin@example.com')[0],403)
@@ -388,18 +411,19 @@ class WorkspaceTests(unittest.TestCase):
             revoked = self.scheduled_text()
             dispatcher.submit(revoked, 'admin@example.com')
             reports.save_user({'email':'admin2@example.com','role':'administrator','active':True},'本機管理員')
-            reports.save_user({'email':'admin@example.com','role':'employee','company':'A','active':True},'本機管理員')
+            reports.save_user({'email':'admin@example.com','role':'sender','company':'A','active':True},'本機管理員')
             dispatcher.tick(datetime.fromisoformat(revoked['scheduled_at'])+timedelta(seconds=1))
             with patch.object(admin_server, 'send_push') as push:
                 dispatcher.run(revoked['job_id'])
                 push.assert_not_called()
             self.assertEqual(admin_server.job_status(revoked['job_id'])[0]['deliveries'][0]['status'], 'cancelled')
 
-    def test_personal_weather_module_not_shared_with_employees(self):
-        self.assertFalse(reports.can_view(reports.find('weather'), reports.account('alice@example.com')))
-        with patch.dict(os.environ, {'WEATHER_OWNER_EMAIL':'alice@example.com'}):
-            self.assertTrue(reports.can_view(reports.find('weather'), reports.account('alice@example.com')))
-            self.assertFalse(reports.can_view(reports.find('weather'), reports.account('bob@example.com')))
+    def test_personal_weather_module_not_shared_with_other_admins(self):
+        self.company_admins()
+        self.assertFalse(reports.can_view(reports.find('weather'), reports.account('a-admin@example.com')))
+        with patch.dict(os.environ, {'WEATHER_OWNER_EMAIL':'a-admin@example.com'}):
+            self.assertTrue(reports.can_view(reports.find('weather'), reports.account('a-admin@example.com')))
+            self.assertFalse(reports.can_view(reports.find('weather'), reports.account('b-admin@example.com')))
         with patch.dict(os.environ, {'WEATHER_MODULE_ENABLED':'false'}):
             self.assertIsNone(reports.find('weather'))
 
@@ -469,10 +493,12 @@ class WorkspaceTests(unittest.TestCase):
 
     def test_report_scope_edit_takes_effect_without_restart(self):
         report = self.add_report()
-        self.assertTrue(reports.can_view(reports.find(report['report_id']), reports.account('bob@example.com')))
+        target = [{'recipient_id': USER, 'company': 'A', 'department': 'Sales'}]
+        reports.validate_targets(reports.find(report['report_id']), target)
         reports.save({'report_id': report['report_id'], 'title': 'Private', 'category': 'company', 'source_path': str(self.image),
-                      'company': 'A', 'scope': 'personal', 'owner_email': 'alice@example.com'}, 'admin@example.com')
-        self.assertFalse(reports.can_view(reports.find(report['report_id']), reports.account('bob@example.com')))
+                      'company': 'A', 'scope': 'department', 'department': 'Finance'}, 'admin@example.com')
+        with self.assertRaises(ValueError):
+            reports.validate_targets(reports.find(report['report_id']), target)
         self.assertEqual(len(reports.sources()), 2)
         self.assertTrue(any(e['action'] == 'report.update' for e in reports.activity()))
 

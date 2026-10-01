@@ -113,7 +113,7 @@ def prepare(draft,user,selected):
             raise ValueError('卡片格式不正確。')
         picture=asset(item.get('asset_id'),user)
         if picture['company'] and any(r['company']!=picture['company'] for r in selected):
-            raise ValueError('圖片與收件者必須屬於同一組織。')
+            raise ValueError('圖片與發送對象必須屬於同一組織。')
         card={'asset':picture}
         if kind in {'card','carousel'}:
             card.update(title=text(item.get('title',''),80,True),description=text(item.get('text',''),500),action=action(item))

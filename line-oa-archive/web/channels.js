@@ -39,18 +39,18 @@ function channelsPage(){
   return heading('LINE OA 管理','一個工作區可以連結多個 OA。先選擇工作區，再設定要使用的官方帳號。',
     w?.can_manage&&!lineUI.canImport?'<button class="btn primary" data-line-action="add">'+icon('plus')+'新增 LINE OA</button>':'')+
     `<section class="panel panel-body"><div class="oa-section-heading"><div><h2>${esc(w?.name||'選擇工作區')}</h2><p class="subtitle">${w?.kind==='personal'?'個人工作區：由本人與平台管理員管理。':'組織工作區：依組織角色與發送範圍授權。'}</p></div>${badge(rows.length+' 個 OA')}</div>
-    ${lineUI.canImport?'<div class="callout oa-import"><div><strong>接續目前使用的 OA</strong><p>匯入伺服器已設定的 OA、收件者與紀錄；保留原本的 Webhook 網址。歸屬將固定在你選擇的工作區。</p></div><button class="btn primary" data-line-action="import">匯入既有 OA</button></div>':''}
+    ${lineUI.canImport?'<div class="callout oa-import"><div><strong>接續目前使用的 OA</strong><p>匯入伺服器已設定的 OA、聯絡對象與紀錄；保留原本的 Webhook 網址。歸屬將固定在你選擇的工作區。</p></div><button class="btn primary" data-line-action="import">匯入既有 OA</button></div>':''}
     <div class="oa-grid">${rows.map(oaCard).join('')||empty('這個工作區還沒有 OA',w?.can_manage?'新增或匯入 OA 後，就能接收訊息、管理名單與建立發送。':'請組織管理員先連結 LINE OA。')}</div></section>
-    <section class="panel panel-body section-space"><h2>連結完成後</h2><ol class="oa-steps"><li>在 LINE Developers 設定這個 OA 的 Webhook URL，按「Verify」，再開啟 Use webhook。</li><li>用 LINE 傳一則訊息給該 OA，確認「Webhook 最近到達」與收件者名單更新。</li><li>建立發送時，先確認頂端 OA；預約也會固定使用當時選擇的 OA。</li></ol><p class="subtitle">驗證連線只讀取官方帳號資料，不會傳送測試訊息。停用 OA 會停止收訊與尚未執行的發送，資料仍保留。</p>
-    <p class="subtitle">共用：平台管理員可把 OA 共用給其他工作區，再由擁有者指派各工作區能使用的收件者。各工作區的報告、發送紀錄與排程分開，但 LINE 訊息額度與收件者看到的 OA 名稱是同一個。</p></section>`;
+    <section class="panel panel-body section-space"><h2>連結完成後</h2><ol class="oa-steps"><li>在 LINE Developers 設定這個 OA 的 Webhook URL，按「Verify」，再開啟 Use webhook。</li><li>用 LINE 傳一則訊息給該 OA，確認「Webhook 最近到達」與聯絡對象名單更新。</li><li>建立發送時，先確認頂端 OA；預約也會固定使用當時選擇的 OA。</li></ol><p class="subtitle">驗證連線只讀取官方帳號資料，不會傳送測試訊息。停用 OA 會停止收訊與尚未執行的發送，資料仍保留。</p>
+    <p class="subtitle">共用：平台管理員可把 OA 共用給其他工作區，再由擁有者指派各工作區能使用的聯絡對象。各工作區的報告、發送紀錄與排程分開，但 LINE 訊息額度與 LINE 使用者看到的 OA 名稱是同一個。</p></section>`;
 }
 
 function oaCard(c){
   const current=c.channel_id===lineUI.channel;
   const use=c.active?`<button class="btn ${current?'':'primary'}" data-line-action="use" data-id="${c.channel_id}" ${current?'disabled':''}>${current?'目前使用':'使用此 OA'}</button>`:'';
   const head=`<div class="oa-card-heading"><span class="avatar">${icon('send')}</span><div><h3>${esc(c.name)}</h3><p class="subtitle">${esc(c.basic_id||'LINE 官方帳號')}</p></div>${c.shared?badge('共用'):''}${badge(c.active?'啟用中':'已停用',c.active?'good':'')}</div>`;
-  if(c.shared)return `<article class="oa-card">${head}<p class="callout">由「${esc(c.owner_workspace_name)}」共用。憑證、Webhook 與可用收件者由擁有者管理；這裡的報告、發送紀錄與排程只屬於本工作區。</p><div class="oa-actions">${use}</div></article>`;
-  const shares=c.shares?`<div class="oa-shares"><h4>共用給其他工作區</h4>${c.shares.map(s=>`<div class="oa-share-row"><strong>${esc(s.workspace_name)}</strong>${badge(s.active?s.recipients+' 位收件者':'已暫停',s.active?'':'warn')}${s.active?`<button class="btn small" data-line-action="assign" data-id="${s.share_id}">指派收件者</button>`:''}${superAdmin()?`<button class="btn small text ${s.active?'danger':''}" data-line-action="share-active" data-id="${c.channel_id}" data-workspace="${esc(s.workspace_id)}" data-active="${!s.active}">${s.active?'暫停共用':'恢復共用'}</button>`:''}</div>`).join('')||'<p class="subtitle">尚未共用給其他工作區。</p>'}</div>`:'';
+  if(c.shared)return `<article class="oa-card">${head}<p class="callout">由「${esc(c.owner_workspace_name)}」共用。憑證、Webhook 與可用聯絡對象由擁有者管理；這裡的報告、發送紀錄與排程只屬於本工作區。</p><div class="oa-actions">${use}</div></article>`;
+  const shares=c.shares?`<div class="oa-shares"><h4>共用給其他工作區</h4>${c.shares.map(s=>`<div class="oa-share-row"><strong>${esc(s.workspace_name)}</strong>${badge(s.active?s.recipients+' 位聯絡對象':'已暫停',s.active?'':'warn')}${s.active?`<button class="btn small" data-line-action="assign" data-id="${s.share_id}">指派聯絡對象</button>`:''}${superAdmin()?`<button class="btn small text ${s.active?'danger':''}" data-line-action="share-active" data-id="${c.channel_id}" data-workspace="${esc(s.workspace_id)}" data-active="${!s.active}">${s.active?'暫停共用':'恢復共用'}</button>`:''}</div>`).join('')||'<p class="subtitle">尚未共用給其他工作區。</p>'}</div>`:'';
   return `<article class="oa-card">${head}
     <dl class="oa-meta"><dt>API 最近驗證</dt><dd>${esc(when(c.verified_at))}</dd><dt>Webhook 最近到達</dt><dd>${c.webhook_seen_at?esc(when(c.webhook_seen_at)):'等待 LINE 驗證或新訊息'}</dd></dl>
     <label class="field">Webhook URL<input readonly value="${esc(c.webhook_url)}" aria-label="${esc(c.name)} Webhook URL"></label>
@@ -66,17 +66,17 @@ function otherSpaces(c){
 
 function shareForm(id){
   const c=lineUI.channels.find(c=>c.channel_id===id),spaces=otherSpaces(c);
-  modal('共用 LINE OA',`<form id="line-share-form" data-id="${esc(id)}"><p class="subtitle">「${esc(c.name)}」歸屬於 ${esc(c.workspace_name)}。共用後，對方工作區可以選用這個 OA 發送，但只看得到你指派的收件者；憑證與 Webhook 仍由擁有者管理。</p>
+  modal('共用 LINE OA',`<form id="line-share-form" data-id="${esc(id)}"><p class="subtitle">「${esc(c.name)}」歸屬於 ${esc(c.workspace_name)}。共用後，對方工作區可以選用這個 OA 發送，但只看得到你指派的聯絡對象；憑證與 Webhook 仍由擁有者管理。</p>
     ${spaces.length?selectField('共用給','workspace_id',spaces,spaces[0][0]):'<p class="callout">沒有其他可共用的工作區。</p>'}
-    <p class="subtitle">LINE 訊息額度與收件者看到的 OA 名稱由所有共用工作區共同使用。</p>
-    <div class="form-actions"><button type="submit" class="btn primary" ${spaces.length?'':'disabled'}>共用並指派收件者</button></div></form>`);
+    <p class="subtitle">LINE 訊息額度與 LINE 使用者看到的 OA 名稱由所有共用工作區共同使用。</p>
+    <div class="form-actions"><button type="submit" class="btn primary" ${spaces.length?'':'disabled'}>共用並指派聯絡對象</button></div></form>`);
 }
 
 async function assignForm(shareId){
   const data=await api('/api/channels/shares/'+shareId);
   const items=data.recipients.map(r=>[r.recipient_id,`${label(r)} · ${r.kind==='user'?'個人':'群組'}${r.active?'':' · 已封鎖或離開'}`]);
-  modal('指派收件者',`<form id="line-assign-form" data-share="${esc(shareId)}"><p class="subtitle">勾選「${esc(data.workspace_name)}」可以看到並發送的「${esc(data.oa_name)}」收件者。取消勾選會移除該工作區的這位收件者與其分類、備註；你的名單不受影響。</p>
-    <fieldset class="permission-fieldset"><legend>收件者（${items.length}）</legend>${checkChoices('recipient_ids',items,data.recipients.filter(r=>r.assigned).map(r=>r.recipient_id))}</fieldset>
+  modal('指派聯絡對象',`<form id="line-assign-form" data-share="${esc(shareId)}"><p class="subtitle">勾選「${esc(data.workspace_name)}」可以看到並發送的「${esc(data.oa_name)}」聯絡對象。取消勾選會移除該工作區的這位聯絡對象與其分類、備註；你的名單不受影響。</p>
+    <fieldset class="permission-fieldset"><legend>聯絡對象（${items.length}）</legend>${checkChoices('recipient_ids',items,data.recipients.filter(r=>r.assigned).map(r=>r.recipient_id))}</fieldset>
     <div class="form-actions"><button type="button" class="btn" data-line-action="assign-all">全選</button><button type="submit" class="btn primary">儲存指派</button></div></form>`);
 }
 
@@ -90,7 +90,7 @@ function transferForm(id){
 
 function transferImpact(r){
   return `<div class="callout"><strong>${esc(r.from)} → ${esc(r.to)}</strong><ul>
-    <li>收件者 ${r.recipients} 位、報告 ${r.reports} 份、素材 ${r.assets} 個、發送紀錄 ${r.jobs} 筆會跟著移轉；收件者的部門分類會清除，報告改為全工作區可見。</li>
+    <li>聯絡對象 ${r.recipients} 位、報告 ${r.reports} 份、素材 ${r.assets} 個、發送紀錄 ${r.jobs} 筆會跟著移轉；聯絡對象的部門分類會清除，報告改為全工作區可見。</li>
     <li>發送範圍 ${r.dispatch_scopes} 個、發送授權 ${r.sender_grants} 筆屬於原工作區的人員，會一併移除。</li>
     ${r.shares?`<li>目前共用給 ${r.shares} 個工作區，共用設定保留。</li>`:''}
     ${r.pending_jobs?`<li><strong>還有 ${r.pending_jobs} 筆預約或進行中的發送，須先取消或等待完成才能移轉。</strong></li>`:''}</ul></div>`;
@@ -99,7 +99,7 @@ function transferImpact(r){
 function channelForm(id,importing=false){
   const c=lineUI.channels.find(c=>c.channel_id===id),w=selectedWorkspace();
   const spaces=lineUI.spaces.filter(w=>w.can_manage);
-  modal(importing?'匯入既有 LINE OA':c?'設定 LINE OA':'新增 LINE OA',`<form id="line-channel-form" data-id="${esc(id||'')}" data-import="${importing}"><section class="mg-section"><h3>1 · 帳號歸屬</h3>${selectField('所屬工作區','workspace_id',spaces.map(w=>[w.id,w.name]),c?.workspace_id||w?.id||'')}<p class="subtitle">建立後固定於此工作區；收件者、報告與發送紀錄會分開保存。</p>${field('顯示名稱（選填）','name',c?.name||'','maxlength="80" placeholder="留空使用 LINE OA 名稱"')}</section>
+  modal(importing?'匯入既有 LINE OA':c?'設定 LINE OA':'新增 LINE OA',`<form id="line-channel-form" data-id="${esc(id||'')}" data-import="${importing}"><section class="mg-section"><h3>1 · 帳號歸屬</h3>${selectField('所屬工作區','workspace_id',spaces.map(w=>[w.id,w.name]),c?.workspace_id||w?.id||'')}<p class="subtitle">建立後固定於此工作區；聯絡對象、報告與發送紀錄會分開保存。</p>${field('顯示名稱（選填）','name',c?.name||'','maxlength="80" placeholder="留空使用 LINE OA 名稱"')}</section>
     ${importing?'<p class="callout">將使用伺服器既有憑證，不需重新輸入。現有資料不會清除。</p>':`<section class="mg-section"><h3>2 · Messaging API 憑證</h3><p class="subtitle">到 LINE Developers → 此 OA 的 Channel。Secret 與 Token 必須來自同一個 OA。${c?'不更換的欄位留空即可。':''}</p>${field('Channel secret','secret','','type="password" autocomplete="new-password" maxlength="32" '+(c?'':'required'))}${field('Channel access token','access_token','','type="password" autocomplete="new-password" maxlength="4096" '+(c?'':'required'))}<p class="subtitle">儲存前會向 LINE 查驗 Token 的 OA 身分；Secret 要在 LINE Developers 按 Verify 驗證。</p></section>`}
     <div class="form-actions"><button type="submit" class="btn primary">${importing?'確認歸屬並匯入':'驗證並儲存'}</button></div></form>`);
   if(c){const el=document.querySelector('#line-channel-form [name="workspace_id"]');el.disabled=true;}
@@ -122,7 +122,7 @@ document.addEventListener('click',async event=>{
     if(action==='assign'){await assignForm(id);return;}
     if(action==='share-active'){
       const active=el.dataset.active==='true';
-      if(!active&&!window.confirm('暫停後對方工作區暫時不能使用這個 OA，已指派的收件者、報告與紀錄會保留。是否暫停？'))return;
+      if(!active&&!window.confirm('暫停後對方工作區暫時不能使用這個 OA，已指派的聯絡對象、報告與紀錄會保留。是否暫停？'))return;
       await api('/api/channels/share',{channel_id:id,workspace_id:el.dataset.workspace,active});await load();render();notice(active?'已恢復共用。':'已暫停共用。');
     }
     if(action==='verify'){const r=await api('/api/channels/verify',{channel_id:id});await load();render();notice(r.note);}
@@ -139,12 +139,12 @@ document.addEventListener('submit',async event=>{
   try{
     if(form.id==='line-share-form'){
       const result=await api('/api/channels/share',{channel_id:form.dataset.id,workspace_id:form.elements.workspace_id.value,active:true});
-      await load();render();await assignForm(result.share_id);notice('已共用。請勾選對方可以使用的收件者。');return;
+      await load();render();await assignForm(result.share_id);notice('已共用。請勾選對方可以使用的聯絡對象。');return;
     }
     if(form.id==='line-assign-form'){
       const ids=[...form.querySelectorAll('[name="recipient_ids"]:checked')].map(box=>box.value);
       const result=await api('/api/channels/assign',{share_id:form.dataset.share,recipient_ids:ids});
-      document.getElementById('modal').close();await load();render();notice(`已指派 ${result.assigned} 位收件者（新增 ${result.added}、移除 ${result.removed}）。`);return;
+      document.getElementById('modal').close();await load();render();notice(`已指派 ${result.assigned} 位聯絡對象（新增 ${result.added}、移除 ${result.removed}）。`);return;
     }
     const payload={channel_id:form.dataset.id,workspace_id:form.elements.workspace_id.value};
     if(form.dataset.stage!=='confirm'){

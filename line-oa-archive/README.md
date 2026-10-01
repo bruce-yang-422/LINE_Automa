@@ -2,7 +2,7 @@
 
 管理工作台已整合全站 Apple 風格與 Tailwind 主題，提供報告／收件者詳情、授權資料搜尋及單次預約管理。樣式來源位於根目錄 `styles/app.css`，執行 `npm run build:css` 產生 `web/app.css`；部署需包含編譯檔。操作與首版範圍見[根目錄 README](../README.md)。
 
-本專案供內部使用，由本機 Python 接收 LINE 官方帳號（OA）的 Webhook，將新訊息儲存至 SQLite。Webhook 與資料庫僅使用 Python 標準函式庫；圖片推送使用 `truststore` 驗證 HTTPS，管理服務新增站內帳密及 Session 登入，舊 Cloudflare Access 模式仍使用 `PyJWT[crypto]`。切換步驟見[網站登入與切換](../網站登入與切換.md)。透過根目錄安裝器安裝相依套件。遠端管理設定請見[根目錄 README](../README.md#在外面登入管理頁)。不需要資料庫帳號、密碼、Docker 或獨立資料庫服務。
+本專案供內部使用，由本機 Python 接收 LINE 官方帳號（OA）的 Webhook，將新訊息儲存至 SQLite。Webhook 與資料庫僅使用 Python 標準函式庫；圖片推送使用 `truststore` 驗證 HTTPS，管理服務新增站內帳密及 Session 登入，舊 Cloudflare Access 模式仍使用 `PyJWT[crypto]`。切換步驟見[網站登入與切換](../docs/功能規格/網站登入與切換.md)。透過根目錄安裝器安裝相依套件。遠端管理設定請見[根目錄 README](../README.md#在外面登入管理頁)。不需要資料庫帳號、密碼、Docker 或獨立資料庫服務。
 
 ```text
 LINE OA → https://reports.stack-base.com/webhook
@@ -37,7 +37,7 @@ python app.py
 
 `schema.sql` 是本版完整的首次建表定義，包含組織授權、排程、收件者名稱快取與網站登入欄位。啟動不再執行舊版補欄位、角色表重建或資料回填；不支援直接套用舊版資料庫備份。`IF NOT EXISTS` 用於本版重啟，不會清除現有資料。收件者或組織刪除後，不會在下次啟動時由歷史資料重新建立。
 
-全新安裝若 `ADMIN_ALLOWED_EMAILS` 留空，不會自動建立網站帳號。先從桌面控制台「收件者與發送」進入本機管理頁，在「帳號與設定」新增第一個平台管理員，再用「設定登入」完成密碼設定，依[網站登入與切換](../網站登入與切換.md)啟用遠端網站登入。LINE Token、Tunnel 與網站帳號是分開設定的。
+全新安裝若 `ADMIN_ALLOWED_EMAILS` 留空，不會自動建立網站帳號。先從桌面控制台「開啟管理後台」進入本機管理頁，在「帳號與設定」新增第一個平台管理員，再用「設定登入」完成密碼設定，依[網站登入與切換](../docs/功能規格/網站登入與切換.md)啟用遠端網站登入。LINE Token、Tunnel 與網站帳號是分開設定的。
 
 `.env.example` 供設定參考；直接執行 `app.py` 不會自動載入 `.env`。若使用此啟動方式並需要自訂資料庫位置，請在啟動前設定：
 

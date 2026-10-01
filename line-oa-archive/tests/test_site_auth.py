@@ -36,7 +36,6 @@ class SiteAuthTests(unittest.TestCase):
         self.server=admin_server.AdminServer(0);self.server.start();self.addCleanup(self.server.close)
         site_auth.change_password('admin@example.test',None,PASSWORD)
         reports.save_user({'email':'sender@example.test','role':'sender','company':'A','active':True},'admin@example.test')
-        reports.save_user({'email':'recipient@example.test','role':'employee','company':'A','active':True},'admin@example.test')
 
     def request(self,path,body=None,cookie='',csrf='',extra=None,local=False):
         origin=f'http://127.0.0.1:{self.server.server_port}' if local else 'https://admin.example.test'

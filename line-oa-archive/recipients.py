@@ -152,19 +152,124 @@ def handle_event(conn, event, source_type, recipient_id):
     return (token, response) if token else None
 
 
+def list_tags(conn):
+    conn.row_factory = sqlite3.Row
+    try:
+        return [dict(r) for r in conn.execute("SELECT * FROM contact_tags WHERE channel_id=current_channel() ORDER BY name").fetchall()]
+    except sqlite3.OperationalError:
+        return []
+
+
+def save_tag(conn, name, color=None, tag_id=None):
+    if not isinstance(name, str) or not name.strip() or len(name.strip()) > 40:
+        raise ValueError("標籤名稱請輸入 1 至 40 字以內。")
+    color = (color or '#7C916C').strip()
+    if not re.fullmatch(r'#[0-9a-fA-F]{6}', color):
+        color = '#7C916C'
+    name = name.strip()
+    if tag_id:
+        row = conn.execute("SELECT tag_id FROM contact_tags WHERE channel_id=current_channel() AND tag_id=?", (tag_id,)).fetchone()
+        if not row:
+            raise ValueError("找不到標籤。")
+        conn.execute("UPDATE contact_tags SET name=?, color=? WHERE channel_id=current_channel() AND tag_id=?", (name, color, tag_id))
+        return tag_id
+    else:
+        existing = conn.execute("SELECT tag_id FROM contact_tags WHERE channel_id=current_channel() AND name=?", (name,)).fetchone()
+        if existing:
+            return existing[0]
+        from uuid import uuid4
+        new_id = "tag_" + str(uuid4().hex[:12])
+        conn.execute("INSERT INTO contact_tags (tag_id, name, color, channel_id) VALUES (?, ?, ?, current_channel())", (new_id, name, color))
+        return new_id
+
+
+def delete_tag(conn, tag_id):
+    conn.execute("DELETE FROM contact_tag_assignments WHERE channel_id=current_channel() AND tag_id=?", (tag_id,))
+    conn.execute("DELETE FROM contact_tags WHERE channel_id=current_channel() AND tag_id=?", (tag_id,))
+
+
+def set_contact_tags(conn, recipient_id, tag_ids):
+    conn.execute("DELETE FROM contact_tag_assignments WHERE channel_id=current_channel() AND recipient_id=?", (recipient_id,))
+    if tag_ids:
+        for tid in tag_ids:
+            if conn.execute("SELECT 1 FROM contact_tags WHERE channel_id=current_channel() AND tag_id=?", (tid,)).fetchone():
+                conn.execute("INSERT OR IGNORE INTO contact_tag_assignments (channel_id, recipient_id, tag_id) VALUES (current_channel(), ?, ?)", (recipient_id, tid))
+
+
+def bulk_update_tags(conn, recipient_ids, tag_ids, action="add"):
+    if not isinstance(recipient_ids, list) or not isinstance(tag_ids, list):
+        raise ValueError("參數格式不正確。")
+    for rid in recipient_ids:
+        for tid in tag_ids:
+            if action == "add":
+                if conn.execute("SELECT 1 FROM contact_tags WHERE channel_id=current_channel() AND tag_id=?", (tid,)).fetchone():
+                    conn.execute("INSERT OR IGNORE INTO contact_tag_assignments (channel_id, recipient_id, tag_id) VALUES (current_channel(), ?, ?)", (rid, tid))
+            elif action == "remove":
+                conn.execute("DELETE FROM contact_tag_assignments WHERE channel_id=current_channel() AND recipient_id=? AND tag_id=?", (rid, tid))
+
+
+def bulk_update_subscription(conn, recipient_ids, subscribed):
+    if not isinstance(recipient_ids, list) or type(subscribed) is not bool:
+        raise ValueError("參數格式不正確。")
+    stamp = int(time.time() * 1000)
+    for rid in recipient_ids:
+        row = conn.execute("SELECT active FROM recipients WHERE channel_id=current_channel() AND recipient_id=?", (rid,)).fetchone()
+        if row and (not subscribed or row[0]):
+            conn.execute("UPDATE recipients SET weather_subscribed=?, subscription_at=? WHERE channel_id=current_channel() AND recipient_id=?",
+                         (int(subscribed), stamp, rid))
+
+
 def list_contacts(conn):
     conn.row_factory = sqlite3.Row
-    return [dict(row) for row in conn.execute(
-        "SELECT * FROM recipients WHERE recipients.channel_id=current_channel() ORDER BY kind, COALESCE(NULLIF(alias,''), NULLIF(display_name,''), recipient_id)")]
+    rows = conn.execute(
+        "SELECT * FROM recipients WHERE recipients.channel_id=current_channel() ORDER BY kind, COALESCE(NULLIF(alias,''), NULLIF(display_name,''), recipient_id)").fetchall()
+    tags_by_recipient = {}
+    try:
+        tag_rows = conn.execute(
+            """SELECT a.recipient_id, t.tag_id, t.name, t.color 
+               FROM contact_tag_assignments a 
+               JOIN contact_tags t ON a.tag_id=t.tag_id AND a.channel_id=t.channel_id 
+               WHERE a.channel_id=current_channel()"""
+        ).fetchall()
+        for r in tag_rows:
+            tags_by_recipient.setdefault(r["recipient_id"], []).append(
+                {"id": r["tag_id"], "name": r["name"], "color": r["color"]}
+            )
+    except sqlite3.OperationalError:
+        pass
+
+    result = []
+    for row in rows:
+        d = dict(row)
+        d["custom_name"] = d.get("alias", "")
+        d["notes"] = d.get("notes", "")
+        d["tags"] = tags_by_recipient.get(d["recipient_id"], [])
+        result.append(d)
+    return result
 
 
-def update_contact(conn, recipient_id, alias, subscribed):
+def update_contact(conn, recipient_id, alias, subscribed, notes=None, tag_ids=None):
     if not isinstance(alias, str) or len(alias) > 80 or type(subscribed) is not bool:
         raise ValueError("備註名稱最多 80 字，訂閱設定必須為勾選值。")
     row = conn.execute('SELECT active FROM recipients WHERE recipients.channel_id=current_channel() AND recipient_id=?', (recipient_id,)).fetchone()
     if not row:
-        raise ValueError("找不到收件者，請先向 Bot 傳送訊息。")
+        raise ValueError("找不到聯絡對象，請先向 Bot 傳送訊息。")
     if subscribed and not row[0]:
         raise ValueError("已封鎖或已離開的聊天室不能加入訂閱。")
-    conn.execute('UPDATE recipients SET alias=?, weather_subscribed=?, subscription_at=? WHERE recipients.channel_id=current_channel() AND recipient_id=?',
-                 (alias.strip(), int(subscribed), int(time.time() * 1000), recipient_id))
+    if notes is not None:
+        if not isinstance(notes, str) or len(notes) > 2000:
+            raise ValueError("備註請限制在 2000 字以內。")
+        try:
+            conn.execute('UPDATE recipients SET alias=?, notes=?, weather_subscribed=?, subscription_at=? WHERE recipients.channel_id=current_channel() AND recipient_id=?',
+                         (alias.strip(), notes.strip(), int(subscribed), int(time.time() * 1000), recipient_id))
+        except sqlite3.OperationalError:
+            conn.execute('UPDATE recipients SET alias=?, weather_subscribed=?, subscription_at=? WHERE recipients.channel_id=current_channel() AND recipient_id=?',
+                         (alias.strip(), int(subscribed), int(time.time() * 1000), recipient_id))
+    else:
+        conn.execute('UPDATE recipients SET alias=?, weather_subscribed=?, subscription_at=? WHERE recipients.channel_id=current_channel() AND recipient_id=?',
+                     (alias.strip(), int(subscribed), int(time.time() * 1000), recipient_id))
+    if tag_ids is not None and isinstance(tag_ids, list):
+        try:
+            set_contact_tags(conn, recipient_id, tag_ids)
+        except sqlite3.OperationalError:
+            pass

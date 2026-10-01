@@ -127,13 +127,25 @@ $logs.Add_Click({
     $null = $dialog.ShowDialog($form)
     $dialog.Dispose()
 })
-$recipients = New-Button 22 285 '收件者與發送'
+$recipients = New-Button 22 285 '開啟管理後台'
 $recipients.Add_Click({
     try { & (Join-Path $PSScriptRoot 'Open-Recipients.ps1') }
-    catch { $recent.Text = '請先啟動或重啟 LINE 服務，再開啟收件者管理。' }
+    catch { Set-Recent '請先啟動或重啟 LINE 服務，再開啟管理後台。' }
 })
 $script:buttons += $recipients
 $recent = New-Label 340 '最近操作：尚無'
+# Action results are history, not live status; the timestamp keeps them from contradicting the status lines above.
+function Set-Recent([string]$Message) { $recent.Text = '最近操作（' + (Get-Date -Format 'HH:mm') + '）：' + $Message }
+# Errors inside UI handlers would otherwise surface as the generic .NET crash dialog with no script location.
+[Windows.Forms.Application]::add_ThreadException({ param($source, $e)
+    $record = $e.Exception.ErrorRecord
+    $where = if ($record) { ($record.InvocationInfo.PositionMessage + ' | ' + $record.ScriptStackTrace) -replace '\s+', ' ' } else { $e.Exception.StackTrace -replace '\s+', ' ' }
+    try {
+        $path = Join-Path $PSScriptRoot 'line-oa-archive\instance\control.log'
+        Add-Content -LiteralPath $path -Value "$(Get-Date -Format s) 控制台錯誤：$($e.Exception.Message) $where" -Encoding UTF8
+    } catch { }
+    Set-Recent ('控制台發生錯誤，已寫入操作紀錄：' + $e.Exception.Message)
+})
 $recent.Height = [int][Math]::Round(65 * $script:uiScale)
 $progress = New-Object Windows.Forms.ProgressBar
 $form.Controls.Add($progress)
@@ -149,7 +161,7 @@ $timer.Add_Tick({
         try {
             $result = @($task.PowerShell.EndInvoke($task.Handle))
             if ($task.PowerShell.HadErrors) { throw '背景操作失敗' }
-            if ($name -eq 'action') { $recent.Text = ($result -join ' ') }
+            if ($name -eq 'action') { Set-Recent ($result -join ' ') }
             elseif ($result.Count) {
                 $state = $result[-1]
                 if ($name -eq 'public') {
@@ -165,11 +177,12 @@ $timer.Add_Tick({
             }
         } catch {
             if ($name -eq 'action') {
-                $recent.Text = '操作未完成，請查看設定與操作紀錄。'
+                $message = '操作未完成，請查看設定與操作紀錄。'
                 if ($task.PowerShell.Streams.Error.Count) {
-                    $message = $task.PowerShell.Streams.Error[0].Exception.Message
-                    if ($message.StartsWith('LINE：')) { $recent.Text = $message }
+                    $error0 = $task.PowerShell.Streams.Error[0].Exception.Message
+                    if ($error0.StartsWith('LINE：')) { $message = $error0 }
                 }
+                Set-Recent $message
             } else { $public.Text = '狀態檢查失敗，請查看設定。'; $script:publicOK = $false }
         } finally {
             $task.PowerShell.Dispose()

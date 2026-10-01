@@ -135,8 +135,8 @@ async function contrast(page,label){
     await page.setViewportSize({width:1440,height:1000});
     await page.evaluate(()=>window.scrollTo(0,0));await page.screenshot({path:path.join(dir,`palette-${theme}-desktop.png`),fullPage:true,animations:'disabled'});
     await page.locator('#switch-view').click();results.push(await contrast(page,'role picker'));
-    await page.locator('[data-action="apply-view"][data-id="employee@example.test|示範公司"]').click();
-    await page.locator('#view-banner').waitFor();results.push(await contrast(page,'employee preview banner'));
+    await page.locator('[data-action="apply-view"][data-id="sender@example.test|示範公司"]').click();
+    await page.locator('#view-banner').waitFor();results.push(await contrast(page,'sender preview banner'));
     const summary={screens:results.length,checked:results.reduce((n,r)=>n+r.checked,0),minimum:Number(Math.min(...results.map(r=>r.minimum)).toFixed(3)),failures:0};
     fs.writeFileSync(path.join(dir,`contrast-audit-${theme}.json`),JSON.stringify({summary,results},null,2));
     console.log(JSON.stringify(summary));

@@ -20,7 +20,7 @@ document.addEventListener('click',async event=>{
   try{
     if(action==='create-invite'){
       const data=await api('/api/auth/invite',{email:target.dataset.email},true,true);
-      modal('一次性密碼設定連結',`<p class="callout">30 分鐘內使用一次。請透過你信任的方式交給帳號本人。</p><label class="field">設定連結<input id="activation-link" readonly value="${esc(data.url)}"></label><div class="form-actions">${button('複製連結','unused','primary','data-security="copy"')}${data.local_url?`<a class="btn" href="${esc(data.local_url)}" target="_blank" rel="noopener noreferrer">在這台電腦設定</a>`:''}</div>`);
+      modal('一次性密碼設定連結',`<p class="callout">30 分鐘內使用一次。請透過你信任的方式交給帳號本人。</p><label class="field">設定連結<input id="activation-link" readonly data-copy="off" value="${esc(data.url)}"></label><div class="form-actions">${button('複製連結','unused','primary','data-security="copy"')}${data.local_url?`<a class="btn" href="${esc(data.local_url)}" target="_blank" rel="noopener noreferrer">在這台電腦設定</a>`:''}</div>`);
     }else if(action==='confirm-revoke'){
       await api('/api/auth/revoke',{email:target.dataset.email},true,true);$('modal').close();notice('已撤銷網站登入及尚未使用的設定連結。');
     }else if(action==='copy'){

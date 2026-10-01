@@ -31,7 +31,9 @@ function workspaceReports(wizard=false){
 function contactDetailPanel(){
   const r=state.contacts.find(r=>r.recipient_id===workspaceUI.contactDetail);
   if(!r)return "";
-  return `<aside class="detail-panel" id="contact-detail" aria-labelledby="contact-detail-title" tabindex="-1"><div class="detail-heading"><div><h2 id="contact-detail-title">${esc(label(r))}</h2><p class="subtitle">${r.kind==="user"?"個人聊天室":"LINE 群組"}</p></div>${button("✕","close-contact-detail","icon-button",'aria-label="關閉收件者詳情"')}</div><div class="detail-body">${person(r)}<dl><dt>狀態</dt><dd>${badge(r.active?"可接收":"已停用",r.active?"good":"")}</dd><dt>所屬組織</dt><dd>${esc(r.company?orgName(r.company):"尚未分類")}</dd><dt>部門</dt><dd>${esc(r.department||"尚未分類")}</dd><dt>備註名稱</dt><dd>${esc(r.alias||"尚未設定")}</dd><dt>最近互動</dt><dd>${esc(when(r.last_seen))}</dd>${weatherModule()?`<dt>天氣通知</dt><dd>${badge(r.weather_subscribed?"已訂閱":"未訂閱",r.weather_subscribed?"good":"")}</dd>`:""}</dl><details><summary>聊天室識別資料</summary><p class="contact-id">${esc(r.recipient_id)}</p></details>${manager()?`<div class="detail-actions">${button("編輯收件者","edit-contact","primary",`data-id="${esc(r.recipient_id)}"`)}</div>`:""}</div></aside>`;
+  const tags=r.tags||[];
+  const tagsHtml=tags.length?tags.map(t=>tagBadge(t)).join(" "):'<span class="muted">無標籤</span>';
+  return `<aside class="detail-panel" id="contact-detail" aria-labelledby="contact-detail-title" tabindex="-1"><div class="detail-heading"><div><h2 id="contact-detail-title">${esc(label(r))}</h2><p class="subtitle">${r.kind==="user"?"個人聊天室":"LINE 群組"}</p></div>${button("✕","close-contact-detail","icon-button",'aria-label="關閉聯絡對象詳情"')}</div><div class="detail-body">${person(r)}<dl><dt>狀態</dt><dd>${badge(r.active?"可接收":"已停用",r.active?"good":"")}</dd><dt>分類標籤</dt><dd class="contact-tags">${tagsHtml}</dd><dt>所屬組織</dt><dd>${esc(r.company?orgName(r.company):"尚未分類")}</dd><dt>部門</dt><dd>${esc(r.department||"尚未分類")}</dd><dt>備註名稱</dt><dd>${esc(r.alias||r.custom_name||"尚未設定")}</dd><dt>LINE 名稱</dt><dd>${esc(r.display_name||"尚未取得")}</dd><dt>最近互動</dt><dd>${esc(when(r.last_seen))}</dd>${weatherModule()?`<dt>天氣通知</dt><dd>${badge(r.weather_subscribed?"已訂閱":"未訂閱",r.weather_subscribed?"good":"")}</dd>`:""}</dl><div class="full section-space"><label class="field" style="margin-bottom:4px;"><strong>備忘筆記</strong></label>${r.notes?`<div class="contact-notes-box">${esc(r.notes)}</div>`:'<p class="muted">尚未填寫備忘筆記</p>'}</div><div class="case-context-box"><div class="case-context-header"><strong>${icon("file")} 關聯案件歷史</strong><span class="badge">即將推出</span></div><p class="muted" style="font-size:12px;margin:0;">案件關聯模組就緒後，將於此處自動彙整該聯絡對象的歷次案件紀錄與服務進度。</p></div><details style="margin-top:14px;"><summary class="muted" style="font-size:12px;">查看聊天室識別資料</summary><p class="contact-id">${esc(r.recipient_id)}</p></details>${manager()?`<div class="detail-actions">${button("編輯聯絡對象","edit-contact","primary",`data-id="${esc(r.recipient_id)}"`)}</div>`:""}</div></aside>`;
 }
 
 function schedulePage(){
@@ -64,7 +66,7 @@ function commandEntries(query){
 }
 function renderCommands(){
   const rows=commandEntries(document.getElementById("command-search").value);
-  document.getElementById("command-results").innerHTML=rows.map(r=>`<button class="command-result" data-command-kind="${r.kind}" data-command-id="${esc(r.id)}">${icon(r.symbol)}<span>${esc(r.title)}<small>${esc(r.detail)}</small></span>${icon("arrow")}</button>`).join("")||empty("找不到符合項目","搜尋目前可存取的頁面、報告與收件者。");
+  document.getElementById("command-results").innerHTML=rows.map(r=>`<button class="command-result" data-command-kind="${r.kind}" data-command-id="${esc(r.id)}">${icon(r.symbol)}<span>${esc(r.title)}<small>${esc(r.detail)}</small></span>${icon("arrow")}</button>`).join("")||empty("找不到符合項目","搜尋目前可存取的頁面、報告與聯絡對象。");
   document.getElementById("command-count").textContent=`${rows.length} 個結果；只搜尋目前已載入且有權限的資料。`;
 }
 function openCommand(){

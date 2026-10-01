@@ -34,16 +34,16 @@ class SenderTests(unittest.TestCase):
         reports.save_grant(self.grant,'admin@example.com')
         return reports.account(SENDER)
 
-    def test_ordinary_recipient_cannot_login_but_other_org_operator_can(self):
+    def test_contact_without_account_cannot_login_but_other_org_operator_can(self):
         server = self.server()
         for route in ('/api/session','/api/reports','/api/organizations'):
-            self.assertEqual(self.request(server,route)[0],403)
-        reports.save_membership({'email':'alice@example.com','org_id':'B','role':'sender','active':True},'admin@example.com')
-        status,session = self.request(server,'/api/session')
+            self.assertEqual(self.request(server,route,'nobody@example.com')[0],403)
+        reports.save_user({'email':'carol@example.com','role':'sender','company':'B','active':True},'admin@example.com')
+        status,session = self.request(server,'/api/session','carol@example.com')
         self.assertEqual(status,200)
         self.assertEqual(session['user']['company'],'B')
         self.assertEqual([m['org_id'] for m in session['memberships']],['B'])
-        self.assertEqual(self.request(server,'/api/session',organization='A')[0],403)
+        self.assertEqual(self.request(server,'/api/session','carol@example.com',organization='A')[0],403)
 
     def test_sender_default_deny_and_union_of_scopes(self):
         user = self.setup_sender()

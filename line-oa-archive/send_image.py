@@ -40,10 +40,10 @@ def select_recipient(kind):
     configured = os.environ.get("LINE_PUSH_USER_ID" if kind == "user" else "LINE_PUSH_GROUP_ID", "").strip()
     candidates = [configured] if configured and not channels.current_id() else chat_ids(kind)
     if len(candidates) != 1:
-        raise ValueError("找不到唯一收件者：請先向 Bot 傳送測試訊息；多位收件者請使用控制台的「收件者與發送」，或 --target subscribers。")
+        raise ValueError("找不到唯一發送對象：請先向 Bot 傳送測試訊息；多位發送對象請使用控制台的「開啟管理後台」，或 --target subscribers。")
     prefix = "U" if kind == "user" else "C"
     if not re.fullmatch(prefix + r"[0-9a-fA-F]{32}", candidates[0]):
-        raise ValueError("收件者 ID 格式不正確；請使用 Webhook 的 userId 或 groupId。")
+        raise ValueError("發送對象 ID 格式不正確；請使用 Webhook 的 userId 或 groupId。")
     return candidates[0]
 
 
@@ -97,7 +97,7 @@ def send_push(token, recipient, image_url, retry_key=None, text=None, messages=N
         error.close()
         if status >= 500:
             raise ValueError(f"LINE 暫時異常（HTTP {status}），送達狀態不明；請先確認聊天室，不會自動重送。") from None
-        raise ValueError(f"LINE 拒絕請求（HTTP {status}）：請檢查 access token、收件者與訊息額度。不會自動重送。") from None
+        raise ValueError(f"LINE 拒絕請求（HTTP {status}）：請檢查 access token、發送對象與訊息額度。不會自動重送。") from None
     except (URLError, TimeoutError, OSError):
         raise ValueError("LINE 請求連線中斷，送達狀態不明；請先確認聊天室，不會自動重送。") from None
 

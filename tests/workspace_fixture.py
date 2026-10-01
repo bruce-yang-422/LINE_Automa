@@ -62,7 +62,6 @@ with tempfile.TemporaryDirectory(prefix='line-ui-fixture-') as temp:
                          (('U' if i % 3 else 'C') + format(i+1,'032x'), 'user' if i % 3 else 'group',
                           ('同事 ' if i % 3 else '營運群組 ') + str(i+1), '示範公司' if i < 20 else '第二公司', '營運部' if i % 2 else '業務部', int(i % 4 == 0)))
     reports.bootstrap_users({'admin@example.test'})
-    reports.save_user({'email':'employee@example.test','display_name':'測試員工','role':'employee','company':'示範公司','department':'營運部','active':True},'admin@example.test')
     reports.save_user({'email':'company-admin@example.test','display_name':'公司管理員','role':'company_admin','company':'示範公司','active':True},'admin@example.test')
     # Legacy company key used by the report fixture, independent of its display name.
     with app.database_connection() as conn:
@@ -71,16 +70,18 @@ with tempfile.TemporaryDirectory(prefix='line-ui-fixture-') as temp:
     for title, company, scope in [('每日營運數據','示範公司','department'),('公司公告','示範公司','company'),('其他公司報告','第二公司','company')]:
         reports.save({'title':title,'source_path':str(image),'category':'company','company':company,'department':'營運部','scope':scope},'admin@example.test')
     reports.save_user({'email':'sender@example.test','display_name':'專案發送人員','role':'sender','company':'示範公司','active':True},'admin@example.test')
+    # Read-only report access so the admin preview has something to show.
+    reports.save_grant({'email':'sender@example.test','company':'示範公司','scope_ids':[],'report_ids':[r['report_id'] for r in reports.sources() if r['company']=='示範公司'],'messaging':False,'reports':True,'weather':False},'admin@example.test')
     scope_id=reports.save_dispatch_scope({'company':'第二公司','name':'營運部','kind':'department','department':'營運部','active':True},'admin@example.test')['scope_id']
     reports.save_grant({'email':'company-admin@example.test','company':'第二公司','scope_ids':[scope_id],'report_ids':[r['report_id'] for r in reports.sources() if r['company']=='第二公司'],'messaging':True,'reports':True,'weather':False},'admin@example.test')
     class FixtureHandler(admin_server.AdminHandler):
         def authorized(self, require_token=True):
             ok = super().authorized(require_token)
-            if ok and self.headers.get('X-Fixture-Role') in {'employee','company_admin','sender'}:
+            if ok and self.headers.get('X-Fixture-Role') in {'contact','company_admin','sender'}:
                 from urllib.parse import unquote
-                self.user = reports.login_account({'employee':'employee@example.test','company_admin':'company-admin@example.test','sender':'sender@example.test'}[self.headers.get('X-Fixture-Role')],unquote(self.headers.get('X-Workspace-Organization','')) or None)
+                self.user = reports.login_account({'contact':'contact@example.test','company_admin':'company-admin@example.test','sender':'sender@example.test'}[self.headers.get('X-Fixture-Role')],unquote(self.headers.get('X-Workspace-Organization','')) or None)
                 if not self.user:
-                    self.respond(403,{'error':'一般收件者不需後台登入。'})
+                    self.respond(403,{'error':'聯絡對象沒有後台帳號。'})
                     return False
                 self.identity = self.user['email']
             return ok

@@ -91,7 +91,7 @@ def save_organization(payload, actor):
 def save_membership(payload, actor):
     email=payload.get('email');org_id=payload.get('org_id');role=payload.get('role');active=payload.get('active')
     department=payload.get('department','');recipient=payload.get('recipient_id','')
-    if role not in {'company_admin','sender','employee'} or type(active) is not bool or any(not isinstance(v,str) or len(v)>80 for v in (department,recipient)):
+    if role not in {'company_admin','sender'} or type(active) is not bool or any(not isinstance(v,str) or len(v)>80 for v in (department,recipient)):
         raise ValueError('成員角色或欄位格式不正確。')
     with app.database_connection() as conn:
         if not conn.execute('SELECT 1 FROM workspace_users WHERE email=?',(email,)).fetchone() or not conn.execute('SELECT 1 FROM organizations WHERE org_id=?',(org_id,)).fetchone():
@@ -171,7 +171,7 @@ def save_dispatch_scope(payload, actor):
     if kind == 'group' and len(ids) != 1:
         raise ValueError('群組範圍須選擇一個 LINE 群組。')
     if kind == 'project' and not ids:
-        raise ValueError('專案範圍須選擇收件者。')
+        raise ValueError('專案範圍須選擇聯絡對象。')
     channels.enforce_company(company)
     scope_id = payload.get('scope_id') or uuid4().hex
     if not isinstance(scope_id, str) or not re.fullmatch('[0-9a-f]{32}', scope_id):
@@ -186,7 +186,7 @@ def save_dispatch_scope(payload, actor):
         for rid in ids:
             row = conn.execute('SELECT kind,company FROM recipients WHERE recipients.channel_id=current_channel() AND recipient_id=?', (rid,)).fetchone()
             if not row or row[1] != company or (kind == 'group' and row[0] not in {'group','room'}):
-                raise ValueError('請選擇同組織的有效收件者／群組。')
+                raise ValueError('請選擇同組織的有效聯絡對象／群組。')
         conn.execute("""INSERT INTO dispatch_scopes(channel_id,scope_id,company,name,kind,department,recipients_json,active) VALUES (current_channel(),?,?,?,?,?,?,?) ON CONFLICT(scope_id) DO UPDATE SET
                         name=excluded.name,kind=excluded.kind,department=excluded.department,recipients_json=excluded.recipients_json,active=excluded.active WHERE dispatch_scopes.channel_id=excluded.channel_id""",
                      (scope_id,company,name.strip(),kind,department.strip() if kind=='department' else '',json.dumps(ids if kind!='department' else []),int(active)))
@@ -241,7 +241,7 @@ def view_options(user):
     result=[]
     for member in memberships():
         row=account(member['email'],member['org_id'])
-        if row and row['role']!='administrator' and (user['role']=='administrator' or (row['role'] in {'sender','employee'} and same_company(user,row['company']))):
+        if row and row['role']!='administrator' and (user['role']=='administrator' or (row['role']=='sender' and same_company(user,row['company']))):
             result.append(row)
     return result
 
@@ -252,7 +252,7 @@ def save_user(payload, actor):
         raise ValueError("請填入完整 Email。")
     role = payload.get("role")
     active = payload.get("active")
-    if role not in {"administrator", "company_admin", "sender", "employee"} or type(active) is not bool:
+    if role not in {"administrator", "company_admin", "sender"} or type(active) is not bool:
         raise ValueError("角色或啟用狀態不正確。")
     fields = {}
     for key in ("display_name", "company", "department", "recipient_id"):
@@ -267,7 +267,7 @@ def save_user(payload, actor):
         if fields["recipient_id"]:
             contact = conn.execute('SELECT kind,company FROM recipients WHERE recipients.channel_id=current_channel() AND recipient_id=?', (fields["recipient_id"],)).fetchone()
             if not contact or contact[0] != "user" or contact[1] != fields["company"]:
-                raise ValueError("請先在收件者管理設定該個人的組織，再連結到帳號。")
+                raise ValueError("請先在「聯絡對象」設定該個人的組織，再連結到帳號。")
         previous = conn.execute("SELECT role,active FROM workspace_users WHERE email=?", (email,)).fetchone()
         if previous and previous == ("administrator", 1) and (role != "administrator" or not active):
             remaining = conn.execute("SELECT COUNT(*) FROM workspace_users WHERE role='administrator' AND active=1 AND email<>?", (email,)).fetchone()[0]
@@ -306,11 +306,8 @@ def can_view(source, user):
         return False
     if not user.get("company") or source.get("company") != user["company"]:
         return False
-    if user['role'] == 'company_admin':
-        return True
-    scope = source.get("scope")
-    return (scope == "company" or (scope == "department" and bool(user.get("department")) and source["department"] == user["department"])
-            or (scope == "personal" and source.get("owner_email") == user["email"]))
+    # Only operator roles remain; report scope limits delivery targets, not company-admin visibility.
+    return user['role'] == 'company_admin'
 
 
 def validate_targets(source, selected):
@@ -322,7 +319,7 @@ def validate_targets(source, selected):
         if ((not source["company"] and channels.organization_id() is None) or row.get("company") != source["company"]
                 or (source["scope"] == "department" and row.get("department") != source["department"])
                 or (source["scope"] == "personal" and (not owner_id or row["recipient_id"] != owner_id))):
-            raise ValueError("收件者不在這份報告的組織／部門／個人範圍內，請重新選擇。")
+            raise ValueError("發送對象不在這份報告的組織／部門／個人範圍內，請重新選擇。")
 
 
 def audit(conn, actor, action, target, detail, company=None):
@@ -424,7 +421,7 @@ def save(payload, actor):
     owner = owner.strip().lower()
     owner_id = payload.get('owner_recipient_id','')
     if not isinstance(owner_id,str):
-        raise ValueError('個人收件者格式不正確。')
+        raise ValueError('個人聯絡對象格式不正確。')
     if scope == 'personal':
         # Read legacy account bindings only as a migration fallback; new UI selects a recipient.
         if not owner_id:
@@ -432,7 +429,7 @@ def save(payload, actor):
             owner_id = legacy['recipient_id'] if legacy else ''
         with app.database_connection() as conn:
             if not conn.execute("SELECT 1 FROM recipients WHERE recipients.channel_id=current_channel() AND recipient_id=? AND company=? AND kind='user' AND active=1", (owner_id,company.strip())).fetchone():
-                raise ValueError('個人報告必須指定同組織、啟用中的 LINE 個人收件者。')
+                raise ValueError('個人報告必須指定同組織、啟用中的 LINE 個人聯絡對象。')
     if not isinstance(title, str) or not title.strip() or len(title.strip()) > 80:
         raise ValueError("請填寫 1 至 80 字的報告名稱。")
     if category not in CATEGORIES or not isinstance(department, str) or len(department.strip()) > 60:

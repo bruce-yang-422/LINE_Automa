@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS recipients (
     kind TEXT NOT NULL CHECK (kind IN ('user', 'group', 'room')),
     display_name TEXT NOT NULL DEFAULT '',
     alias TEXT NOT NULL DEFAULT '',
+    notes TEXT NOT NULL DEFAULT '',
     active INTEGER NOT NULL DEFAULT 1,
     weather_subscribed INTEGER NOT NULL DEFAULT 0,
     event_at INTEGER NOT NULL DEFAULT 0,
@@ -98,7 +99,7 @@ CREATE TABLE IF NOT EXISTS audit_events (
 CREATE TABLE IF NOT EXISTS workspace_users (
     email TEXT PRIMARY KEY,
     display_name TEXT NOT NULL DEFAULT '',
-    role TEXT NOT NULL CHECK(role IN ('administrator','company_admin','sender','employee')),
+    role TEXT NOT NULL CHECK(role IN ('administrator','company_admin','sender')),
     company TEXT NOT NULL DEFAULT '',
     department TEXT NOT NULL DEFAULT '',
     recipient_id TEXT NOT NULL DEFAULT '',
@@ -141,7 +142,7 @@ CREATE TABLE IF NOT EXISTS organizations (
 CREATE TABLE IF NOT EXISTS organization_members (
     email TEXT NOT NULL,
     org_id TEXT NOT NULL,
-    role TEXT NOT NULL CHECK(role IN ('company_admin','sender','employee')),
+    role TEXT NOT NULL CHECK(role IN ('company_admin','sender')),
     department TEXT NOT NULL DEFAULT '',
     recipient_id TEXT NOT NULL DEFAULT '',
     active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)),
@@ -208,10 +209,28 @@ CREATE TABLE IF NOT EXISTS line_channel_shares (
     CHECK ((org_id<>'' AND owner_email='') OR (org_id='' AND owner_email<>'')),
     UNIQUE(channel_id, org_id, owner_email)
 );
+
+CREATE TABLE IF NOT EXISTS contact_tags (
+    tag_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    color TEXT NOT NULL DEFAULT '#7C916C',
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    channel_id TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS contact_tag_assignments (
+    channel_id TEXT NOT NULL DEFAULT '',
+    recipient_id TEXT NOT NULL,
+    tag_id TEXT NOT NULL REFERENCES contact_tags(tag_id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    PRIMARY KEY (channel_id, recipient_id, tag_id)
+);
 CREATE INDEX IF NOT EXISTS audit_events_channel_idx ON audit_events(channel_id);
 CREATE INDEX IF NOT EXISTS builtin_report_state_channel_idx ON builtin_report_state(channel_id);
 CREATE INDEX IF NOT EXISTS dispatch_scopes_channel_idx ON dispatch_scopes(channel_id);
 CREATE INDEX IF NOT EXISTS line_messages_channel_idx ON line_messages(channel_id);
+CREATE INDEX IF NOT EXISTS contact_tags_channel_idx ON contact_tags(channel_id);
+CREATE INDEX IF NOT EXISTS contact_tag_assignments_channel_idx ON contact_tag_assignments(channel_id);
 CREATE INDEX IF NOT EXISTS recipients_channel_idx ON recipients(channel_id);
 CREATE INDEX IF NOT EXISTS report_sources_channel_idx ON report_sources(channel_id);
 CREATE INDEX IF NOT EXISTS send_jobs_channel_idx ON send_jobs(channel_id);

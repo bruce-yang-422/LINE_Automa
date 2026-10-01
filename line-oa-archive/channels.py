@@ -119,7 +119,7 @@ def workspace_options(user):
     members = reports.memberships(user['email'])
     for org in reports.organizations():
         member = next((m for m in members if m['org_id'] == org['org_id'] and m['active']), None)
-        if org['active'] and (platform or (member and member['role'] in {'company_admin', 'sender', 'employee'})):
+        if org['active'] and (platform or (member and member['role'] in {'company_admin', 'sender'})):
             result.append({'id': 'o:' + org['org_id'], 'name': org['name'], 'kind': 'organization',
                            'org_id': org['org_id'], 'owner_email': '',
                            'can_manage': platform or member['role'] == 'company_admin'})
@@ -426,13 +426,13 @@ def assign(payload, user):
     s, base = _share_row(payload.get('share_id'), user)
     ids = payload.get('recipient_ids')
     if not isinstance(ids, list) or len(ids) > 10000 or any(not isinstance(i, str) for i in ids):
-        raise ValueError('收件者清單格式不正確。')
+        raise ValueError('聯絡對象清單格式不正確。')
     wanted = set(ids)
     with app.database_connection() as conn:
         conn.execute('BEGIN IMMEDIATE')
         owned = {r[0] for r in conn.execute('SELECT recipient_id FROM recipients WHERE channel_id=?', (base['channel_id'],))}
         if wanted - owned:
-            raise ValueError('只能指派此 OA 名單中的收件者。')
+            raise ValueError('只能指派此 OA 名單中的聯絡對象。')
         current = {r[0] for r in conn.execute('SELECT recipient_id FROM recipients WHERE channel_id=?', (s['share_id'],))}
         # Copies carry LINE-side state only; alias, department and subscriptions belong to the receiving workspace.
         for rid in sorted(wanted - current):
@@ -444,7 +444,7 @@ def assign(payload, user):
         conn.executemany('DELETE FROM recipients WHERE channel_id=? AND recipient_id=?',
                          [(s['share_id'], rid) for rid in sorted(current - wanted)])
         reports.audit(conn, user['email'], 'oa.share.recipients', s['share_id'],
-                      f'指派 {len(wanted)} 位收件者給 {workspace_name(s["org_id"], s["owner_email"])}', base['org_id'])
+                      f'指派 {len(wanted)} 位聯絡對象給 {workspace_name(s["org_id"], s["owner_email"])}', base['org_id'])
     return {'assigned': len(wanted), 'added': len(wanted - current), 'removed': len(current - wanted)}
 
 

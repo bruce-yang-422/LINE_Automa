@@ -39,11 +39,11 @@ def select_contacts(conn, audience, ids):
         wanted = set(ids)
         selected = [r for r in contacts if r["active"] and r["recipient_id"] in wanted]
         if len(selected) != len(wanted):
-            raise ValueError("部分收件者已停用或不存在，請重新整理名單。")
+            raise ValueError("部分發送對象已停用或不存在，請重新整理名單。")
     else:
-        raise ValueError("請選擇收件者或天氣訂閱名單。")
+        raise ValueError("請選擇發送對象或天氣訂閱名單。")
     if not selected or len(selected) > 500:
-        raise ValueError("請選擇 1 至 500 個有效收件者。")
+        raise ValueError("請選擇 1 至 500 個有效發送對象。")
     if any(not re.fullmatch(r"[UCR][0-9a-fA-F]{32}", r["recipient_id"]) for r in selected):
         raise ValueError("名單含有無效 ID，請重新接收 LINE Webhook。")
     return selected
@@ -165,7 +165,7 @@ class Dispatcher:
             message_text = payload.get("message_text", "")
             composition = payload.get('composition')
             if 'composition' in payload and (not isinstance(composition, dict) or message_text or payload.get('report_id') or payload.get('image_path') or payload.get('audience') != 'selected'):
-                raise ValueError('自訂訊息請選擇收件者，且不能混合文字或報告來源。')
+                raise ValueError('自訂訊息請選擇發送對象，且不能混合文字或報告來源。')
             if not isinstance(message_text, str) or ("message_text" in payload and not message_text.strip()) or len(message_text.encode('utf-16-le')) // 2 > 5000:
                 raise ValueError("文字訊息請填入 1 至 5000 字（表情符號可能佔兩字）。")
             if message_text and (payload.get("report_id") or payload.get("image_path") or payload.get("audience") != "selected"):
@@ -178,7 +178,7 @@ class Dispatcher:
             with app.database_connection() as conn:
                 selected = select_contacts(conn, audience, payload.get("ids"))
             if any(not reports.allowed_contact(user, row) for row in selected):
-                raise ValueError('收件者不在所屬組織範圍。')
+                raise ValueError('發送對象不在所屬組織範圍。')
             report_id, report_title = "", "手動圖片"
             messages = []
             prepared = composer.prepare(composition, user, selected) if composition is not None else None
@@ -188,7 +188,7 @@ class Dispatcher:
                     raise ValueError('找不到可使用的報告。')
                 if audience == "subscribers" and (not isinstance(payload.get("ids"), list)
                         or set(payload["ids"]) != {row["recipient_id"] for row in selected}):
-                    raise ValueError("天氣訂閱名單已變更，請重新整理並確認收件者。")
+                    raise ValueError("天氣訂閱名單已變更，請重新整理並確認發送對象。")
                 report, item = reports.prepare(payload["report_id"], payload.get("report_version"), payload.get("allow_stale"))
                 if audience == "subscribers" and report["category"] != "weather":
                     raise ValueError("天氣訂閱名單只能用於天氣報告，其他報表請自行選擇對象。")
@@ -358,7 +358,7 @@ class AdminHandler(BaseHTTPRequestHandler):
                     self.identity = remote.verify(self.headers.get("Cf-Access-Jwt-Assertion", ""), allowed_emails=allowed)
                     self.user = reports.login_account(self.identity)
                     if not self.user:
-                        raise ValueError("此帳號沒有後台登入資格；一般收件者請直接使用 LINE。")
+                        raise ValueError("此帳號沒有後台登入資格；聯絡對象請直接使用 LINE，不需後台帳號。")
                 else:
                     self.identity = remote.verify(self.headers.get("Cf-Access-Jwt-Assertion", ""))
             except ValueError as exc:
@@ -446,6 +446,11 @@ class AdminHandler(BaseHTTPRequestHandler):
             result = [{key: value for key, value in row.items() if key not in {'weather_subscribed', 'subscription_at'}} for row in result]
         return result
 
+    def scoped_tags(self):
+        with app.database_connection() as conn:
+            rows = recipients.list_tags(conn)
+        return [{"id": r["tag_id"], "tag_id": r["tag_id"], "name": r["name"], "color": r["color"]} for r in rows]
+
     def do_GET(self):
         with channels.use(''):
             self.get_request()
@@ -476,8 +481,8 @@ class AdminHandler(BaseHTTPRequestHandler):
             return
         if self.path not in files and not self.select_line_channel():
             return
-        employee_routes = {"/api/channels", "/api/session", "/api/reports", "/api/organizations"}
-        if self.path not in files and self.path not in employee_routes and not re.fullmatch(r"/api/reports/(weather|[0-9a-f]{32})", self.path):
+        read_routes = {"/api/channels", "/api/session", "/api/reports", "/api/organizations"}
+        if self.path not in files and self.path not in read_routes and not re.fullmatch(r"/api/reports/(weather|[0-9a-f]{32})", self.path):
             if self.user['role']=='sender' and self.path in {'/api/view-options','/api/settings'}:
                 self.respond(403, {'error':'此功能僅供管理員使用。'})
                 return
@@ -526,7 +531,9 @@ class AdminHandler(BaseHTTPRequestHandler):
                                "sender_grants": [{"email":m['email'],"company":m['org_id'],**reports.grant({'email':m['email'],'company':m['org_id']})} for m in reports.memberships() if m['role']=='sender'] if self.user['role']=='administrator' else [],
                                "role": self.user['role']})
         elif self.path == "/api/contacts":
-            self.respond(200, {"contacts": self.scoped_contacts()})
+            self.respond(200, {"contacts": self.scoped_contacts(), "tags": self.scoped_tags()})
+        elif self.path == "/api/tags":
+            self.respond(200, {"tags": self.scoped_tags()})
         elif self.path == "/api/jobs":
             self.respond(200, {"jobs": job_status(user=self.user)})
         elif re.fullmatch(r"/api/jobs/[0-9a-f-]{36}", self.path):
@@ -549,8 +556,8 @@ class AdminHandler(BaseHTTPRequestHandler):
         if not reports.operator(self.user):
             self.respond(403, {'error':'沒有發送操作權限。'})
             return
-        if self.user['role']=='sender' and self.path not in {'/api/send','/api/jobs/cancel','/api/assets/upload','/api/channels/save','/api/channels/verify','/api/channels/active'}:
-            self.respond(403, {'error':'發送人員不能修改收件者分類、來源或帳號授權。'})
+        if self.user['role']=='sender' and self.path not in {'/api/send','/api/jobs/cancel','/api/assets/upload','/api/channels/save','/api/channels/verify','/api/channels/active', '/api/contacts/bulk'}:
+            self.respond(403, {'error':'發送人員不能修改聯絡對象分類、來源或帳號授權。'})
             return
         if self.preview:
             self.respond(403, {'error': '視角預覽僅供檢視，請返回原帳號操作。'})
@@ -578,6 +585,37 @@ class AdminHandler(BaseHTTPRequestHandler):
                 self.respond(200, channels.assign(payload, self.user))
             elif self.path == '/api/channels/transfer':
                 self.respond(200, channels.transfer(payload, self.user))
+            elif self.path == '/api/tags/save':
+                if not reports.manager(self.user):
+                    raise ValueError('只有管理員可以管理標籤。')
+                with app.database_connection() as conn:
+                    tid = recipients.save_tag(conn, payload.get('name'), payload.get('color'), payload.get('id'))
+                    reports.audit(conn, self.identity, "tag.save", tid, f"儲存標籤「{payload.get('name')}」", self.user['company'])
+                self.respond(200, {'ok': True, 'tag_id': tid, 'tag': {'id': tid, 'name': payload.get('name'), 'color': payload.get('color')}})
+            elif self.path == '/api/tags/delete':
+                if not reports.manager(self.user):
+                    raise ValueError('只有管理員可以刪除標籤。')
+                with app.database_connection() as conn:
+                    recipients.delete_tag(conn, payload.get('id'))
+                    reports.audit(conn, self.identity, "tag.delete", str(payload.get('id')), "刪除標籤", self.user['company'])
+                self.respond(200, {'ok': True})
+            elif self.path == '/api/contacts/bulk':
+                action = payload.get('action')
+                ids = payload.get('ids') or payload.get('contact_ids') or []
+                with app.database_connection() as conn:
+                    if action in {'add_tags', 'remove_tags'}:
+                        tag_ids = payload.get('tag_ids', [])
+                        recipients.bulk_update_tags(conn, ids, tag_ids, 'add' if action == 'add_tags' else 'remove')
+                        reports.audit(conn, self.identity, "contacts.bulk_tag", f"{len(ids)} contacts", "批次更新標籤", self.user['company'])
+                    elif action == 'set_subscription':
+                        if self.user['role'] != 'administrator':
+                            raise ValueError('天氣訂閱由平台管理員設定。')
+                        sub = bool(payload.get('subscribed'))
+                        recipients.bulk_update_subscription(conn, ids, sub)
+                        reports.audit(conn, self.identity, "contacts.bulk_sub", f"{len(ids)} contacts", "批次更新訂閱", self.user['company'])
+                    else:
+                        raise ValueError('不支援的操作。')
+                self.respond(200, {'ok': True})
             elif self.path == '/api/assets/upload':
                 if not reports.module_enabled(self.user, 'messaging'):
                     raise ValueError('此組織尚未授權訊息發送模組。')
@@ -597,12 +635,12 @@ class AdminHandler(BaseHTTPRequestHandler):
                     conn.execute('BEGIN IMMEDIATE')
                     current = conn.execute('SELECT company,weather_subscribed FROM recipients WHERE recipients.channel_id=current_channel() AND recipient_id=?', (payload.get('id'),)).fetchone()
                     if not current or not reports.same_company(self.user, current[0]):
-                        raise ValueError('找不到可管理的收件者。')
+                        raise ValueError('找不到可管理的聯絡對象。')
                     if self.user['role'] != 'administrator':
                         if payload.get('company', current[0]) != current[0] or 'subscribed' in payload:
                             raise ValueError('組織歸屬與個人天氣模組由平台管理員設定。')
                         payload['subscribed'] = bool(current[1])
-                    recipients.update_contact(conn, payload.get("id"), payload.get("alias"), payload.get("subscribed"))
+                    recipients.update_contact(conn, payload.get("id"), payload.get("alias", ""), payload.get("subscribed", False), notes=payload.get("notes"), tag_ids=payload.get("tag_ids"))
                     department = payload.get("department")
                     if department is not None:
                         if not isinstance(department, str) or len(department.strip()) > 60:

@@ -41,6 +41,17 @@ def initialize_database() -> None:
     with database_connection() as conn:
         conn.execute("PRAGMA journal_mode=WAL")
         conn.executescript((BASE_DIR / "schema.sql").read_text(encoding="utf-8"))
+        try:
+            conn.execute("ALTER TABLE recipients ADD COLUMN notes TEXT NOT NULL DEFAULT ''")
+        except sqlite3.OperationalError:
+            pass
+        # 已移除「一般收件者」(employee) 角色：這類人只在 LINE 收訊，不應有後台帳號。
+        # 舊資料庫的 CHECK 仍允許此值，故每次啟動清除殘留資料；仍有其他組織身分的帳號只移除 employee 成員資格。
+        conn.execute("DELETE FROM organization_members WHERE role='employee'")
+        orphans = "SELECT email FROM workspace_users WHERE role='employee' AND email NOT IN (SELECT email FROM organization_members)"
+        for table in ("site_sessions", "site_activation", "site_credentials", "sender_grants"):
+            conn.execute(f"DELETE FROM {table} WHERE email IN ({orphans})")
+        conn.execute(f"DELETE FROM workspace_users WHERE email IN ({orphans})")
 
 
 def valid_signature(body: bytes, signature: str, secret=None) -> bool:

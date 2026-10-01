@@ -1,0 +1,215 @@
+import json
+import os
+from pathlib import Path
+import tempfile
+import unittest
+from unittest.mock import patch
+
+import app
+import admin_server
+import recipients
+
+USER1 = "U" + "1" * 32
+USER2 = "U" + "2" * 32
+GROUP1 = "C" + "3" * 32
+
+class ContactTagTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix="line-tags-test-")
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        (self.root / "instance").mkdir()
+        (self.root / "schema.sql").write_bytes((app.BASE_DIR / "schema.sql").read_bytes())
+        for target, value in (("BASE_DIR", self.root), ("DATABASE_PATH", self.root / "test.db")):
+            p = patch.object(app, target, value)
+            p.start()
+            self.addCleanup(p.stop)
+        p = patch.dict(os.environ, {"LINE_CHANNEL_ACCESS_TOKEN": "fake-test-token"}, clear=True)
+        p.start()
+        self.addCleanup(p.stop)
+        app.initialize_database()
+
+        with app.database_connection() as conn:
+            conn.execute(
+                "INSERT INTO recipients (recipient_id, kind, display_name, active) VALUES (?, 'user', 'Alice', 1)",
+                (USER1,)
+            )
+            conn.execute(
+                "INSERT INTO recipients (recipient_id, kind, display_name, active) VALUES (?, 'user', 'Bob', 1)",
+                (USER2,)
+            )
+            conn.execute(
+                "INSERT INTO recipients (recipient_id, kind, display_name, active) VALUES (?, 'group', 'Sales Team', 1)",
+                (GROUP1,)
+            )
+
+    def test_tag_crud_and_listing(self):
+        with app.database_connection() as conn:
+            t1_id = recipients.save_tag(conn, name="VIP 客戶", color="#007AFF")
+            t2_id = recipients.save_tag(conn, name="合作夥伴", color="#34C759")
+            self.assertTrue(t1_id.startswith("tag_"))
+            self.assertTrue(t2_id.startswith("tag_"))
+
+            tags = recipients.list_tags(conn)
+            self.assertEqual(len(tags), 2)
+            self.assertEqual({t["name"] for t in tags}, {"VIP 客戶", "合作夥伴"})
+
+            # Update tag
+            updated_id = recipients.save_tag(conn, name="重要 VIP", color="#FF9500", tag_id=t1_id)
+            self.assertEqual(updated_id, t1_id)
+            tags_updated = recipients.list_tags(conn)
+            t1_row = next(t for t in tags_updated if t["tag_id"] == t1_id)
+            self.assertEqual(t1_row["name"], "重要 VIP")
+            self.assertEqual(t1_row["color"], "#FF9500")
+
+            # Delete tag
+            recipients.delete_tag(conn, t2_id)
+            tags_after = recipients.list_tags(conn)
+            self.assertEqual(len(tags_after), 1)
+            self.assertEqual(tags_after[0]["tag_id"], t1_id)
+
+    def test_contact_notes_and_custom_name(self):
+        with app.database_connection() as conn:
+            recipients.update_contact(
+                conn, USER1, alias="小艾 (Alice)", subscribed=False,
+                notes="每週二需確認報表"
+            )
+            contacts = recipients.list_contacts(conn)
+            c1 = next(c for c in contacts if c["recipient_id"] == USER1)
+            self.assertEqual(c1["alias"], "小艾 (Alice)")
+            self.assertEqual(c1["custom_name"], "小艾 (Alice)")
+            self.assertEqual(c1["notes"], "每週二需確認報表")
+
+    def test_contact_tags_assignment_and_cascade(self):
+        with app.database_connection() as conn:
+            t1_id = recipients.save_tag(conn, name="VIP", color="#007AFF")
+            t2_id = recipients.save_tag(conn, name="北部", color="#AF52DE")
+
+            # Assign tags to USER1
+            recipients.set_contact_tags(conn, USER1, [t1_id, t2_id])
+            # Assign tag to USER2
+            recipients.set_contact_tags(conn, USER2, [t1_id])
+
+            contacts = recipients.list_contacts(conn)
+            c1 = next(c for c in contacts if c["recipient_id"] == USER1)
+            c2 = next(c for c in contacts if c["recipient_id"] == USER2)
+            self.assertEqual(len(c1["tags"]), 2)
+            self.assertEqual({t["name"] for t in c1["tags"]}, {"VIP", "北部"})
+            self.assertEqual(len(c2["tags"]), 1)
+            self.assertEqual(c2["tags"][0]["name"], "VIP")
+
+            # Delete tag t1 and verify cascade removal
+            recipients.delete_tag(conn, t1_id)
+            contacts_after = recipients.list_contacts(conn)
+            c1_after = next(c for c in contacts_after if c["recipient_id"] == USER1)
+            c2_after = next(c for c in contacts_after if c["recipient_id"] == USER2)
+            self.assertEqual(len(c1_after["tags"]), 1)
+            self.assertEqual(c1_after["tags"][0]["name"], "北部")
+            self.assertEqual(len(c2_after["tags"]), 0)
+
+    def test_bulk_tag_operations(self):
+        with app.database_connection() as conn:
+            t1_id = recipients.save_tag(conn, name="2026專案", color="#FF3B30")
+            t2_id = recipients.save_tag(conn, name="內部同仁", color="#30B0C7")
+
+            # Bulk add t1 to USER1, USER2, GROUP1
+            recipients.bulk_update_tags(conn, [USER1, USER2, GROUP1], [t1_id], action="add")
+
+            contacts = recipients.list_contacts(conn)
+            for c in contacts:
+                self.assertTrue(any(t["id"] == t1_id for t in c["tags"]))
+
+            # Bulk add t2 to USER1 only
+            recipients.bulk_update_tags(conn, [USER1], [t2_id], action="add")
+
+            # Bulk remove t1 from USER1 and USER2
+            recipients.bulk_update_tags(conn, [USER1, USER2], [t1_id], action="remove")
+
+            contacts_after = recipients.list_contacts(conn)
+            c1 = next(c for c in contacts_after if c["recipient_id"] == USER1)
+            c2 = next(c for c in contacts_after if c["recipient_id"] == USER2)
+            cg = next(c for c in contacts_after if c["recipient_id"] == GROUP1)
+
+            self.assertEqual([t["name"] for t in c1["tags"]], ["內部同仁"])
+            self.assertEqual(len(c2["tags"]), 0)
+            self.assertEqual([t["name"] for t in cg["tags"]], ["2026專案"])
+
+    def test_bulk_subscription_update(self):
+        with app.database_connection() as conn:
+            recipients.bulk_update_subscription(conn, [USER1, USER2, GROUP1], subscribed=True)
+            contacts = recipients.list_contacts(conn)
+            for c in contacts:
+                self.assertTrue(c["weather_subscribed"])
+
+            recipients.bulk_update_subscription(conn, [USER1], subscribed=False)
+            contacts_after = recipients.list_contacts(conn)
+            c1 = next(c for c in contacts_after if c["recipient_id"] == USER1)
+            c2 = next(c for c in contacts_after if c["recipient_id"] == USER2)
+            self.assertFalse(c1["weather_subscribed"])
+            self.assertTrue(c2["weather_subscribed"])
+
+    def test_http_api_tag_endpoints_and_bulk(self):
+        from urllib.request import Request, urlopen
+        server = admin_server.AdminServer(0)
+        server.start()
+        self.addCleanup(server.close)
+        base = f"http://127.0.0.1:{server.server_port}"
+        headers = {"Content-Type": "application/json", "Authorization": "Bearer " + server.token}
+
+        # 1. Create tag via POST /api/tags/save
+        req = Request(f"{base}/api/tags/save", data=json.dumps({"name": "VIP特約", "color": "#FF9500"}).encode(), headers=headers)
+        with urlopen(req) as resp:
+            data = json.load(resp)
+            self.assertTrue(data.get("ok"))
+            tag_id = data["tag"]["id"]
+            self.assertEqual(data["tag"]["name"], "VIP特約")
+
+        # 2. Get tags via GET /api/tags
+        req = Request(f"{base}/api/tags", headers=headers)
+        with urlopen(req) as resp:
+            data = json.load(resp)
+            self.assertEqual(len(data["tags"]), 1)
+            self.assertEqual(data["tags"][0]["id"], tag_id)
+
+        # 3. Update contact with notes and tag via POST /api/contact
+        payload = {"id": USER1, "alias": "Alice VIP", "subscribed": False, "notes": "VIP 專屬客服", "tag_ids": [tag_id]}
+        req = Request(f"{base}/api/contact", data=json.dumps(payload).encode(), headers=headers)
+        with urlopen(req) as resp:
+            data = json.load(resp)
+            self.assertTrue(data.get("ok"))
+
+        # 4. Fetch contacts via GET /api/contacts
+        req = Request(f"{base}/api/contacts", headers=headers)
+        with urlopen(req) as resp:
+            data = json.load(resp)
+            self.assertIn("tags", data)
+            self.assertEqual(len(data["tags"]), 1)
+            c1 = next(c for c in data["contacts"] if c["recipient_id"] == USER1)
+            self.assertEqual(c1["alias"], "Alice VIP")
+            self.assertEqual(c1["notes"], "VIP 專屬客服")
+            self.assertEqual(len(c1["tags"]), 1)
+            self.assertEqual(c1["tags"][0]["name"], "VIP特約")
+
+        # 5. Bulk add tags via POST /api/contacts/bulk
+        req = Request(f"{base}/api/contacts/bulk", data=json.dumps({"action": "add_tags", "contact_ids": [USER2, GROUP1], "tag_ids": [tag_id]}).encode(), headers=headers)
+        with urlopen(req) as resp:
+            data = json.load(resp)
+            self.assertTrue(data.get("ok"))
+
+        req = Request(f"{base}/api/contacts", headers=headers)
+        with urlopen(req) as resp:
+            data = json.load(resp)
+            for c in data["contacts"]:
+                self.assertEqual(len(c["tags"]), 1)
+
+        # 6. Delete tag via POST /api/tags/delete
+        req = Request(f"{base}/api/tags/delete", data=json.dumps({"id": tag_id}).encode(), headers=headers)
+        with urlopen(req) as resp:
+            data = json.load(resp)
+            self.assertTrue(data.get("ok"))
+
+        req = Request(f"{base}/api/tags", headers=headers)
+        with urlopen(req) as resp:
+            data = json.load(resp)
+            self.assertEqual(len(data["tags"]), 0)
+
