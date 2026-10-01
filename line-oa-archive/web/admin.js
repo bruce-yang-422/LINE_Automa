@@ -1,7 +1,7 @@
 "use strict";
 const $ = id => document.getElementById(id);
 const esc = value => String(value ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const paths = {grid:'<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',file:'<path d="M14 2H5v20h14V7zM14 2v6h5M8 12h8M8 16h6"/>',send:'<path d="m22 2-7 20-4-9-9-4zM11 13 22 2"/>',users:'<circle cx="9" cy="7" r="3"/><path d="M3 21v-3a6 6 0 0 1 12 0v3M17 4a3 3 0 0 1 0 6M18 14a5 5 0 0 1 3 5v2"/>',bell:'<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M9 21h6"/>',clock:'<circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/>',settings:'<path d="M3 7h18M3 17h18"/><rect x="6" y="4" width="4" height="6" rx="1"/><rect x="14" y="14" width="4" height="6" rx="1"/>',menu:'<path d="M4 6h16M4 12h16M4 18h16"/>',refresh:'<path d="M20 7a9 9 0 1 0 1 8M20 2v6h-6"/>',arrow:'<path d="M5 12h14m-5-5 5 5-5 5"/>',search:'<circle cx="10" cy="10" r="6"/><path d="m15 15 6 6"/>',plus:'<path d="M12 4v16M4 12h16"/>',image:'<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="1"/><path d="m3 17 6-6 4 4 3-3 5 5"/>',check:'<path d="m5 12 4 4L19 6"/>',copy:'<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>',shield:'<path d="m12 2 8 3v6c0 6-8 11-8 11S4 17 4 11V5zM8 12l3 3 5-6"/>'};
+const paths = {grid:'<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',file:'<path d="M14 2H5v20h14V7zM14 2v6h5M8 12h8M8 16h6"/>',send:'<path d="m22 2-7 20-4-9-9-4zM11 13 22 2"/>',users:'<circle cx="9" cy="7" r="3"/><path d="M3 21v-3a6 6 0 0 1 12 0v3M17 4a3 3 0 0 1 0 6M18 14a5 5 0 0 1 3 5v2"/>',bell:'<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M9 21h6"/>',clock:'<circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/>',settings:'<path d="M3 7h18M3 17h18"/><rect x="6" y="4" width="4" height="6" rx="1"/><rect x="14" y="14" width="4" height="6" rx="1"/>',menu:'<path d="M4 6h16M4 12h16M4 18h16"/>',refresh:'<path d="M20 7a9 9 0 1 0 1 8M20 2v6h-6"/>',arrow:'<path d="M5 12h14m-5-5 5 5-5 5"/>',search:'<circle cx="10" cy="10" r="6"/><path d="m15 15 6 6"/>',plus:'<path d="M12 4v16M4 12h16"/>',image:'<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="1"/><path d="m3 17 6-6 4 4 3-3 5 5"/>',check:'<path d="m5 12 4 4L19 6"/>',copy:'<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>',shield:'<path d="m12 2 8 3v6c0 6-8 11-8 11S4 17 4 11V5zM8 12l3 3 5-6"/>',folder:'<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>'};
 const icon = name => `<svg viewBox="0 0 24 24" aria-hidden="true">${paths[name] || paths.file}</svg>`;
 document.querySelectorAll("[data-icon]").forEach(el => {el.innerHTML=icon(el.dataset.icon);});
 const remote = location.hostname !== "127.0.0.1";
@@ -9,8 +9,8 @@ let authCsrf="";
 const token = remote ? "" : location.hash.slice(1) || sessionStorage.getItem("lineAdminToken") || "";
 if(location.hash){if(!remote)sessionStorage.setItem("lineAdminToken",token);history.replaceState(null,"",location.pathname+location.search);}
 $("logout").hidden=!remote;
-const state={session:null,view:new URLSearchParams(location.search).get("view")||"overview",reports:[],contacts:[],tags:[],jobs:[],settings:{users:[]},events:[],previews:new Map(),selected:new Set(),report:null,step:1,audience:"selected",search:"",kind:"all",company:"",department:"",tagFilter:"",page:1,reportFilter:"all",historyFilter:"all",subFilter:"all",busy:false,loaded:false,authLost:false};
-const titles={overview:"工作總覽",reports:"報告中心",send:"建立發送",contacts:"聯絡對象",subscriptions:"天氣訂閱",history:"發送紀錄",schedule:"排程管理",settings:"帳號與設定",organizations:"組織管理",channels:"LINE OA 管理"};
+const state={session:null,view:new URLSearchParams(location.search).get("view")||"overview",reports:[],contacts:[],tags:[],jobs:[],cases:[],caseFilter:"all",casePriority:"all",caseQuery:"",savedFilters:[],chatNotes:new Map(),settings:{users:[]},events:[],previews:new Map(),selected:new Set(),report:null,step:1,audience:"selected",search:"",kind:"all",company:"",department:"",tagFilter:"",page:1,reportFilter:"all",historyFilter:"all",subFilter:"all",busy:false,loaded:false,authLost:false};
+const titles={overview:"工作總覽",reports:"報告中心",send:"建立發送",cases:"案件管理",contacts:"聯絡對象",subscriptions:"天氣訂閱",history:"發送紀錄",schedule:"排程管理",settings:"帳號與設定",organizations:"組織管理",channels:"LINE OA 管理"};
 const admin=()=>["administrator","company_admin","sender"].includes(state.session?.role);
 const manager=()=>["administrator","company_admin"].includes(state.session?.role);
 const canSend=()=>admin()&&Boolean(state.session?.modules?.messaging);
@@ -21,6 +21,11 @@ let viewAs="",viewKey="",viewOptions=[],principalSession=null,organization="",pr
 const orgName=id=>(state.organizations||[]).find(o=>o.org_id===id)?.name||id||"未指定組織";
 const orgKinds={company:"公司",unit:"單位",association:"社團",club:"俱樂部",family:"家庭",personal:"個人工作室",other:"其他"};
 const label=r=>r.alias||r.custom_name||r.display_name||(r.kind==="user"?"未命名個人":"未命名群組");
+const caseStatusNames={pending:"待處理",processing:"處理中",waiting:"等待中",ready_to_close:"待結案",closed:"已結案"};
+const caseStatusTones={pending:"warn",processing:"primary",waiting:"secondary",ready_to_close:"info",closed:"good"};
+const casePriorityNames={low:"低",normal:"一般",high:"高",urgent:"緊急"};
+const casePriorityTones={low:"",normal:"good",high:"warn",urgent:"bad"};
+const waitingPartyNames={internal:"內部團隊",case_subject:"案件主體（聯絡對象）",third_party:"第三方廠商／單位"};
 const APPLE_TAG_COLORS=[
   {name:"經典藍",hex:"#007AFF"},
   {name:"青蔥綠",hex:"#34C759"},
@@ -33,7 +38,9 @@ const APPLE_TAG_COLORS=[
   {name:"玫瑰粉",hex:"#FF2D55"},
   {name:"琥珀黃",hex:"#FFCC00"}
 ];
-const tagBadge=tag=>`<span class="tag-badge" style="--tag-bg:${esc(tag.color||'#007AFF')}"><span class="tag-dot" style="background:${esc(tag.color||'#007AFF')}"></span>${esc(tag.name)}</span>`;
+const contactTypeNames={organization:"組織／團體",person_business:"公務對象個人",person_private:"一般個人"};
+const contactTypeBadge=type=>type?badge(contactTypeNames[type]||type,"good"):badge("未分類");
+const tagBadge=tag=>{const c=tag.color||'#007AFF';return `<span class="tag-badge" data-color="${esc(c)}"><span class="tag-dot" data-color="${esc(c)}"></span>${esc(tag.name)}</span>`;};
 const when=value=>value?new Date(value).toLocaleString("zh-TW",{month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false}):"尚未產生";
 const badge=(text,tone="")=>`<span class="badge ${tone}">${esc(text)}</span>`;
 const button=(text,action,cls="",attrs="")=>`<button class="btn ${cls}" data-action="${action}" ${attrs}>${text}</button>`;
@@ -97,10 +104,10 @@ async function load(){
   document.querySelectorAll("[data-admin]").forEach(el=>{el.hidden=!admin();});document.querySelectorAll("[data-platform]").forEach(el=>{el.hidden=!superAdmin();});
   const reportResult=lineDataReady()?await api("/api/reports"):{reports:[]};state.reports=reportResult.reports;
   if(admin()&&lineDataReady()){
-    const results=await Promise.all([api("/api/contacts"),api("/api/jobs"),(manager()?api("/api/settings"):Promise.resolve({users:[]})),api("/api/activity")]);
-    state.contacts=results[0].contacts;state.tags=results[0].tags||[];state.jobs=results[1].jobs;state.settings=results[2];state.events=results[3].events;
+    const results=await Promise.all([api("/api/contacts"),api("/api/jobs"),(manager()?api("/api/settings"):Promise.resolve({users:[]})),api("/api/activity"),api("/api/cases"),api("/api/saved-filters")]);
+    state.contacts=results[0].contacts;state.tags=results[0].tags||[];state.jobs=results[1].jobs;state.settings=results[2];state.events=results[3].events;state.cases=results[4].cases||[];state.savedFilters=results[5].saved_filters||[];
     state.selected=new Set([...state.selected].filter(id=>state.contacts.some(r=>r.recipient_id===id&&r.active)));
-  }else{state.contacts=[];state.tags=[];state.jobs=[];state.events=[];state.settings=manager()?await api("/api/settings"):{users:[]};state.selected.clear();}
+  }else{state.contacts=[];state.tags=[];state.jobs=[];state.cases=[];state.savedFilters=[];state.chatNotes.clear();state.events=[];state.settings=manager()?await api("/api/settings"):{users:[]};state.selected.clear();}
   document.querySelector('nav [data-view="subscriptions"]').hidden=!weatherModule();
   document.querySelector('nav [data-view="send"]').hidden=!admin()||!state.session.modules.messaging;
   document.querySelector('nav [data-view="settings"]').hidden=!manager();
@@ -112,6 +119,7 @@ async function load(){
   state.loaded=true;state.authLost=false;$("connection").innerHTML='<span class="status-dot"></span>已連線';
   $("sync-time").textContent="最後更新 "+new Date().toLocaleTimeString("zh-TW",{hour12:false});
   $("nav-report-count").textContent=state.reports.length;
+  const activeCases=state.cases.filter(c=>c.status!=="closed").length;if($("nav-case-count"))$("nav-case-count").textContent=activeCases||"0";
   if((!admin()&&!['overview','reports'].includes(state.view))||(state.view==="subscriptions"&&!weatherModule()))state.view="reports";
 }
 function heading(title,subtitle,actions="",eyebrow="WORKSPACE"){return `<div class="page-heading"><div><p class="eyebrow">${eyebrow}</p><h1>${title}</h1><p class="subtitle">${subtitle}</p></div><div class="heading-actions">${actions}</div></div>`;}
@@ -144,7 +152,20 @@ function reportsPage(wizard=false){
 }
 function eligible(r){const source=state.report;if(source?.category==="composition")return !source.company||r.company===source.company;if(!source||source.category==="text"||source.report_id==="weather")return true;if(r.company!==source.company)return false;if(source.scope==="department")return r.department===source.department;if(source.scope==="personal")return source.owner_recipient_id?r.recipient_id===source.owner_recipient_id:(state.memberships||[]).some(m=>m.active&&m.org_id===source.company&&m.email===source.owner_email&&m.recipient_id===r.recipient_id)||state.settings.users.some(u=>u.active&&u.company===source.company&&u.email===source.owner_email&&u.recipient_id===r.recipient_id);return true;}
 function filteredContacts(){return state.contacts.filter(r=>{const q=state.search.toLowerCase();const tagMatch=!state.tagFilter||((r.tags||[]).some(t=>String(t.id)===String(state.tagFilter)||t.name===state.tagFilter));const searchMatch=!q||`${label(r)} ${r.display_name||""} ${r.recipient_id||""} ${r.company||""} ${r.department||""} ${r.notes||""} ${(r.tags||[]).map(t=>t.name).join(" ")}`.toLowerCase().includes(q);const kindMatch=state.kind==="all"||(state.kind==="group"?r.kind!=="user":r.kind===state.kind);const companyMatch=!state.company||r.company===state.company;const deptMatch=!state.department||r.department===state.department;const sendEligible=state.view!=="send"||(r.active&&eligible(r));const subMatch=state.view!=="subscriptions"||state.subFilter==="all"||Boolean(r.weather_subscribed)===(state.subFilter==="on");return tagMatch&&searchMatch&&kindMatch&&companyMatch&&deptMatch&&sendEligible&&subMatch;});}
-function contactToolbar(){const companies=[...new Set(state.contacts.map(r=>r.company).filter(Boolean))],depts=[...new Set(state.contacts.filter(r=>!state.company||r.company===state.company).map(r=>r.department).filter(Boolean))];const tagOpts=[["","所有標籤"],...(state.tags||[]).map(t=>[t.id,t.name])];return `<div class="toolbar"><label class="search-field">${icon("search")}<input id="contact-search" value="${esc(state.search)}" placeholder="搜尋姓名、LINE 名稱、ID、備忘或標籤" aria-label="搜尋聯絡對象"></label><select id="contact-kind" aria-label="聊天室類型">${options([["all","所有聊天室"],["user","個人"],["group","群組"]],state.kind)}</select><select id="contact-tag-filter" aria-label="篩選標籤">${options(tagOpts,state.tagFilter)}</select><select id="contact-company" aria-label="篩選公司">${options([["","所有組織"],...companies.map(c=>[c,orgName(c)])],state.company)}</select><select id="contact-department" aria-label="篩選部門">${options([["","所有部門"],...depts.map(c=>[c,c])],state.department)}</select>${manager()&&state.view==="contacts"?button(icon("settings")+"標籤管理","manage-tags","small"):""}</div>`;}
+function contactToolbar(){
+  const companies=[...new Set(state.contacts.map(r=>r.company).filter(Boolean))],depts=[...new Set(state.contacts.filter(r=>!state.company||r.company===state.company).map(r=>r.department).filter(Boolean))];
+  const tagOpts=[["","所有標籤"],...(state.tags||[]).map(t=>[t.id,t.name])];
+  const filterOpts=[["","自訂篩選條件..."],...(state.savedFilters||[]).map(f=>[f.filter_id,f.name])];
+  return `<div class="toolbar">
+    <label class="search-field">${icon("search")}<input id="contact-search" value="${esc(state.search)}" placeholder="搜尋姓名、LINE 名稱、ID、備忘或標籤" aria-label="搜尋聯絡對象"></label>
+    <select id="contact-kind" aria-label="聊天室類型">${options([["all","所有聊天室"],["user","個人"],["group","群組"]],state.kind)}</select>
+    <select id="contact-tag-filter" aria-label="篩選標籤">${options(tagOpts,state.tagFilter)}</select>
+    <select id="contact-company" aria-label="篩選公司">${options([["","所有組織"],...companies.map(c=>[c,orgName(c)])],state.company)}</select>
+    <select id="contact-department" aria-label="篩選部門">${options([["","所有部門"],...depts.map(c=>[c,c])],state.department)}</select>
+    ${state.savedFilters?.length?`<select id="apply-saved-filter" aria-label="套用自訂篩選">${options(filterOpts,"")}</select>`:""}
+    ${manager()&&state.view==="contacts"?button("💾 儲存篩選","open-save-filter-modal","small")+button(icon("settings")+"標籤管理","manage-tags","small"):""}
+  </div>`;
+}
 function contactList(){const rows=filteredContacts(),pages=Math.max(1,Math.ceil(rows.length/10));state.page=Math.min(state.page,pages);const visible=rows.slice((state.page-1)*10,state.page*10);const isSendAudience=state.view==="send"&&state.audience==="selected";const isContactsView=state.view==="contacts"&&manager();const showCheckboxes=isSendAudience||isContactsView;const selectedCount=state.selected.size;let bulkBar="";if(isContactsView&&selectedCount>0){bulkBar=`<div class="bulk-toolbar"><div><strong>已選取 ${selectedCount} 個聯絡對象</strong></div><div class="bulk-actions">${button("🏷️ 批次加標籤","bulk-add-tags","small")}${button("✂️ 批次移除標籤","bulk-remove-tags","small")}${weatherModule()?button("🔔 批次開啟訂閱","bulk-sub-on","small")+button("🔕 批次取消訂閱","bulk-sub-off","small"):""}${button("清除勾選","clear-selection","text small")}</div></div>`;}else if(isSendAudience){bulkBar=`<div class="toolbar">${button("勾選本頁","select-page","small")}${button("清除勾選","clear-selection","text small")}<small class="muted">共 ${rows.length} 個符合報告範圍的聊天室</small></div>`;}return `${bulkBar}<div class="table-scroll"><table class="contacts-table"><thead><tr><th class="select-cell">${showCheckboxes?`<input type="checkbox" id="select-all-visible" aria-label="全選本頁" ${visible.length&&visible.every(r=>state.selected.has(r.recipient_id))?"checked":""}>`:""}</th><th>聯絡對象</th><th>組織／部門</th>${weatherModule()?"<th>天氣訂閱</th>":""}<th>操作</th></tr></thead><tbody>${visible.map(r=>`<tr><td class="select-cell">${showCheckboxes?`<input type="checkbox" data-select="${esc(r.recipient_id)}" aria-label="選取 ${esc(label(r))}" ${state.selected.has(r.recipient_id)?"checked":""}>`:""}</td><td class="person-cell">${state.view==="contacts"?`<button class="contact-open" data-action="contact-detail" data-id="${esc(r.recipient_id)}" aria-label="查看 ${esc(label(r))} 詳情">${person(r)}</button>`:person(r)}</td><td class="meta-cell">${esc(r.company?orgName(r.company):"尚未分類")}<small class="muted">${r.department?" / "+esc(r.department):""}</small></td>${weatherModule()?`<td class="sub-cell">${badge(r.weather_subscribed?"已訂閱":"未訂閱",r.weather_subscribed?"good":"")}</td>`:""}<td class="action-cell">${manager()?button("管理","edit-contact","small",`data-id="${esc(r.recipient_id)}"`):badge("已授權")}</td></tr>`).join("")}</tbody></table></div>${!rows.length?empty("沒有符合的聯絡對象",state.view==="send"?"請確認聯絡對象的組織／部門分類符合報告範圍，並已與 Bot 互動。":"調整篩選條件，或請使用者向 Bot 傳送訊息以建立名單。"):""}<div class="pagination"><span>共 ${rows.length} 個聊天室</span><div>${button("上一頁","prev-page","small",state.page<=1?"disabled":"")}<span>${state.page} / ${pages}</span>${button("下一頁","next-page","small",state.page>=pages?"disabled":"")}</div></div>`;}
 function contactsPage(subscriptions=false){return heading(subscriptions?"天氣訂閱":"聯絡對象",subscriptions?"訂閱決定持續接收通知的對象；每次發送仍由管理員確認。":"依公司與部門整理個人、群組，自訂名稱與筆記，讓報告送到正確的地方。",(manager()?button(icon("refresh")+"更新 LINE 名稱","profiles"):""),subscriptions?"SUBSCRIPTIONS":"CONTACT DIRECTORY")+(subscriptions?`<div class="insight"><h3>${icon("bell")}個人自行訂閱，群組由管理員設定</h3><p>私訊 Bot「訂閱天氣」「取消訂閱」「我的訂閱」即可管理個人訂閱。目前由管理員發送，可指定單次傳送時間，尚未啟用每日循環排程。</p></div><div class="segmented section-space">${[["all","全部"],["on","已訂閱"],["off","未訂閱"]].map(([id,t])=>`<button data-action="sub-filter" data-id="${id}" class="${state.subFilter===id?"active":""}">${t}</button>`).join("")}</div>`:"")+`<div class="library-split section-space ${!subscriptions&&workspaceUI.contactDetail?"has-detail":""}"><section class="panel">${contactToolbar()}<div id="contact-list">${contactList()}</div></section>${subscriptions?"":contactDetailPanel()}</div>`;}
 function selectedRows(){return state.contacts.filter(r=>r.active&&eligible(r)&&(state.audience==="subscribers"?r.weather_subscribed:state.selected.has(r.recipient_id)));}
@@ -155,22 +176,288 @@ const statusNames={scheduled:"已預約",missed:"預約逾期／未發送",queue
 function jobTone(job){return job.deliveries.some(d=>["failed","unknown"].includes(d.status))?"bad":job.status==="finished"?"good":"warn";}
 function historyList(jobs){return jobs.length?jobs.map(j=>`<details class="history-item" data-job="${esc(j.job_id)}"><summary><span class="history-title"><strong>${esc(j.report_title||"手動圖片發送")}</strong><small>${j.status==="scheduled"?"預約 "+esc(scheduleLabel(j.scheduled_at)):when(j.created_at)} · ${esc(j.actor||"舊版未記錄操作人")}</small></span>${badge(`${j.deliveries.filter(d=>d.status==="accepted").length} / ${j.deliveries.length} 已接受`,jobTone(j))}${badge(statusNames[j.status]||j.status)}</summary><div class="job-detail">${j.scheduled_at?`<p class="callout">預約時間：${scheduleLabel(j.scheduled_at)}（台北時間）</p>`:""}${j.message_text?`<div class="message-preview">${esc(j.message_text)}</div>`:""}${j.status==="scheduled"?button("取消預約","cancel-schedule","danger",`data-id="${esc(j.job_id)}"`):""}${j.error?`<p class="callout warn">${esc(j.error)}</p>`:""}${j.deliveries.map(d=>`<div class="delivery"><span>${esc(d.label)}</span>${badge(statusNames[d.status]||d.status,d.status==="accepted"?"good":["failed","unknown"].includes(d.status)?"bad":"")}${d.error?`<small>${esc(d.error)}</small>`:""}</div>`).join("")}<p class="callout">發送失敗或狀態不明時，請先確認聊天室與 LINE 設定，再決定是否建立新的發送工作。</p><small class="contact-id">工作 ${esc(j.job_id)}</small></div></details>`).join(""):empty("還沒有發送紀錄","完成第一次發送後，可以在這裡查看每個聊天室的結果。");}
 function historyPage(){const rows=state.jobs.filter(j=>state.historyFilter==="all"||(state.historyFilter==="issues"?(j.status==="missed"||j.deliveries.some(d=>["unknown","failed"].includes(d.status))):['scheduled','queued','running'].includes(j.status)));return heading("發送紀錄","逐筆確認結果。API 已接受不代表已讀；異常工作不會自動重送。",button("建立發送","start-send","primary"),"DELIVERY HISTORY")+`<section class="panel"><div class="toolbar segmented">${[["all","預約與最近紀錄"],["issues","需要處理"],["active","進行中"]].map(([id,t])=>`<button data-action="history-filter" data-id="${id}" class="${state.historyFilter===id?"active":""}">${t}</button>`).join("")}</div><div id="history-list">${historyList(rows)}</div></section>`;}
+
+function filteredCases(){
+  return (state.cases||[]).filter(c=>{
+    const q=(state.caseQuery||"").toLowerCase();
+    const statusMatch=state.caseFilter==="all"||c.status===state.caseFilter;
+    const priorityMatch=state.casePriority==="all"||c.priority===state.casePriority;
+    const subject=state.contacts.find(x=>x.recipient_id===c.case_subject_id);
+    const searchMatch=!q||`${c.case_no||""} ${c.title||""} ${c.description||""} ${c.case_subject_id||""} ${label(subject||{})}`.toLowerCase().includes(q);
+    return statusMatch&&priorityMatch&&searchMatch;
+  });
+}
+
+function caseCard(c){
+  const subject=state.contacts.find(x=>x.recipient_id===c.case_subject_id);
+  const subjectName=subject?label(subject):(c.case_subject_id||"未知對象");
+  return `<article class="case-card">
+    <div class="case-card-head">
+      <div class="case-card-main-title">
+        <span class="case-no-badge">${esc(c.case_no)}</span>
+        <h3 class="case-title">${esc(c.title)}</h3>
+      </div>
+      <div class="case-card-badges">
+        ${c.priority?`<span class="badge ${casePriorityTones[c.priority]||""}">${casePriorityNames[c.priority]||c.priority}優先度</span>`:""}
+        <span class="badge ${caseStatusTones[c.status]||""}">${caseStatusNames[c.status]||c.status}</span>
+      </div>
+    </div>
+    ${c.description?`<p class="case-desc">${esc(c.description)}</p>`:""}
+    <div class="case-card-meta">
+      <span><strong>案件主體：</strong><button class="btn text small link-style" data-action="contact-detail-from-case" data-id="${esc(c.case_subject_id)}">${esc(subjectName)}</button></span>
+      <span><strong>建立：</strong>${when(c.created_at)}</span>
+      <span><strong>更新：</strong>${when(c.updated_at)}</span>
+    </div>
+    ${c.status==="waiting"?`<div class="case-waiting-info"><p><strong>⏳ 等待對象：</strong>${waitingPartyNames[c.waiting_party]||c.waiting_party||"未指定"}（自 ${when(c.waiting_since)}）</p><p><strong>原因：</strong>${esc(c.waiting_reason||"無")}</p></div>`:""}
+    ${c.status==="closed"?`<div class="case-closed-info"><p><strong>✅ 結案說明：</strong>${esc(c.resolution||"已結案")}（結案於 ${when(c.closed_at)}）</p></div>`:""}
+    <div class="case-card-actions">
+      ${c.status==="pending"?button("開始處理","case-to-processing","primary small",`data-id="${esc(c.case_id)}"`):""}
+      ${c.status==="processing"?button("進入等待","open-case-waiting-modal","small",`data-id="${esc(c.case_id)}"`)+button("進入待結案","case-to-ready","primary small",`data-id="${esc(c.case_id)}"`):""}
+      ${c.status==="waiting"?button("恢復處理","case-resume-processing","primary small",`data-id="${esc(c.case_id)}"`):""}
+      ${c.status==="ready_to_close"?button("退回處理","case-back-processing","small",`data-id="${esc(c.case_id)}"`)+button("執行結案","open-case-close-modal","good primary small",`data-id="${esc(c.case_id)}"`):""}
+      ${c.status==="closed"?badge("已完成結案","good"):""}
+      ${button("完整歷程","open-case-detail","small",`data-id="${esc(c.case_id)}"`)}
+    </div>
+  </article>`;
+}
+
+function casesPage(){
+  const rows=filteredCases();
+  const pendingCount=state.cases.filter(c=>c.status==="pending").length;
+  const processingCount=state.cases.filter(c=>c.status==="processing").length;
+  const waitingCount=state.cases.filter(c=>c.status==="waiting").length;
+  const readyCount=state.cases.filter(c=>c.status==="ready_to_close").length;
+  const closedCount=state.cases.filter(c=>c.status==="closed").length;
+
+  return heading("案件管理","追蹤從對話與聯絡對象建立的案件，掌握各階段進度。",button(icon("plus")+"建立案件","new-case-modal","primary"),"CASE MANAGEMENT")+
+    `<div class="stats">
+      ${stat("待處理",pendingCount,"件","尚未開始處理的案件","clock")}
+      ${stat("處理中",processingCount,"件","進行中需主動跟進","send")}
+      ${stat("等待中",waitingCount,"件","等待內部、外部或對方回覆","bell")}
+      ${stat("待結案",readyCount,"件","處理完畢等待結案確認","check")}
+    </div>
+    <section class="panel section-space">
+      <div class="toolbar">
+        <label class="search-field">${icon("search")}<input id="case-search" value="${esc(state.caseQuery)}" placeholder="搜尋案件編號、標題、描述或聯絡對象" aria-label="搜尋案件"></label>
+        <select id="case-priority-filter" aria-label="優先度篩選">
+          ${options([["all","所有優先度"],["urgent","緊急"],["high","高"],["normal","一般"],["low","低"]],state.casePriority)}
+        </select>
+      </div>
+      <div class="toolbar segmented">
+        ${[["all",`全部 (${state.cases.length})`],["pending",`待處理 (${pendingCount})`],["processing",`處理中 (${processingCount})`],["waiting",`等待中 (${waitingCount})`],["ready_to_close",`待結案 (${readyCount})`],["closed",`已結案 (${closedCount})`]].map(([id,t])=>`<button data-action="case-filter" data-id="${id}" class="${state.caseFilter===id?"active":""}">${t}</button>`).join("")}
+      </div>
+      <div class="cases-container section-space">
+        ${rows.length?rows.map(c=>caseCard(c)).join(""):empty("沒有符合條件的案件",state.caseQuery?"請調整搜尋關鍵字或狀態篩選。":"可點選上方「建立案件」新增追蹤項目。")}
+      </div>
+    </section>`;
+}
+
+function createCaseModal(subject_id=""){
+  const contactOpts=[["","請選擇關聯的聯絡對象"],...state.contacts.filter(r=>r.active).map(r=>[r.recipient_id,label(r)+(r.kind==="user"?" (個人)":" (群組)")])];
+  modal("建立新案件",`<form id="case-create-form">
+    <div class="form-grid">
+      <div class="full">${field("案件標題","title","",'required maxlength="100" placeholder="例如：詢問 10 月發票開立方式、報表格式問題"')}</div>
+      ${selectField("案件主體（聯絡對象）","case_subject_id",contactOpts,subject_id)}
+      ${selectField("優先度","priority",[["normal","一般"],["low","低"],["high","高"],["urgent","緊急"]],"normal")}
+      <div class="full"><label class="field">問題或需求描述（選填）<textarea name="description" rows="4" maxlength="2000" placeholder="詳細說明對方需求、對話重點、目前已知資訊..."></textarea></label></div>
+    </div>
+    <p class="callout">建立案件後初始狀態為「待處理」，可於案件管理隨時流轉進度並記錄 Timeline 歷程。</p>
+    <div class="form-actions"><button class="btn primary" type="submit">確認建立案件</button></div>
+  </form>`);
+}
+
+function caseWaitingModal(case_id){
+  const c=state.cases.find(x=>x.case_id===case_id);
+  if(!c)return;
+  modal(`案件進入等待：${esc(c.case_no)}`,`<form id="case-waiting-form" data-id="${esc(case_id)}">
+    <div class="form-grid">
+      ${selectField("等待對象（必選）","waiting_party",[["case_subject","案件主體（聯絡對象回覆）"],["internal","內部團隊（內部確認／協調）"],["third_party","第三方廠商／外部單位"]],"case_subject")}
+      <div class="full">${field("等待原因說明（必填）","waiting_reason","",'required maxlength="500" placeholder="例如：已傳送確認信件，等待客戶回覆確認報價"')}</div>
+    </div>
+    <p class="callout">進入等待狀態會自動記錄等待起算時間與原因。待對方回覆後可隨時「恢復處理」。</p>
+    <div class="form-actions"><button class="btn primary" type="submit">確認進入等待</button></div>
+  </form>`);
+}
+
+function caseCloseModal(case_id){
+  const c=state.cases.find(x=>x.case_id===case_id);
+  if(!c)return;
+  modal(`案件結案確認：${esc(c.case_no)}`,`<form id="case-close-form" data-id="${esc(case_id)}">
+    <div class="form-grid">
+      <div class="full"><label class="field">結案說明／處理結果（必填）<textarea name="resolution" rows="4" required maxlength="1000" placeholder="詳細記錄最終處理結果、客戶確認事項、完成日期等..."></textarea></label></div>
+    </div>
+    <p class="callout warn">案件結案為終態，結案後將不可再變更狀態。所有處理歷程將永久保存供日後查閱。</p>
+    <div class="form-actions"><button class="btn primary good" type="submit">確認結案</button></div>
+  </form>`);
+}
+
+async function caseDetailModal(case_id){
+  modal("載入案件詳情…",'<div class="loading-panel"><span class="spinner"></span><p>讀取案件與歷史歷程…</p></div>');
+  try{
+    const res=await api(`/api/cases/${case_id}`);
+    const c=res.case;
+    const activities=res.activities||[];
+    const subject=state.contacts.find(x=>x.recipient_id===c.case_subject_id);
+    const subjectName=subject?label(subject):(c.case_subject_id||"未知對象");
+
+    const timelineHtml=activities.length?activities.map(a=>{
+      let desc="";
+      if(a.action==="create_case")desc="建立案件";
+      else if(a.action==="status_change")desc=`狀態變更：${caseStatusNames[a.details?.old_status]||a.details?.old_status} ➔ <strong>${caseStatusNames[a.details?.new_status]||a.details?.new_status}</strong>${a.details?.waiting_party?`（等待：${waitingPartyNames[a.details.waiting_party]||a.details.waiting_party}，原因：${esc(a.details.waiting_reason||"")}）`:""}${a.details?.resolution?`（結案說明：${esc(a.details.resolution)}）`:""}`;
+      else if(a.action==="add_note")desc=`處理記事：${esc(a.details?.note||"")}`;
+      else desc=esc(a.action);
+
+      return `<div class="case-timeline-item">
+        <span class="timeline-dot"></span>
+        <div class="timeline-content">
+          <div class="timeline-meta"><strong>${esc(a.actor||"管理員")}</strong> · ${when(a.created_at)}</div>
+          <div class="timeline-body">${desc}</div>
+        </div>
+      </div>`;
+    }).join(""):`<p class="muted">尚無活動紀錄</p>`;
+
+    modal(`案件詳情：${esc(c.case_no)}`,`<div class="case-detail-view">
+      <div class="case-detail-header">
+        <div>
+          <span class="case-no-badge">${esc(c.case_no)}</span>
+          <h2>${esc(c.title)}</h2>
+        </div>
+        <div>
+          ${badge(casePriorityNames[c.priority]||c.priority,casePriorityTones[c.priority]||"")}
+          ${badge(caseStatusNames[c.status]||c.status,caseStatusTones[c.status]||"")}
+        </div>
+      </div>
+      <dl class="case-info-dl">
+        <dt>案件主體</dt><dd>${esc(subjectName)} <small class="muted">(${esc(c.case_subject_id)})</small></dd>
+        <dt>建立時間</dt><dd>${when(c.created_at)}</dd>
+        <dt>最後更新</dt><dd>${when(c.updated_at)}</dd>
+        ${c.status==="waiting"?`<dt>等待對象</dt><dd>${waitingPartyNames[c.waiting_party]||c.waiting_party}（自 ${when(c.waiting_since)}）</dd><dt>等待原因</dt><dd>${esc(c.waiting_reason)}</dd>`:""}
+        ${c.status==="closed"?`<dt>結案時間</dt><dd>${when(c.closed_at)}</dd><dt>結案說明</dt><dd>${esc(c.resolution)}</dd>`:""}
+      </dl>
+      ${c.description?`<div class="section-space"><h4>需求描述</h4><p class="case-desc-box">${esc(c.description)}</p></div>`:""}
+      
+      <div class="section-space">
+        <h4>處理歷程與時間軸 (Timeline)</h4>
+        <div class="case-timeline">${timelineHtml}</div>
+      </div>
+
+      ${c.status!=="closed"?`<form id="case-add-note-form" data-id="${esc(c.case_id)}" class="section-space">
+        <label class="field">新增處理紀錄 / 備忘<textarea name="note" rows="2" required maxlength="1000" placeholder="記錄最新溝通進度、待辦項目或內部確認事項..."></textarea></label>
+        <div class="form-actions">${button("送出紀錄","","primary small",'type="submit"')}</div>
+      </form>`:""}
+    </div>`);
+  }catch(e){
+    modal("載入失敗",`<p class="callout warn">${esc(e.message)}</p>`);
+  }
+}
+
+async function loadChatNotes(recipient_id){
+  try{
+    const res=await api(`/api/chat-notes?recipient_id=${encodeURIComponent(recipient_id)}`);
+    state.chatNotes.set(recipient_id,res.notes||[]);
+    const container=$("chat-notes-list-container");
+    if(container)container.innerHTML=renderChatNotesList(recipient_id);
+  }catch(e){
+    console.error("Failed to load chat notes:",e);
+  }
+}
+
+function chatNoteModal(recipient_id,note_id=""){
+  const notes=state.chatNotes.get(recipient_id)||[];
+  const existing=note_id?notes.find(n=>n.note_id===note_id):null;
+  modal(existing?"編輯對話記事":"新增對話記事",`<form id="chat-note-form" data-recipient="${esc(recipient_id)}" data-note-id="${esc(note_id)}">
+    <div class="form-grid">
+      <div class="full"><label class="field">記事內容（1–1,000 字）<textarea name="content" rows="4" required minlength="1" maxlength="1000" placeholder="記錄該聊天室的重要交辦、對話摘要、待確認事項...">${esc(existing?.content||"")}</textarea></label></div>
+    </div>
+    <p class="callout">對話記事本獨立於聯絡對象筆記，專屬於此 OA 聊天室對話。最新記事顯示於最上方。</p>
+    <div class="form-actions"><button class="btn primary" type="submit">${existing?"儲存變更":"新增記事"}</button></div>
+  </form>`);
+}
+
+function saveFilterModal(){
+  const criteria={
+    kind:state.kind!=="all"?state.kind:undefined,
+    company:state.company||undefined,
+    department:state.department||undefined,
+    tag:state.tagFilter||undefined,
+    search:state.search||undefined
+  };
+  const count=filteredContacts().length;
+  modal("儲存目前篩選條件",`<form id="save-filter-form">
+    <div class="form-grid">
+      <div class="full">${field("篩選條件名稱","name","",'required maxlength="50" placeholder="例如：VIP 核心客戶、台北公務群組"')}</div>
+    </div>
+    <div class="filter-criteria-preview section-space">
+      <h4>目前條件（符合 ${count} 個聊天室）</h4>
+      <p class="subtitle">${esc(JSON.stringify(criteria,null,2))}</p>
+    </div>
+    <p class="callout">每個 OA 最多保存 10 組自訂篩選條件，同 OA 管理員共用。</p>
+    <div class="form-actions"><button class="btn primary" type="submit">儲存篩選條件</button></div>
+  </form>`);
+}
+
 function render(){
   if(lineUI.registry&&!lineDataReady()&&!["settings","organizations","channels"].includes(state.view))state.view="channels";
   if(!titles[state.view]||(state.view==="settings"&&!manager())||(state.view==="organizations"&&!superAdmin()))state.view="overview";
   if((!admin()&&!['overview','reports'].includes(state.view))||(state.view==="subscriptions"&&!weatherModule()))state.view="reports";
   $("crumb").textContent=titles[state.view];document.title=titles[state.view]+" · LINE 自動化";
   document.querySelectorAll("nav [data-view]").forEach(el=>{const current=el.dataset.view===state.view;el.classList.toggle("active",current);if(current)el.setAttribute("aria-current","page");else el.removeAttribute("aria-current");});
-  const pages={overview,reports:reportsPage,send:sendPage,contacts:()=>contactsPage(false),subscriptions:()=>contactsPage(true),history:historyPage,schedule:schedulePage,settings:settingsPage,channels:channelsPage,organizations:organizationsPage};
+  const pages={overview,reports:reportsPage,send:sendPage,cases:casesPage,contacts:()=>contactsPage(false),subscriptions:()=>contactsPage(true),history:historyPage,schedule:schedulePage,settings:settingsPage,channels:channelsPage,organizations:organizationsPage};
   $("page").innerHTML=pages[state.view]();hydratePreviews();
 }
 function navigate(view){if(state.busy)return;notice("");state.view=view;state.search="";state.kind="all";state.company="";state.department="";state.tagFilter="";state.page=1;setSidebarOpen(false);history.replaceState(null,"","/?view="+encodeURIComponent(view));render();window.scrollTo({top:0});}
 function modal(title,html){$("modal-title").textContent=title;$("modal-body").innerHTML=html;$("modal-error").hidden=true;if(!$("modal").open)$("modal").showModal();$("modal").scrollTop=0;$("modal-close").focus({preventScroll:true});}
 function editContact(id){
   const r=state.contacts.find(x=>x.recipient_id===id);
+  if(!r)return;
   const tagIds=(r.tags||[]).map(t=>t.id);
-  const tagCheckboxes=(state.tags||[]).map(t=>`<label class="check-label tag-chip"><input type="checkbox" name="tag_ids" value="${esc(t.id)}" ${tagIds.includes(t.id)?"checked":""}><span class="tag-dot" style="background:${esc(t.color||'#007AFF')}"></span>${esc(t.name)}</label>`).join("");
-  modal("編輯聯絡對象",`<form id="contact-form" data-id="${esc(id)}"><div class="form-grid">${field("備註名稱（自訂名稱）","alias",r.alias||r.custom_name||"",'maxlength="80" placeholder="團隊內部備註名稱，不會寫回 LINE"')}<label class="field">LINE 顯示名稱（唯讀）<input value="${esc(r.display_name||"尚未取得")}" readonly class="muted"></label><label class="field">LINE 聊天室識別碼（唯讀）<input value="${esc(r.recipient_id)}" readonly class="line-id-chip"></label>${(superAdmin()?selectField("組織","company",oaOrganizationOptions(),r.company):field("組織","organization_label",orgName(r.company),'readonly')+`<input type="hidden" name="company" value="${esc(r.company)}">`)}${field("部門","department",r.department,'maxlength="60" placeholder="例如：業務部"')}<div class="full"><label class="field">備忘筆記（Notes）<textarea name="notes" rows="3" maxlength="1000" placeholder="記錄該聯絡對象背景、注意事項、互動歷史備忘...">${esc(r.notes||"")}</textarea></label></div><div class="full"><label class="field">分類標籤（Tags）</label><div class="permission-choices">${tagCheckboxes||'<p class="muted">尚未建立任何標籤，可於聯絡對象工具列點選「標籤管理」新增。</p>'}</div></div>${weatherModule()?`<label class="check-label full"><input name="subscribed" type="checkbox" ${r.weather_subscribed?"checked":""} ${r.active?"":"disabled"}>接收天氣通知</label>`:""}</div><p class="callout">組織／部門決定可以收到哪些報表。自訂名稱與筆記僅供後台團隊檢視，不會傳送給 LINE 使用者。</p><div class="form-actions"><button class="btn primary" type="submit">儲存聯絡對象</button></div></form>`);
+  const tagCheckboxes=(state.tags||[]).map(t=>`<label class="check-label tag-chip"><input type="checkbox" name="tag_ids" value="${esc(t.id)}" ${tagIds.includes(t.id)?"checked":""}><span class="tag-dot" data-color="${esc(t.color||'#007AFF')}"></span>${esc(t.name)}</label>`).join("");
+  const currentType=r.contact_type||"";
+  modal("編輯聯絡對象",`<form id="contact-form" data-id="${esc(id)}">
+    <div class="form-section">
+      <h3 class="form-section-title">基本資訊</h3>
+      <div class="form-grid">
+        ${field("備註名稱（自訂名稱）","alias",r.alias||r.custom_name||"",'maxlength="80" placeholder="團隊內部備註名稱，不會寫回 LINE"')}
+        <label class="field">LINE 顯示名稱（唯讀）<input value="${esc(r.display_name||"尚未取得")}" readonly class="muted"></label>
+        <label class="field">LINE 聊天室識別碼（唯讀）<input value="${esc(r.recipient_id)}" readonly class="line-id-chip"></label>
+        ${selectField("聯絡對象類型","contact_type",[["","未分類"],["organization","組織／團體"],["person_business","公務對象個人"],["person_private","一般個人"]],currentType)}
+      </div>
+    </div>
+    <div class="form-section" id="contact-type-section">
+      <h3 class="form-section-title">聯絡資訊</h3>
+      <div class="form-grid" id="contact-dynamic-fields"></div>
+    </div>
+    <div class="form-section">
+      <h3 class="form-section-title">系統設定</h3>
+      <div class="form-grid">
+        ${(superAdmin()?selectField("系統組織","company",oaOrganizationOptions(),r.company):field("系統組織","organization_label",orgName(r.company),'readonly')+`<input type="hidden" name="company" value="${esc(r.company)}">`)}
+        ${field("系統部門","department",r.department,'maxlength="60" placeholder="例如：業務部"')}
+        ${weatherModule()?`<label class="check-label full"><input name="subscribed" type="checkbox" ${r.weather_subscribed?"checked":""} ${r.active?"":"disabled"}>接收天氣通知</label>`:""}
+      </div>
+    </div>
+    <div class="form-section">
+      <h3 class="form-section-title">內部備忘與標籤</h3>
+      <div class="form-grid">
+        <div class="full"><label class="field">備忘筆記（Notes）<textarea name="notes" rows="3" maxlength="1000" placeholder="記錄該聯絡對象背景、注意事項、互動歷史備忘...">${esc(r.notes||"")}</textarea></label></div>
+        <div class="full"><label class="field">分類標籤（Tags）</label><div class="permission-choices">${tagCheckboxes||'<p class="muted">尚未建立任何標籤，可於聯絡對象工具列點選「標籤管理」新增。</p>'}</div></div>
+      </div>
+    </div>
+    <p class="callout">系統組織／部門決定可以收到哪些報表。自訂名稱、聯絡資訊與筆記僅供後台團隊檢視，不會傳送給 LINE 使用者。</p>
+    <div class="form-actions"><button class="btn primary" type="submit">儲存聯絡對象</button></div>
+  </form>`);
+  const form=$("contact-form");
+  const renderFields=type=>{
+    const c=$("contact-dynamic-fields");if(!c)return;
+    if(type==="organization"){
+      c.innerHTML=`${field("對方組織名稱","organization_name",r.organization_name||"",'maxlength="80" placeholder="例如：台北市攝影同好會、宏昇生技"')}${field("代表電話","phone",r.phone||"",'maxlength="40" placeholder="例如：02-2345-6789"')}${field("代表 Email","email",r.email||"",'type="email" maxlength="120" placeholder="例如：contact@org.tw"')}${field("郵遞區號","postal_code",r.postal_code||"",'maxlength="10" placeholder="例如：100"')}<div class="full">${field("地址","address",r.address||"",'maxlength="200" placeholder="例如：台北市中正區重慶南路一段 10 號"')}</div>`;
+    }else if(type==="person_business"){
+      c.innerHTML=`${field("所屬對方組織","organization_name",r.organization_name||"",'maxlength="80" placeholder="例如：宏昇生技、北區家長會"')}${field("職稱","job_title",r.job_title||"",'maxlength="60" placeholder="例如：採購主任、總幹事"')}${field("公務電話","work_phone",r.work_phone||"",'maxlength="40" placeholder="例如：02-2345-6789"')}${field("公務分機","work_phone_ext",r.work_phone_ext||"",'maxlength="20" placeholder="例如：101"')}${field("公務 Email","work_email",r.work_email||"",'type="email" maxlength="120" placeholder="例如：john@company.com"')}${field("個人電話（選填）","phone",r.phone||"",'maxlength="40" placeholder="例如：0912-345-678"')}${field("個人 Email（選填）","email",r.email||"",'type="email" maxlength="120" placeholder="例如：john@gmail.com"')}${field("郵遞區號","postal_code",r.postal_code||"",'maxlength="10" placeholder="例如：100"')}<div class="full">${field("通訊地址","address",r.address||"",'maxlength="200" placeholder="例如：台北市中正區重慶南路一段 10 號"')}</div>`;
+    }else{
+      c.innerHTML=`${field("聯絡電話","phone",r.phone||"",'maxlength="40" placeholder="例如：0912-345-678"')}${field("Email","email",r.email||"",'type="email" maxlength="120" placeholder="例如：user@example.com"')}${field("郵遞區號","postal_code",r.postal_code||"",'maxlength="10" placeholder="例如：100"')}<div class="full">${field("地址","address",r.address||"",'maxlength="200" placeholder="例如：台北市中正區重慶南路一段 10 號"')}</div>`;
+    }
+  };
+  renderFields(currentType);
+  form.elements.contact_type?.addEventListener("change",e=>renderFields(e.target.value));
 }
 function tagManagerModal(){
   const tags=state.tags||[];
@@ -178,25 +465,28 @@ function tagManagerModal(){
     const count=state.contacts.filter(c=>(c.tags||[]).some(ct=>ct.id===t.id)).length;
     return `<div class="tag-row"><div class="tag-row-info">${tagBadge(t)}<span class="muted" style="font-size:12px;">${count} 個聯絡對象</span></div><div class="draft-actions">${button("編輯","edit-tag-modal","small",`data-id="${esc(t.id)}"`)}${button("刪除","delete-tag-btn","text small danger",`data-id="${esc(t.id)}"`)}</div></div>`;
   }).join("")||'<p class="muted">目前尚未建立任何標籤。</p>';
-  const colorSwatches=APPLE_TAG_COLORS.map((c,i)=>`<label class="color-swatch-label"><input type="radio" name="color" value="${c.hex}" ${i===0?"checked":""} style="display:none;"><span class="tag-dot" style="background:${c.hex}"></span>${c.name}</label>`).join("");
-  modal("標籤管理",`<div><p class="subtitle">標籤可用於彈性分群聯絡對象，支援多對多關聯。</p><h3>現有標籤</h3><div class="tag-manager-list">${tagListHtml}</div><h3 class="section-space">新增標籤</h3><form id="tag-create-form"><div class="form-grid">${field("標籤名稱","name","",'required maxlength="30" placeholder="例如：VIP客戶、已簽約、北區廠商')}<div class="full"><label class="field">標籤顏色（Apple 色票）</label><div class="color-picker-grid">${colorSwatches}</div></div></div><div class="form-actions">${button("建立標籤","","primary",'type="submit"')}</div></form></div>`);
+  const colorSwatches=APPLE_TAG_COLORS.map((c,i)=>`<label class="color-swatch-card ${i===0?'selected':''}" data-color="${c.hex}"><input type="radio" name="color" value="${c.hex}" ${i===0?"checked":""} class="color-radio-input"><span class="color-circle" data-color="${c.hex}"></span><span class="color-name">${c.name}</span></label>`).join("");
+  modal("標籤管理",`<div><p class="subtitle">標籤可用於彈性分群聯絡對象，支援多對多關聯。</p><h3>現有標籤</h3><div class="tag-manager-list">${tagListHtml}</div><h3 class="section-space">新增標籤</h3><form id="tag-create-form"><div class="form-grid"><div class="full">${field("標籤名稱","name","",'required maxlength="30" placeholder="例如：VIP客戶、已簽約、北區廠商"')}</div><div class="full"><div class="field"><span>標籤顏色（Apple 色票）</span><div class="color-picker-grid">${colorSwatches}</div></div></div></div><div class="form-actions">${button("建立標籤","","primary",'type="submit"')}</div></form></div>`);
 }
 function tagEditModal(id){
   const t=(state.tags||[]).find(x=>x.id===id);
   if(!t)return;
-  const colorSwatches=APPLE_TAG_COLORS.map(c=>`<label class="color-swatch-label"><input type="radio" name="color" value="${c.hex}" ${c.hex.toLowerCase()===(t.color||"").toLowerCase()?"checked":""} style="display:none;"><span class="tag-dot" style="background:${c.hex}"></span>${c.name}</label>`).join("");
-  modal("編輯標籤",`<form id="tag-edit-form" data-id="${esc(id)}"><div class="form-grid">${field("標籤名稱","name",t.name,'required maxlength="30"')}<div class="full"><label class="field">標籤顏色（Apple 色票）</label><div class="color-picker-grid">${colorSwatches}</div></div></div><div class="form-actions">${button("返回標籤清單","manage-tags","")}${button("儲存變更","","primary",'type="submit"')}</div></form>`);
+  const colorSwatches=APPLE_TAG_COLORS.map(c=>{
+    const checked=c.hex.toLowerCase()===(t.color||"").toLowerCase();
+    return `<label class="color-swatch-card ${checked?'selected':''}" data-color="${c.hex}"><input type="radio" name="color" value="${c.hex}" ${checked?"checked":""} class="color-radio-input"><span class="color-circle" data-color="${c.hex}"></span><span class="color-name">${c.name}</span></label>`;
+  }).join("");
+  modal("編輯標籤",`<form id="tag-edit-form" data-id="${esc(id)}"><div class="form-grid"><div class="full">${field("標籤名稱","name",t.name,'required maxlength="30" placeholder="請輸入標籤名稱"')}</div><div class="full"><div class="field"><span>標籤顏色（Apple 色票）</span><div class="color-picker-grid">${colorSwatches}</div></div></div></div><div class="form-actions">${button("返回標籤清單","manage-tags","")}${button("儲存變更","","primary",'type="submit"')}</div></form>`);
 }
 function bulkAddTagsModal(){
   const count=state.selected.size;
   if(!count)throw new Error("請先選取聯絡對象。");
-  const tagCheckboxes=(state.tags||[]).map(t=>`<label class="check-label tag-chip"><input type="checkbox" name="tag_ids" value="${esc(t.id)}"><span class="tag-dot" style="background:${esc(t.color||'#007AFF')}"></span>${esc(t.name)}</label>`).join("");
+  const tagCheckboxes=(state.tags||[]).map(t=>`<label class="check-label tag-chip"><input type="checkbox" name="tag_ids" value="${esc(t.id)}"><span class="tag-dot" data-color="${esc(t.color||'#007AFF')}"></span>${esc(t.name)}</label>`).join("");
   modal(`批次新增標籤（已選取 ${count} 個聯絡對象）`,`<form id="bulk-add-tags-form"><p class="subtitle">勾選要加入這些聯絡對象的標籤：</p><div class="permission-choices section-space">${tagCheckboxes||'<p class="muted">尚未建立任何標籤。</p>'}</div><div class="form-actions"><button class="btn primary" type="submit">確認加入標籤</button></div></form>`);
 }
 function bulkRemoveTagsModal(){
   const count=state.selected.size;
   if(!count)throw new Error("請先選取聯絡對象。");
-  const tagCheckboxes=(state.tags||[]).map(t=>`<label class="check-label tag-chip"><input type="checkbox" name="tag_ids" value="${esc(t.id)}"><span class="tag-dot" style="background:${esc(t.color||'#007AFF')}"></span>${esc(t.name)}</label>`).join("");
+  const tagCheckboxes=(state.tags||[]).map(t=>`<label class="check-label tag-chip"><input type="checkbox" name="tag_ids" value="${esc(t.id)}"><span class="tag-dot" data-color="${esc(t.color||'#007AFF')}"></span>${esc(t.name)}</label>`).join("");
   modal(`批次移除標籤（已選取 ${count} 個聯絡對象）`,`<form id="bulk-remove-tags-form"><p class="subtitle">勾選要從這些聯絡對象移除的標籤：</p><div class="permission-choices section-space">${tagCheckboxes||'<p class="muted">尚未建立任何標籤。</p>'}</div><div class="form-actions"><button class="btn danger" type="submit">確認移除標籤</button></div></form>`);
 }
 async function bulkSubscription(subscribed){
@@ -240,7 +530,22 @@ document.addEventListener("click",async event=>{
     if(workspaceAction(action,id))return;
     if(managementAction(action,id))return;
     if(composerAction(action,id))return;
-    if(action==="new-organization")organizationForm();
+    if(action==="case-filter"){state.caseFilter=id;render();}
+    else if(action==="new-case-modal")createCaseModal(id||"");
+    else if(action==="open-case-detail")await caseDetailModal(id);
+    else if(action==="contact-detail-from-case"){workspaceUI.contactDetail=id;navigate("contacts");await loadChatNotes(id);}
+    else if(action==="case-to-processing"){await api(`/api/cases/${id}`,{status:"processing"});await load();render();notice("案件已轉為「處理中」。");}
+    else if(action==="open-case-waiting-modal")caseWaitingModal(id);
+    else if(action==="case-to-ready"){await api(`/api/cases/${id}`,{status:"ready_to_close"});await load();render();notice("案件已轉為「待結案」。");}
+    else if(action==="case-resume-processing"){await api(`/api/cases/${id}`,{status:"processing"});await load();render();notice("案件已恢復為「處理中」。");}
+    else if(action==="case-back-processing"){await api(`/api/cases/${id}`,{status:"processing"});await load();render();notice("案件已退回為「處理中」。");}
+    else if(action==="open-case-close-modal")caseCloseModal(id);
+    else if(action==="new-chat-note")chatNoteModal(id);
+    else if(action==="edit-chat-note")chatNoteModal(target.dataset.recipient,id);
+    else if(action==="delete-chat-note"){modal("刪除對話記事？",`<p>確定要刪除這筆記事嗎？刪除後無法恢復。</p><div class="form-actions">${button("確認刪除","confirm-delete-chat-note","danger",`data-id="${esc(id)}" data-recipient="${esc(target.dataset.recipient)}"`)}</div>`);}
+    else if(action==="confirm-delete-chat-note"){await api("/api/chat-notes",{action:"delete",note_id:id});await loadChatNotes(target.dataset.recipient);$("modal").close();notice("記事已刪除。");}
+    else if(action==="open-save-filter-modal")saveFilterModal();
+    else if(action==="new-organization")organizationForm();
     else if(action==="edit-organization")organizationForm(id);
     else if(action==="new-membership")membershipForm();
     else if(action==="edit-membership")membershipForm(id);
@@ -301,11 +606,33 @@ document.addEventListener("click",async event=>{
   }catch(error){if($("modal").open){$("modal-error").textContent=error.message;$("modal-error").hidden=false;}else notice(error.message,true);target.disabled=false;}
 });
 function updateSelection(){if($("contact-list"))$("contact-list").innerHTML=contactList();if($("selection-summary"))$("selection-summary").innerHTML=selectionSummary();if($("review-button"))$("review-button").disabled=!selectedRows().length;}
-document.addEventListener("input",event=>{if(event.target.id==="contact-search"){state.search=event.target.value;state.page=1;$("contact-list").innerHTML=contactList();}});
+document.addEventListener("input",event=>{if(event.target.id==="contact-search"){state.search=event.target.value;state.page=1;if($("contact-list"))$("contact-list").innerHTML=contactList();}
+  if(event.target.id==="case-search"){state.caseQuery=event.target.value;if(state.view==="cases")render();}});
 document.addEventListener("change",event=>{
   const el=event.target;
+  if(el.name==="color"&&el.closest(".color-swatch-card")){
+    el.closest(".color-picker-grid")?.querySelectorAll(".color-swatch-card").forEach(card=>card.classList.remove("selected"));
+    el.closest(".color-swatch-card")?.classList.add("selected");
+    return;
+  }
   if(el.id==="organization-select"){localStorage.setItem(organizationKey,el.value);location.replace(location.pathname+"?view=overview");return;}
   if(el.id==="select-all-visible"){const visible=filteredContacts().slice((state.page-1)*10,state.page*10);if(el.checked)visible.forEach(r=>state.selected.add(r.recipient_id));else visible.forEach(r=>state.selected.delete(r.recipient_id));updateSelection();return;}
+  if(el.id==="case-priority-filter"){state.casePriority=el.value;if(state.view==="cases")render();return;}
+  if(el.id==="apply-saved-filter"){
+    const sf=(state.savedFilters||[]).find(f=>f.filter_id===el.value);
+    if(sf&&sf.criteria){
+      const c=sf.criteria;
+      state.kind=c.kind||"all";
+      state.company=c.company||"";
+      state.department=c.department||"";
+      state.tagFilter=c.tag||"";
+      state.search=c.search||"";
+      state.page=1;
+      render();
+      notice(`已套用自訂篩選：「${sf.name}」`);
+    }
+    return;
+  }
   if(el.id==="contact-tag-filter"){state.tagFilter=el.value;state.page=1;if($("contact-list"))$("contact-list").innerHTML=contactList();return;}
   if(el.id==="send-timing"){$("scheduled-time").hidden=el.value!=="scheduled";const wrap=$("scheduled-time-wrapper");if(wrap)wrap.hidden=el.value!=="scheduled";$("submit-send").textContent=el.value==="scheduled"?"確認預約":"確認立即發送";return;}
   if(el.dataset.select){el.checked?state.selected.add(el.dataset.select):state.selected.delete(el.dataset.select);updateSelection();}
@@ -313,9 +640,81 @@ document.addEventListener("change",event=>{
 });
 document.addEventListener("submit",async event=>{if(event.target.id==="password-form")return;event.preventDefault();const form=event.target,values=Object.fromEntries(new FormData(form)),submit=form.querySelector('[type="submit"]');if(!submit||submit.disabled)return;submit.disabled=true;$("modal-error").hidden=true;
   try{
-    if(form.id==="contact-form"){
+    if(form.id==="case-create-form"){
+      await api('/api/cases', values);
+      $("modal").close();
+      await load();
+      render();
+      notice("案件已建立。");
+      return;
+    }else if(form.id==="case-waiting-form"){
+      await api(`/api/cases/${form.dataset.id}`, {status:"waiting", ...values});
+      $("modal").close();
+      await load();
+      render();
+      notice("案件已進入等待狀態。");
+      return;
+    }else if(form.id==="case-close-form"){
+      await api(`/api/cases/${form.dataset.id}`, {status:"closed", ...values});
+      $("modal").close();
+      await load();
+      render();
+      notice("案件已結案。");
+      return;
+    }else if(form.id==="case-add-note-form"){
+      await api(`/api/cases/${form.dataset.id}`, {action:"add_note", note:values.note});
+      await caseDetailModal(form.dataset.id);
+      await load();
+      notice("已新增處理紀錄。");
+      return;
+    }else if(form.id==="chat-note-form"){
+      const recipient_id = form.dataset.recipient;
+      const note_id = form.dataset.noteId;
+      await api('/api/chat-notes', {
+        action: note_id ? "edit" : "add",
+        recipient_id,
+        note_id: note_id || undefined,
+        content: values.content
+      });
+      await loadChatNotes(recipient_id);
+      $("modal").close();
+      notice(note_id ? "記事已更新。" : "記事已新增。");
+      return;
+    }else if(form.id==="save-filter-form"){
+      const criteria = {
+        kind: state.kind !== "all" ? state.kind : undefined,
+        company: state.company || undefined,
+        department: state.department || undefined,
+        tag: state.tagFilter || undefined,
+        search: state.search || undefined
+      };
+      await api('/api/saved-filters', { name: values.name, criteria });
+      $("modal").close();
+      await load();
+      render();
+      notice("自訂篩選條件已儲存。");
+      return;
+    }else if(form.id==="contact-form"){
       const tag_ids=new FormData(form).getAll('tag_ids');
-      await api('/api/contact',{...values,id:form.dataset.id,alias:values.alias,custom_name:values.alias,notes:values.notes||"",tag_ids,...(superAdmin()?{subscribed:Boolean(form.elements.subscribed?.checked)}:{})});
+      await api('/api/contact',{
+        ...values,
+        id:form.dataset.id,
+        alias:values.alias,
+        custom_name:values.alias,
+        contact_type:values.contact_type||"",
+        organization_name:values.organization_name||"",
+        job_title:values.job_title||"",
+        phone:values.phone||"",
+        email:values.email||"",
+        work_phone:values.work_phone||"",
+        work_phone_ext:values.work_phone_ext||"",
+        work_email:values.work_email||"",
+        postal_code:values.postal_code||"",
+        address:values.address||"",
+        notes:values.notes||"",
+        tag_ids,
+        ...(superAdmin()?{subscribed:Boolean(form.elements.subscribed?.checked)}:{})
+      });
     }else if(form.id==="tag-create-form"){
       await api('/api/tags/save',values);
     }else if(form.id==="tag-edit-form"){

@@ -24,6 +24,16 @@ CREATE TABLE IF NOT EXISTS recipients (
     display_name TEXT NOT NULL DEFAULT '',
     alias TEXT NOT NULL DEFAULT '',
     notes TEXT NOT NULL DEFAULT '',
+    contact_type TEXT NOT NULL DEFAULT '',
+    phone TEXT NOT NULL DEFAULT '',
+    email TEXT NOT NULL DEFAULT '',
+    postal_code TEXT NOT NULL DEFAULT '',
+    address TEXT NOT NULL DEFAULT '',
+    organization_name TEXT NOT NULL DEFAULT '',
+    job_title TEXT NOT NULL DEFAULT '',
+    work_phone TEXT NOT NULL DEFAULT '',
+    work_phone_ext TEXT NOT NULL DEFAULT '',
+    work_email TEXT NOT NULL DEFAULT '',
     active INTEGER NOT NULL DEFAULT 1,
     weather_subscribed INTEGER NOT NULL DEFAULT 0,
     event_at INTEGER NOT NULL DEFAULT 0,
@@ -225,6 +235,54 @@ CREATE TABLE IF NOT EXISTS contact_tag_assignments (
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     PRIMARY KEY (channel_id, recipient_id, tag_id)
 );
+CREATE TABLE IF NOT EXISTS chat_notes (
+    note_id TEXT PRIMARY KEY,
+    channel_id TEXT NOT NULL DEFAULT '',
+    recipient_id TEXT NOT NULL,
+    author TEXT NOT NULL,
+    content TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+CREATE TABLE IF NOT EXISTS saved_filters (
+    filter_id TEXT PRIMARY KEY,
+    channel_id TEXT NOT NULL DEFAULT '',
+    name TEXT NOT NULL,
+    criteria_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+CREATE TABLE IF NOT EXISTS cases (
+    case_id TEXT PRIMARY KEY,
+    case_no TEXT NOT NULL,
+    channel_id TEXT NOT NULL DEFAULT '',
+    title TEXT NOT NULL,
+    category TEXT NOT NULL DEFAULT 'general',
+    status TEXT NOT NULL CHECK(status IN ('pending','processing','waiting','ready_to_close','closed')) DEFAULT 'pending',
+    priority TEXT NOT NULL CHECK(priority IN ('low','medium','high','urgent')) DEFAULT 'medium',
+    case_subject_id TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    resolution TEXT NOT NULL DEFAULT '',
+    waiting_party TEXT NOT NULL DEFAULT '' CHECK(waiting_party IN ('','internal','case_subject','third_party')),
+    waiting_reason TEXT NOT NULL DEFAULT '',
+    waiting_since TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    closed_at TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS case_activities (
+    activity_id TEXT PRIMARY KEY,
+    case_id TEXT NOT NULL REFERENCES cases(case_id) ON DELETE CASCADE,
+    channel_id TEXT NOT NULL DEFAULT '',
+    activity_type TEXT NOT NULL,
+    actor TEXT NOT NULL,
+    content TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
 CREATE INDEX IF NOT EXISTS audit_events_channel_idx ON audit_events(channel_id);
 CREATE INDEX IF NOT EXISTS builtin_report_state_channel_idx ON builtin_report_state(channel_id);
 CREATE INDEX IF NOT EXISTS dispatch_scopes_channel_idx ON dispatch_scopes(channel_id);
@@ -237,3 +295,8 @@ CREATE INDEX IF NOT EXISTS send_jobs_channel_idx ON send_jobs(channel_id);
 CREATE INDEX IF NOT EXISTS sender_grants_channel_idx ON sender_grants(channel_id);
 CREATE INDEX IF NOT EXISTS subscription_commands_channel_idx ON subscription_commands(channel_id);
 CREATE INDEX IF NOT EXISTS upload_assets_channel_idx ON upload_assets(channel_id);
+CREATE INDEX IF NOT EXISTS chat_notes_channel_idx ON chat_notes(channel_id, recipient_id);
+CREATE INDEX IF NOT EXISTS saved_filters_channel_idx ON saved_filters(channel_id);
+CREATE INDEX IF NOT EXISTS cases_channel_idx ON cases(channel_id, status);
+CREATE INDEX IF NOT EXISTS cases_subject_idx ON cases(channel_id, case_subject_id);
+CREATE INDEX IF NOT EXISTS case_activities_case_idx ON case_activities(case_id, created_at);

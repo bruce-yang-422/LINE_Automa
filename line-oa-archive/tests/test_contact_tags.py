@@ -213,3 +213,132 @@ class ContactTagTests(unittest.TestCase):
             data = json.load(resp)
             self.assertEqual(len(data["tags"]), 0)
 
+    def test_contact_type_and_info_fields_persistence(self):
+        with app.database_connection() as conn:
+            recipients.update_contact(
+                conn, USER1, alias="王經理", subscribed=False,
+                contact_type="person_business",
+                phone="+886 912-345-678",
+                email="wang@private.com",
+                postal_code="100",
+                address="台北市中正區忠孝西路一段1號",
+                organization_name="ABC 廣告公司",
+                job_title="業務經理",
+                work_phone="02-2345-6789",
+                work_phone_ext="888",
+                work_email="wang@abc-ad.com",
+                notes="長期合作窗口"
+            )
+            contacts = recipients.list_contacts(conn)
+            c1 = next(c for c in contacts if c["recipient_id"] == USER1)
+            self.assertEqual(c1["contact_type"], "person_business")
+            self.assertEqual(c1["phone"], "+886 912-345-678")
+            self.assertEqual(c1["email"], "wang@private.com")
+            self.assertEqual(c1["postal_code"], "100")
+            self.assertEqual(c1["address"], "台北市中正區忠孝西路一段1號")
+            self.assertEqual(c1["organization_name"], "ABC 廣告公司")
+            self.assertEqual(c1["job_title"], "業務經理")
+            self.assertEqual(c1["work_phone"], "02-2345-6789")
+            self.assertEqual(c1["work_phone_ext"], "888")
+            self.assertEqual(c1["work_email"], "wang@abc-ad.com")
+            self.assertEqual(c1["notes"], "長期合作窗口")
+
+    def test_contact_type_switch_field_cleanup_rules(self):
+        with app.database_connection() as conn:
+            # 1. Set as person_business
+            recipients.update_contact(
+                conn, USER1, alias="王經理", subscribed=False,
+                contact_type="person_business",
+                phone="0912345678",
+                email="wang@private.com",
+                postal_code="100",
+                address="台北市中正區忠孝西路一段1號",
+                organization_name="ABC 廣告公司",
+                job_title="經理",
+                work_phone="02-23456789",
+                work_phone_ext="123",
+                work_email="wang@abc.com"
+            )
+
+            # 2. Switch to organization: job_title and work_* fields should be cleared
+            recipients.update_contact(
+                conn, USER1, alias="ABC 廣告公司", subscribed=False,
+                contact_type="organization",
+                phone="02-23456789",
+                email="contact@abc.com",
+                postal_code="100",
+                address="台北市中正區忠孝西路一段1號",
+                organization_name="ABC 廣告公司",
+                job_title="經理",
+                work_phone="02-23456789",
+                work_phone_ext="123",
+                work_email="wang@abc.com"
+            )
+            contacts = recipients.list_contacts(conn)
+            c1 = next(c for c in contacts if c["recipient_id"] == USER1)
+            self.assertEqual(c1["contact_type"], "organization")
+            self.assertEqual(c1["organization_name"], "ABC 廣告公司")
+            self.assertEqual(c1["job_title"], "")
+            self.assertEqual(c1["work_phone"], "")
+            self.assertEqual(c1["work_phone_ext"], "")
+            self.assertEqual(c1["work_email"], "")
+
+            # 3. Switch to person_private: organization_name and work_* fields should be cleared
+            recipients.update_contact(
+                conn, USER1, alias="王小明", subscribed=False,
+                contact_type="person_private",
+                phone="0912345678",
+                email="wang@private.com",
+                postal_code="100",
+                address="台北市中正區忠孝西路一段1號",
+                organization_name="ABC 廣告公司"
+            )
+            contacts = recipients.list_contacts(conn)
+            c1 = next(c for c in contacts if c["recipient_id"] == USER1)
+            self.assertEqual(c1["contact_type"], "person_private")
+            self.assertEqual(c1["organization_name"], "")
+            self.assertEqual(c1["phone"], "0912345678")
+            self.assertEqual(c1["email"], "wang@private.com")
+
+    def test_http_api_contact_type_and_info_fields(self):
+        from urllib.request import Request, urlopen
+        server = admin_server.AdminServer(0)
+        server.start()
+        self.addCleanup(server.close)
+        base = f"http://127.0.0.1:{server.server_port}"
+        headers = {"Content-Type": "application/json", "Authorization": "Bearer " + server.token}
+
+        payload = {
+            "id": USER1,
+            "alias": "陳副理",
+            "subscribed": False,
+            "contact_type": "person_business",
+            "phone": "0988-111-222",
+            "email": "chen@private.com",
+            "postal_code": "800",
+            "address": "高雄市新興區中正三路100號",
+            "organization_name": "南區經銷商",
+            "job_title": "副理",
+            "work_phone": "07-1234567",
+            "work_phone_ext": "99",
+            "work_email": "chen@south-dealer.com",
+            "notes": "南部主要聯絡人"
+        }
+        req = Request(f"{base}/api/contact", data=json.dumps(payload).encode(), headers=headers)
+        with urlopen(req) as resp:
+            data = json.load(resp)
+            self.assertTrue(data.get("ok"))
+
+        req = Request(f"{base}/api/contacts", headers=headers)
+        with urlopen(req) as resp:
+            data = json.load(resp)
+            c1 = next(c for c in data["contacts"] if c["recipient_id"] == USER1)
+            self.assertEqual(c1["alias"], "陳副理")
+            self.assertEqual(c1["contact_type"], "person_business")
+            self.assertEqual(c1["organization_name"], "南區經銷商")
+            self.assertEqual(c1["job_title"], "副理")
+            self.assertEqual(c1["work_phone"], "07-1234567")
+            self.assertEqual(c1["work_phone_ext"], "99")
+            self.assertEqual(c1["work_email"], "chen@south-dealer.com")
+            self.assertEqual(c1["notes"], "南部主要聯絡人")
+

@@ -33,8 +33,95 @@ function contactDetailPanel(){
   if(!r)return "";
   const tags=r.tags||[];
   const tagsHtml=tags.length?tags.map(t=>tagBadge(t)).join(" "):'<span class="muted">無標籤</span>';
-  return `<aside class="detail-panel" id="contact-detail" aria-labelledby="contact-detail-title" tabindex="-1"><div class="detail-heading"><div><h2 id="contact-detail-title">${esc(label(r))}</h2><p class="subtitle">${r.kind==="user"?"個人聊天室":"LINE 群組"}</p></div>${button("✕","close-contact-detail","icon-button",'aria-label="關閉聯絡對象詳情"')}</div><div class="detail-body">${person(r)}<dl><dt>狀態</dt><dd>${badge(r.active?"可接收":"已停用",r.active?"good":"")}</dd><dt>分類標籤</dt><dd class="contact-tags">${tagsHtml}</dd><dt>所屬組織</dt><dd>${esc(r.company?orgName(r.company):"尚未分類")}</dd><dt>部門</dt><dd>${esc(r.department||"尚未分類")}</dd><dt>備註名稱</dt><dd>${esc(r.alias||r.custom_name||"尚未設定")}</dd><dt>LINE 名稱</dt><dd>${esc(r.display_name||"尚未取得")}</dd><dt>最近互動</dt><dd>${esc(when(r.last_seen))}</dd>${weatherModule()?`<dt>天氣通知</dt><dd>${badge(r.weather_subscribed?"已訂閱":"未訂閱",r.weather_subscribed?"good":"")}</dd>`:""}</dl><div class="full section-space"><label class="field" style="margin-bottom:4px;"><strong>備忘筆記</strong></label>${r.notes?`<div class="contact-notes-box">${esc(r.notes)}</div>`:'<p class="muted">尚未填寫備忘筆記</p>'}</div><div class="case-context-box"><div class="case-context-header"><strong>${icon("file")} 關聯案件歷史</strong><span class="badge">即將推出</span></div><p class="muted" style="font-size:12px;margin:0;">案件關聯模組就緒後，將於此處自動彙整該聯絡對象的歷次案件紀錄與服務進度。</p></div><details style="margin-top:14px;"><summary class="muted" style="font-size:12px;">查看聊天室識別資料</summary><p class="contact-id">${esc(r.recipient_id)}</p></details>${manager()?`<div class="detail-actions">${button("編輯聯絡對象","edit-contact","primary",`data-id="${esc(r.recipient_id)}"`)}</div>`:""}</div></aside>`;
+  const fullWorkPhone=[r.work_phone, r.work_phone_ext ? '分機 '+r.work_phone_ext : ''].filter(Boolean).join(' ');
+  const fullAddress=[r.postal_code, r.address].filter(Boolean).join(' ');
+  return `<aside class="detail-panel" id="contact-detail" aria-labelledby="contact-detail-title" tabindex="-1">
+    <div class="detail-heading">
+      <div>
+        <h2 id="contact-detail-title">${esc(label(r))}</h2>
+        <p class="subtitle">${r.kind==="user"?"個人聊天室":"LINE 群組"}</p>
+      </div>
+      ${button("✕","close-contact-detail","icon-button",'aria-label="關閉聯絡對象詳情"')}
+    </div>
+    <div class="detail-body">
+      ${person(r)}
+      <div class="section-space">
+        <h4 style="margin:0 0 8px;font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;">聯絡資訊</h4>
+        <dl>
+          <dt>對象類型</dt><dd>${contactTypeBadge(r.contact_type)}</dd>
+          ${r.organization_name?`<dt>對方組織</dt><dd>${esc(r.organization_name)}</dd>`:""}
+          ${r.job_title?`<dt>職稱</dt><dd>${esc(r.job_title)}</dd>`:""}
+          ${r.phone?`<dt>聯絡電話</dt><dd><a href="tel:${esc(r.phone)}">${esc(r.phone)}</a></dd>`:""}
+          ${fullWorkPhone?`<dt>公務電話</dt><dd>${esc(fullWorkPhone)}</dd>`:""}
+          ${r.email?`<dt>Email</dt><dd><a href="mailto:${esc(r.email)}">${esc(r.email)}</a></dd>`:""}
+          ${r.work_email?`<dt>公務 Email</dt><dd><a href="mailto:${esc(r.work_email)}">${esc(r.work_email)}</a></dd>`:""}
+          ${fullAddress?`<dt>地址</dt><dd>${esc(fullAddress)}</dd>`:""}
+          <dt>自訂名稱</dt><dd>${esc(r.alias||r.custom_name||"尚未設定")}</dd>
+          <dt>LINE 名稱</dt><dd>${esc(r.display_name||"尚未取得")}</dd>
+          <dt>分類標籤</dt><dd class="contact-tags">${tagsHtml}</dd>
+        </dl>
+      </div>
+      <div class="section-space">
+        <h4 style="margin:0 0 8px;font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;">系統設定</h4>
+        <dl>
+          <dt>系統組織</dt><dd>${esc(r.company?orgName(r.company):"尚未設定")}</dd>
+          <dt>系統部門</dt><dd>${esc(r.department||"尚未設定")}</dd>
+          <dt>接收狀態</dt><dd>${badge(r.active?"可接收":"已停用",r.active?"good":"")}</dd>
+          <dt>最近互動</dt><dd>${esc(when(r.last_seen))}</dd>
+          ${weatherModule()?`<dt>天氣通知</dt><dd>${badge(r.weather_subscribed?"已訂閱":"未訂閱",r.weather_subscribed?"good":"")}</dd>`:""}
+        </dl>
+      </div>
+      <div class="full section-space">
+        <label class="field" style="margin-bottom:4px;"><strong>備忘筆記（內部）</strong></label>
+        ${r.notes?`<div class="contact-notes-box">${esc(r.notes)}</div>`:'<p class="muted">尚未填寫備忘筆記</p>'}
+      </div>
+      <div class="chat-notes-box section-space">
+        <div class="case-context-header">
+          <strong>${icon("file")} 對話記事本（此 OA 聊天室）</strong>
+          ${button(icon("plus")+"新增記事","new-chat-note","btn small",`data-id="${esc(r.recipient_id)}"`)}
+        </div>
+        <div id="chat-notes-list-container">
+          ${renderChatNotesList(r.recipient_id)}
+        </div>
+      </div>
+      <div class="case-context-box">
+        <div class="case-context-header">
+          <strong>${icon("file")} 關聯案件歷史</strong>
+          ${button(icon("plus")+"建立案件","new-case-modal","btn small",`data-id="${esc(r.recipient_id)}"`)}
+        </div>
+        ${renderContactCases(r.recipient_id)}
+      </div>
+      <details style="margin-top:14px;"><summary class="muted" style="font-size:12px;">查看聊天室識別資料</summary><p class="contact-id">${esc(r.recipient_id)}</p></details>
+      ${manager()?`<div class="detail-actions">${button("編輯聯絡對象","edit-contact","primary",`data-id="${esc(r.recipient_id)}"`)}</div>`:""}
+    </div>
+  </aside>`;
 }
+
+function renderChatNotesList(recipient_id){
+  const notes = state.chatNotes?.get(recipient_id) || [];
+  if(!notes.length) return '<p class="muted" style="font-size:12px;margin:4px 0 0;">目前尚無對話記事，可點選上方「新增記事」記錄重要交辦或對話事項。</p>';
+  return `<div class="chat-notes-container">${notes.map(n=>`<div class="chat-note-item">
+    <div class="chat-note-meta"><span><strong>${esc(n.author||"管理員")}</strong> · ${when(n.created_at)}</span><div><button class="btn text small" data-action="edit-chat-note" data-id="${esc(n.note_id)}" data-recipient="${esc(recipient_id)}">編輯</button><button class="btn text small danger" data-action="delete-chat-note" data-id="${esc(n.note_id)}" data-recipient="${esc(recipient_id)}">刪除</button></div></div>
+    <div class="chat-note-content">${esc(n.content)}</div>
+  </div>`).join("")}</div>`;
+}
+
+function renderContactCases(recipient_id){
+  const related = (state.cases || []).filter(c => c.case_subject_id === recipient_id);
+  if(!related.length) return '<p class="muted" style="font-size:12px;margin:4px 0 0;">目前無關聯案件，可點選「建立案件」追蹤此對象的問題或需求。</p>';
+  return `<div class="contact-cases-list">${related.map(c=>`<div class="case-item" style="padding:10px 12px;margin-top:8px;" data-action="open-case-detail" data-id="${esc(c.case_id)}">
+    <div class="case-item-info">
+      <div class="case-title-row">
+        <span class="case-no-badge">${esc(c.case_no)}</span>
+        <strong>${esc(c.title)}</strong>
+        ${badge(caseStatusNames[c.status]||c.status, caseStatusTones[c.status]||"")}
+      </div>
+      <small class="muted">更新：${when(c.updated_at)}</small>
+    </div>
+    ${button("查看","open-case-detail","btn small",`data-id="${esc(c.case_id)}"`)}
+  </div>`).join("")}</div>`;
+}
+
 
 function schedulePage(){
   const scheduled=state.jobs.filter(j=>j.status==="scheduled").sort((a,b)=>String(a.scheduled_at).localeCompare(String(b.scheduled_at)));
@@ -48,7 +135,7 @@ function workspaceAction(action,id){
   if(action==="report-layout"){workspaceUI.reportLayout=id==="grid"?"grid":"list";render();return true;}
   if(action==="report-detail"){workspaceUI.reportDetail=id;render();document.getElementById("report-detail")?.focus({preventScroll:true});if(innerWidth<1200)document.getElementById("report-detail")?.scrollIntoView({block:"start"});return true;}
   if(action==="close-report-detail"){const previous=workspaceUI.reportDetail;workspaceUI.reportDetail="";render();document.querySelector(`[data-action="report-detail"][data-id="${CSS.escape(previous)}"]`)?.focus();return true;}
-  if(action==="contact-detail"){workspaceUI.contactDetail=id;render();document.getElementById("contact-detail")?.focus({preventScroll:true});if(innerWidth<1200)document.getElementById("contact-detail")?.scrollIntoView({block:"start"});return true;}
+  if(action==="contact-detail"){workspaceUI.contactDetail=id;render();if(typeof loadChatNotes==="function")loadChatNotes(id);document.getElementById("contact-detail")?.focus({preventScroll:true});if(innerWidth<1200)document.getElementById("contact-detail")?.scrollIntoView({block:"start"});return true;}
   if(action==="close-contact-detail"){const previous=workspaceUI.contactDetail;workspaceUI.contactDetail="";render();document.querySelector(`[data-action="contact-detail"][data-id="${CSS.escape(previous)}"]`)?.focus();return true;}
   if(action==="schedule-filter"){workspaceUI.scheduleFilter=id;render();return true;}
   return false;

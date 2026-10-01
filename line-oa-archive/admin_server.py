@@ -13,7 +13,7 @@ import sqlite3
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from uuid import UUID, uuid4
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, parse_qs
 
 import app
 import channels
@@ -25,6 +25,8 @@ import site_auth
 from remote_auth import RemoteAccess
 from send_image import publish_image, verify_public_image, send_push
 import composer
+import cases
+import chat_notes
 
 
 def contact_label(row):
@@ -456,7 +458,9 @@ class AdminHandler(BaseHTTPRequestHandler):
             self.get_request()
 
     def get_request(self):
-        self.path = urlsplit(self.path).path
+        parsed = urlsplit(self.path)
+        self.path = parsed.path
+        query = {k: v[0] for k, v in parse_qs(parsed.query).items()}
         if site_auth.handle_get(self):
             return
         files = {"/": (app.BASE_DIR.parent / "index.html", "text/html; charset=utf-8"),
@@ -481,8 +485,8 @@ class AdminHandler(BaseHTTPRequestHandler):
             return
         if self.path not in files and not self.select_line_channel():
             return
-        read_routes = {"/api/channels", "/api/session", "/api/reports", "/api/organizations"}
-        if self.path not in files and self.path not in read_routes and not re.fullmatch(r"/api/reports/(weather|[0-9a-f]{32})", self.path):
+        read_routes = {"/api/channels", "/api/session", "/api/reports", "/api/organizations", "/api/chat-notes", "/api/saved-filters", "/api/cases"}
+        if self.path not in files and self.path not in read_routes and not re.fullmatch(r"/api/reports/(weather|[0-9a-f]{32})", self.path) and not re.fullmatch(r"/api/cases/[0-9a-f]{32}", self.path):
             if self.user['role']=='sender' and self.path in {'/api/view-options','/api/settings'}:
                 self.respond(403, {'error':'此功能僅供管理員使用。'})
                 return
@@ -533,7 +537,21 @@ class AdminHandler(BaseHTTPRequestHandler):
         elif self.path == "/api/contacts":
             self.respond(200, {"contacts": self.scoped_contacts(), "tags": self.scoped_tags()})
         elif self.path == "/api/tags":
-            self.respond(200, {"tags": self.scoped_tags()})
+            self.respond(200, {"tags": self.scoped_tags(), "limit": 100, "count": len(self.scoped_tags())})
+        elif self.path == "/api/chat-notes":
+            with app.database_connection() as conn:
+                self.respond(200, chat_notes.list_chat_notes(conn, query.get('recipient_id', '')))
+        elif self.path == "/api/saved-filters":
+            with app.database_connection() as conn:
+                self.respond(200, chat_notes.list_saved_filters(conn))
+        elif self.path == "/api/cases":
+            with app.database_connection() as conn:
+                self.respond(200, {"cases": cases.list_cases(conn, status=query.get('status'), subject_id=query.get('subject_id'), query=query.get('q'))})
+        elif re.fullmatch(r"/api/cases/[0-9a-f]{32}", self.path):
+            case_id = self.path.rsplit("/", 1)[1]
+            with app.database_connection() as conn:
+                c = cases.get_case(conn, case_id)
+                self.respond(200 if c else 404, {"case": c} if c else {"error": "找不到此案件。"})
         elif self.path == "/api/jobs":
             self.respond(200, {"jobs": job_status(user=self.user)})
         elif re.fullmatch(r"/api/jobs/[0-9a-f-]{36}", self.path):
@@ -556,7 +574,8 @@ class AdminHandler(BaseHTTPRequestHandler):
         if not reports.operator(self.user):
             self.respond(403, {'error':'沒有發送操作權限。'})
             return
-        if self.user['role']=='sender' and self.path not in {'/api/send','/api/jobs/cancel','/api/assets/upload','/api/channels/save','/api/channels/verify','/api/channels/active', '/api/contacts/bulk'}:
+        allowed_sender_posts = {'/api/send','/api/jobs/cancel','/api/assets/upload','/api/channels/save','/api/channels/verify','/api/channels/active', '/api/contacts/bulk', '/api/chat-notes/save', '/api/chat-notes/delete', '/api/saved-filters/save', '/api/saved-filters/delete', '/api/cases/save', '/api/cases/transition', '/api/cases/activity'}
+        if self.user['role']=='sender' and self.path not in allowed_sender_posts:
             self.respond(403, {'error':'發送人員不能修改聯絡對象分類、來源或帳號授權。'})
             return
         if self.preview:
@@ -602,11 +621,13 @@ class AdminHandler(BaseHTTPRequestHandler):
             elif self.path == '/api/contacts/bulk':
                 action = payload.get('action')
                 ids = payload.get('ids') or payload.get('contact_ids') or []
+                res_data = {'ok': True}
                 with app.database_connection() as conn:
                     if action in {'add_tags', 'remove_tags'}:
                         tag_ids = payload.get('tag_ids', [])
-                        recipients.bulk_update_tags(conn, ids, tag_ids, 'add' if action == 'add_tags' else 'remove')
+                        res = recipients.bulk_update_tags(conn, ids, tag_ids, 'add' if action == 'add_tags' else 'remove')
                         reports.audit(conn, self.identity, "contacts.bulk_tag", f"{len(ids)} contacts", "批次更新標籤", self.user['company'])
+                        res_data.update(res)
                     elif action == 'set_subscription':
                         if self.user['role'] != 'administrator':
                             raise ValueError('天氣訂閱由平台管理員設定。')
@@ -615,7 +636,53 @@ class AdminHandler(BaseHTTPRequestHandler):
                         reports.audit(conn, self.identity, "contacts.bulk_sub", f"{len(ids)} contacts", "批次更新訂閱", self.user['company'])
                     else:
                         raise ValueError('不支援的操作。')
+                self.respond(200, res_data)
+            elif self.path == '/api/chat-notes/save':
+                with app.database_connection() as conn:
+                    res = chat_notes.save_chat_note(conn, payload, self.identity)
+                    reports.audit(conn, self.identity, "chat_note.save", res.get('recipient_id', ''), "儲存對話記事", self.user['company'])
+                self.respond(200, {'ok': True, 'note': res})
+            elif self.path == '/api/chat-notes/delete':
+                with app.database_connection() as conn:
+                    chat_notes.delete_chat_note(conn, payload.get('note_id') or payload.get('id'))
+                    reports.audit(conn, self.identity, "chat_note.delete", payload.get('id', ''), "刪除對話記事", self.user['company'])
                 self.respond(200, {'ok': True})
+            elif self.path == '/api/saved-filters/save':
+                with app.database_connection() as conn:
+                    res = chat_notes.save_saved_filter(conn, payload)
+                    reports.audit(conn, self.identity, "saved_filter.save", res.get('name', ''), "儲存自訂篩選條件", self.user['company'])
+                self.respond(200, {'ok': True, 'filter': res})
+            elif self.path == '/api/saved-filters/delete':
+                with app.database_connection() as conn:
+                    chat_notes.delete_saved_filter(conn, payload.get('filter_id') or payload.get('id'))
+                    reports.audit(conn, self.identity, "saved_filter.delete", payload.get('id', ''), "刪除自訂篩選條件", self.user['company'])
+                self.respond(200, {'ok': True})
+            elif self.path == '/api/cases/save':
+                case_id = payload.get('case_id') or payload.get('id')
+                with app.database_connection() as conn:
+                    if case_id:
+                        res = cases.update_case(conn, case_id, payload, self.identity)
+                        reports.audit(conn, self.identity, "case.update", case_id, f"更新案件 {res.get('case_no')}", self.user['company'])
+                    else:
+                        res = cases.create_case(conn, payload, self.identity)
+                        reports.audit(conn, self.identity, "case.create", res.get('case_id', ''), f"建立案件 {res.get('case_no')}", self.user['company'])
+                self.respond(200, {'ok': True, 'case': res})
+            elif self.path == '/api/cases/transition':
+                case_id = payload.get('case_id') or payload.get('id')
+                to_status = payload.get('status')
+                with app.database_connection() as conn:
+                    res = cases.transition_case(conn, case_id, to_status, payload, self.identity)
+                    reports.audit(conn, self.identity, "case.transition", case_id, f"案件 {res.get('case_no')} 狀態變更為 {to_status}", self.user['company'])
+                self.respond(200, {'ok': True, 'case': res})
+            elif self.path == '/api/cases/activity':
+                case_id = payload.get('case_id') or payload.get('id')
+                activity_type = payload.get('activity_type') or 'note'
+                content = payload.get('content')
+                with app.database_connection() as conn:
+                    res = cases.add_activity(conn, case_id, activity_type, self.identity, content)
+                    reports.audit(conn, self.identity, "case.activity", case_id, "新增案件處理紀錄", self.user['company'])
+                self.respond(200, {'ok': True, 'activity': res})
+
             elif self.path == '/api/assets/upload':
                 if not reports.module_enabled(self.user, 'messaging'):
                     raise ValueError('此組織尚未授權訊息發送模組。')
@@ -640,7 +707,24 @@ class AdminHandler(BaseHTTPRequestHandler):
                         if payload.get('company', current[0]) != current[0] or 'subscribed' in payload:
                             raise ValueError('組織歸屬與個人天氣模組由平台管理員設定。')
                         payload['subscribed'] = bool(current[1])
-                    recipients.update_contact(conn, payload.get("id"), payload.get("alias", ""), payload.get("subscribed", False), notes=payload.get("notes"), tag_ids=payload.get("tag_ids"))
+                    recipients.update_contact(
+                        conn,
+                        payload.get("id"),
+                        payload.get("alias", ""),
+                        payload.get("subscribed", False),
+                        notes=payload.get("notes"),
+                        tag_ids=payload.get("tag_ids"),
+                        contact_type=payload.get("contact_type"),
+                        phone=payload.get("phone"),
+                        email=payload.get("email"),
+                        postal_code=payload.get("postal_code"),
+                        address=payload.get("address"),
+                        organization_name=payload.get("organization_name"),
+                        job_title=payload.get("job_title"),
+                        work_phone=payload.get("work_phone"),
+                        work_phone_ext=payload.get("work_phone_ext"),
+                        work_email=payload.get("work_email")
+                    )
                     department = payload.get("department")
                     if department is not None:
                         if not isinstance(department, str) or len(department.strip()) > 60:

@@ -18,6 +18,7 @@
 以下規格為對應模組的最高依據，本任務清單與規格衝突時以規格為準：
 - [聯絡人管理規格](docs/功能規格/聯絡人管理規格.md)：第三階段「聯絡對象管理」。
 - [案件管理流程規格](docs/功能規格/案件管理流程規格.md)：第四階段「案件管理」。
+- [聊天功能規格](docs/功能規格/聊天功能規格.md)：第五階段「聊天」。
 
 ## 🛠 技術棧與限制 (Technical Stack & Constraints)
 - **前端**: Vanilla HTML, JavaScript, Tailwind CSS。
@@ -50,24 +51,37 @@
     - **聯絡對象類型與聯絡資訊**: `contact_type` 分 `organization`（組織／團體，不限公司行號，含協會、班級、俱樂部、好友團等）、`person_business`（公務對象個人）、`person_private`（一般個人），未選為「未分類」；依類型顯示電話、Email、郵遞區號、地址，公務對象另有對方組織、職稱、公務電話、分機、公務 Email（見規格「6.1 聯絡對象類型」、「6.2 聯絡資訊欄位」）。
     - **UI 用語**: 名單與管理稱「聯絡對象」，發送時選擇的對象稱「發送對象」；不得使用「收件者」、「收件人」或「聯絡人」。後台沒有「一般收件者」角色，只在 LINE 收訊的人不建立帳號（見規格「3. 核心 Domain 定義」）。
     - **組織用語**: 「組織」單一定義（非個人團體），依層面分「系統組織／系統部門」（系統使用者層面，決定報表與發送範圍，現有欄位 `recipients.company`／`department`）與「對方組織」（對話對象層面，`organization_name`，只供辨識）；兩者互不同步、不建立關聯，畫面不得只寫「組織」。編輯畫面分「聯絡資訊」與「系統設定」兩區（見規格「6.3 組織用語」、「15.1 聯絡對象編輯畫面分區」）。
-    - **Contact Detail**: 可直接編輯 `custom_name`、`contact_type`、聯絡資訊、`notes`（內部資料，不得對外傳送）與標籤；LINE 原始資料唯讀；顯示相關案件。
+    - **Contact Detail**: 可直接編輯 `custom_name`、`contact_type`、聯絡資訊、`notes` 備註（內部資料，不得對外傳送）與標籤；LINE 原始資料唯讀；顯示相關案件。
     - **標籤 (Tags)**: 建立、改名、改色、刪除、指派／移除、批次指派／移除、依標籤篩選；業務角色（顧客、加盟商、供應商等）以標籤表示，不建立 Core Enum；標籤顏色不得作為唯一資訊。
     - **批次操作 (Bulk Actions)**: 僅加標籤、移除標籤、更新訂閱。
     - **工作區隔離**: Contact、Tag 皆依 `workspace_id` 隔離，跨工作區不得讀取、搜尋或修改。
     - **Phase 1 不實作**: Owner／Assignee、Queue、Sales Pipeline、Lead Score、關係圖、階層標籤、審核流程、CRM／行銷自動化（見規格「29. Phase 1 明確不實作」章節）。
+- [x] **聯絡對象進階功能（2026-10-01 新增）**: 參考 LINE 聊天進階方案，上限依單台 PC 縮小；所有上限集中定義於後端一處，由後端檢查、前端顯示「目前數量／上限」。
+    - **對話記事本**: 屬於 LINE 聊天室（OA＋LINE userId／groupId／roomId），與聯絡對象的備註 `notes` 是不同功能、互不同步。每個聊天室最多 100 筆，每筆 1–1,000 字，記錄作者與時間，最新在前、可編輯刪除；對話畫面完成前先在 Contact Detail 以獨立區塊呈現（見規格「11.1 對話記事本」）。
+    - **數量上限**: 每個 OA 最多 100 個標籤、每個聯絡對象最多 10 個標籤、單次批次操作最多 200 個聯絡對象；批次指派略過已達上限者並回報筆數（見規格「12.3 數量上限」）。
+    - **修正批次操作**: `/api/contacts/bulk` 須檢查操作者為管理員，並驗證每個聯絡對象屬於目前 OA，不得寫入不存在的對象。
+    - **自訂篩選條件**: 每個 OA 最多 10 個，同 OA 管理員共用；條件限規格「13.2 自訂篩選條件」所列，條件之間為「且」，即時計算並顯示筆數，可在「建立發送」帶入為發送對象；不提供巢狀條件或自動動作。
 - [x] **訂閱管理**: 按模組查看可訂閱項目；訂閱與標籤分離，Contact Detail 只顯示訂閱狀態，啟用／停用由訂閱模組處理。
 - [x] **日誌與稽核 (Log & Audit)**: 提供必要的發送歷史與權限變更紀錄查閱；不建立獨立的 Enterprise Audit／Compliance Engine。
 
 ### 第四階段：新需求 - 案件管理 (New Requirement: Case Management)
 *重點：從 LINE 對話中手動建立案件並追蹤進度。*
 *規格依據：所有案件相關實作必須遵循 `docs/功能規格/案件管理流程規格.md`（狀態、等待分類、資料模型與「12. AI Agent Implementation Rules」章節），本節與規格衝突時以規格為準。*
-- [ ] **建立案件 (Case Creation)**: 從對話選取訊息 $\rightarrow$ 「建立案件」按鈕 $\rightarrow$ 自動帶入工作區/OA 資訊；系統先解析該 LINE Identity 所屬的 `Contact`，並以 `Contact.id` 寫入 `case_subject_id`（Domain 概念稱 Case Subject，資料庫與 API 欄位固定為 `case_subject_id`，不存物件或 LINE `userId`；見聯絡人管理規格「20. Contact 與 Case Management」章節）。建立後狀態為 `pending`，並寫入 `create_case` Activity。
-- [ ] **案件狀態流轉 (Case Status)**: 僅使用五個主狀態 `pending` / `processing` / `waiting` / `ready_to_close` / `closed`（UI 顯示：待處理／處理中／等待中／待結案／已結案），且只允許規格「8.1 允許的狀態轉換（Allowed Transitions）」列出的轉換；不得新增其他狀態（如「待對方回覆」、「等待財務」）。
-- [ ] **等待狀態 (Waiting State)**: 進入 `waiting` 時必填 `waiting_party`（`internal` / `case_subject` / `third_party`）與 `waiting_reason`，`waiting_since` 由系統寫入。
-- [ ] **處理紀錄 (Case Activity / Timeline)**: 處理記錄、溝通、內部確認等寫入 `CaseActivity`，每次狀態變更自動產生 `status_change` 紀錄；狀態與紀錄分離，結案後保留完整 Timeline。
-- [ ] **待結案與結案**: `ready_to_close` 可退回 `processing` 或執行結案；結案時填寫 `resolution` 並寫入 `closed_at`。結案規則不寫死，由企業 SOP 決定。
-- [ ] **優先級 (Priority)**: 依規格資料模型提供 `priority` 欄位設定。
+- [x] **建立案件 (Case Creation)**: 從對話選取訊息 $\rightarrow$ 「建立案件」按鈕 $\rightarrow$ 自動帶入工作區/OA 資訊；系統先解析該 LINE Identity 所屬的 `Contact`，並以 `Contact.id` 寫入 `case_subject_id`（Domain 概念稱 Case Subject，資料庫與 API 欄位固定為 `case_subject_id`，不存物件或 LINE `userId`；見聯絡人管理規格「20. Contact 與 Case Management」章節）。建立後狀態為 `pending`，並寫入 `create_case` Activity。
+- [x] **案件狀態流轉 (Case Status)**: 僅使用五個主狀態 `pending` / `processing` / `waiting` / `ready_to_close` / `closed`（UI 顯示：待處理／處理中／等待中／待結案／已結案），且只允許規格「8.1 允許的狀態轉換（Allowed Transitions）」列出的轉換；不得新增其他狀態（如「待對方回覆」、「等待財務」）。
+- [x] **等待狀態 (Waiting State)**: 進入 `waiting` 時必填 `waiting_party`（`internal` / `case_subject` / `third_party`）與 `waiting_reason`，`waiting_since` 由系統寫入。
+- [x] **處理紀錄 (Case Activity / Timeline)**: 處理記錄、溝通、內部確認等寫入 `CaseActivity`，每次狀態變更自動產生 `status_change` 紀錄；狀態與紀錄分離，結案後保留完整 Timeline。
+- [x] **待結案與結案**: `ready_to_close` 可退回 `processing` 或執行結案；結案時填寫 `resolution` 並寫入 `closed_at`。結案規則不寫死，由企業 SOP 決定。
+- [x] **優先級 (Priority)**: 依規格資料模型提供 `priority` 欄位設定。
 - **Phase 1 不實作**: 承辦人指派 (Assignee / Handler)、重新開案 (Reopen，`closed` 為終態)。
+
+### 第五階段：新需求 - 聊天 (New Requirement: Chat)
+*重點：參考 LINE Official Account Manager 的聊天、聯絡人、篩選傳訊與聊天設定，在本平台查看與回覆 LINE 對話。*
+*規格依據：`docs/功能規格/聊天功能規格.md`；與規格衝突時以規格為準。單台 PC，所有上限集中定義於後端一處。*
+- [ ] **階段 A 唯讀檢視**: 三欄聊天畫面（列表、對話、右側面板）、群組成員名稱快取、右側面板（聯絡對象、標籤、對話記事本、相關案件）、聯絡對象頁補「聊天」與最近聊天日期、標籤管理頁。
+- [ ] **階段 B 回覆與日常管理**: 文字回覆（`replyToken` 有效時用 reply，否則 push 並提示額度）、outbound 寫入對話紀錄、未讀／待處理／處理完畢、預設訊息（每 OA 100 則）、預約訊息清單（同時最多 50 則）、自訂篩選條件、篩選傳訊（併入「建立發送」）、瀏覽器提醒、輪詢更新。
+- [ ] **階段 C 搜尋、媒體、匯出與回應時間**: 對話內搜尋、媒體下載保存（1 年、單檔 20 MB、總量 10 GB）、匯出聊天紀錄、回應時間（只控制通知）。
+- **不實作**: 負責人員、AI 聊天機器人、自動回覆、LINE 通話、對方已讀狀態、與 LINE 官方後台同步。
 
 ## 📋 開發規範與規則 (Coding Standards & Rules)
 1.  **禁止引入新框架**: 除非特別指示，否則堅持使用 Vanilla JS。目前不加入 React/Vue。
@@ -78,7 +92,7 @@
 6.  **Small Team First**: 本系統主要服務 1–3 位後台管理員，適用於所有模組（聯絡對象、案件、訊息、排程等）。不得自行加入主要用於大型團隊的 Owner、Assignee、Queue、Multi-level Approval、SLA Engine、Workflow Engine、Department Routing 等架構，除非規格明確要求。
 
 ## 📝 AI Agent 任務執行協定 (Task Execution Protocol)
-1.  **分析需求**: 閱讀 `docs/需求與規劃/SaaS平台與全站Tailwind改版規劃.md` 中的特定章節；聯絡對象相關任務另須閱讀 `docs/功能規格/聯絡人管理規格.md`，案件管理相關任務另須閱讀 `docs/功能規格/案件管理流程規格.md`。
+1.  **分析需求**: 閱讀 `docs/需求與規劃/SaaS平台與全站Tailwind改版規劃.md` 中的特定章節；聯絡對象相關任務另須閱讀 `docs/功能規格/聯絡人管理規格.md`，案件管理相關任務另須閱讀 `docs/功能規格/案件管理流程規格.md`，聊天相關任務另須閱讀 `docs/功能規格/聊天功能規格.md`。
 2.  **檢查現有代碼**: 確認現有的 API Endpoints 與 HTML 結構以確保相容性。
 3.  **核對完成清單**: 確認任務是否已經在 [Done] 清單中，避免重複開發。
 4.  **規劃修改**: 在執行前，先概述將要變動的檔案與內容。

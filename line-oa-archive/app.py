@@ -41,10 +41,11 @@ def initialize_database() -> None:
     with database_connection() as conn:
         conn.execute("PRAGMA journal_mode=WAL")
         conn.executescript((BASE_DIR / "schema.sql").read_text(encoding="utf-8"))
-        try:
-            conn.execute("ALTER TABLE recipients ADD COLUMN notes TEXT NOT NULL DEFAULT ''")
-        except sqlite3.OperationalError:
-            pass
+        for col in ("notes", "contact_type", "phone", "email", "postal_code", "address", "organization_name", "job_title", "work_phone", "work_phone_ext", "work_email"):
+            try:
+                conn.execute(f"ALTER TABLE recipients ADD COLUMN {col} TEXT NOT NULL DEFAULT ''")
+            except sqlite3.OperationalError:
+                pass
         # 已移除「一般收件者」(employee) 角色：這類人只在 LINE 收訊，不應有後台帳號。
         # 舊資料庫的 CHECK 仍允許此值，故每次啟動清除殘留資料；仍有其他組織身分的帳號只移除 employee 成員資格。
         conn.execute("DELETE FROM organization_members WHERE role='employee'")

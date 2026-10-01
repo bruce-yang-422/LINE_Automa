@@ -177,6 +177,9 @@ def save_tag(conn, name, color=None, tag_id=None):
         existing = conn.execute("SELECT tag_id FROM contact_tags WHERE channel_id=current_channel() AND name=?", (name,)).fetchone()
         if existing:
             return existing[0]
+        count = conn.execute("SELECT COUNT(*) FROM contact_tags WHERE channel_id=current_channel()").fetchone()[0]
+        if count >= 100:
+            raise ValueError("每個 LINE OA 最多建立 100 個標籤，請刪除不用的標籤後再新增。")
         from uuid import uuid4
         new_id = "tag_" + str(uuid4().hex[:12])
         conn.execute("INSERT INTO contact_tags (tag_id, name, color, channel_id) VALUES (?, ?, ?, current_channel())", (new_id, name, color))
@@ -191,6 +194,8 @@ def delete_tag(conn, tag_id):
 def set_contact_tags(conn, recipient_id, tag_ids):
     conn.execute("DELETE FROM contact_tag_assignments WHERE channel_id=current_channel() AND recipient_id=?", (recipient_id,))
     if tag_ids:
+        # Limit to 10 tags per contact
+        tag_ids = tag_ids[:10]
         for tid in tag_ids:
             if conn.execute("SELECT 1 FROM contact_tags WHERE channel_id=current_channel() AND tag_id=?", (tid,)).fetchone():
                 conn.execute("INSERT OR IGNORE INTO contact_tag_assignments (channel_id, recipient_id, tag_id) VALUES (current_channel(), ?, ?)", (recipient_id, tid))
@@ -199,13 +204,49 @@ def set_contact_tags(conn, recipient_id, tag_ids):
 def bulk_update_tags(conn, recipient_ids, tag_ids, action="add"):
     if not isinstance(recipient_ids, list) or not isinstance(tag_ids, list):
         raise ValueError("參數格式不正確。")
+    if len(recipient_ids) > 200:
+        raise ValueError("單次批次操作上限為 200 個聯絡對象，請分批操作。")
+
+    # Verify contacts belong to current channel
+    valid_ids = {r[0] for r in conn.execute(
+        f"SELECT recipient_id FROM recipients WHERE channel_id=current_channel() AND recipient_id IN ({','.join(['?']*len(recipient_ids))})",
+        tuple(recipient_ids)
+    ).fetchall()} if recipient_ids else set()
+
+    updated = 0
+    skipped = 0
+
     for rid in recipient_ids:
-        for tid in tag_ids:
-            if action == "add":
+        if rid not in valid_ids:
+            continue
+        if action == "add":
+            current_tags = conn.execute(
+                "SELECT COUNT(*) FROM contact_tag_assignments WHERE channel_id=current_channel() AND recipient_id=?",
+                (rid,)
+            ).fetchone()[0]
+            if current_tags >= 10:
+                skipped += 1
+                continue
+            available_slots = 10 - current_tags
+            assigned_this = 0
+            for tid in tag_ids[:available_slots]:
                 if conn.execute("SELECT 1 FROM contact_tags WHERE channel_id=current_channel() AND tag_id=?", (tid,)).fetchone():
-                    conn.execute("INSERT OR IGNORE INTO contact_tag_assignments (channel_id, recipient_id, tag_id) VALUES (current_channel(), ?, ?)", (rid, tid))
-            elif action == "remove":
-                conn.execute("DELETE FROM contact_tag_assignments WHERE channel_id=current_channel() AND recipient_id=? AND tag_id=?", (rid, tid))
+                    res = conn.execute("INSERT OR IGNORE INTO contact_tag_assignments (channel_id, recipient_id, tag_id) VALUES (current_channel(), ?, ?)", (rid, tid))
+                    if res.rowcount > 0:
+                        assigned_this += 1
+            if assigned_this > 0:
+                updated += 1
+        elif action == "remove":
+            removed_this = 0
+            for tid in tag_ids:
+                res = conn.execute("DELETE FROM contact_tag_assignments WHERE channel_id=current_channel() AND recipient_id=? AND tag_id=?", (rid, tid))
+                if res.rowcount > 0:
+                    removed_this += 1
+            if removed_this > 0:
+                updated += 1
+
+    return {'updated': updated, 'skipped': skipped}
+
 
 
 def bulk_update_subscription(conn, recipient_ids, subscribed):
@@ -243,31 +284,79 @@ def list_contacts(conn):
         d = dict(row)
         d["custom_name"] = d.get("alias", "")
         d["notes"] = d.get("notes", "")
+        d["contact_type"] = d.get("contact_type", "")
+        d["phone"] = d.get("phone", "")
+        d["email"] = d.get("email", "")
+        d["postal_code"] = d.get("postal_code", "")
+        d["address"] = d.get("address", "")
+        d["organization_name"] = d.get("organization_name", "")
+        d["job_title"] = d.get("job_title", "")
+        d["work_phone"] = d.get("work_phone", "")
+        d["work_phone_ext"] = d.get("work_phone_ext", "")
+        d["work_email"] = d.get("work_email", "")
         d["tags"] = tags_by_recipient.get(d["recipient_id"], [])
         result.append(d)
     return result
 
 
-def update_contact(conn, recipient_id, alias, subscribed, notes=None, tag_ids=None):
+def update_contact(conn, recipient_id, alias, subscribed, notes=None, tag_ids=None,
+                   contact_type=None, phone=None, email=None, postal_code=None, address=None,
+                   organization_name=None, job_title=None, work_phone=None, work_phone_ext=None, work_email=None,
+                   **kwargs):
     if not isinstance(alias, str) or len(alias) > 80 or type(subscribed) is not bool:
-        raise ValueError("備註名稱最多 80 字，訂閱設定必須為勾選值。")
+        raise ValueError("自訂名稱最多 80 字，訂閱設定必須為勾選值。")
     row = conn.execute('SELECT active FROM recipients WHERE recipients.channel_id=current_channel() AND recipient_id=?', (recipient_id,)).fetchone()
     if not row:
         raise ValueError("找不到聯絡對象，請先向 Bot 傳送訊息。")
     if subscribed and not row[0]:
         raise ValueError("已封鎖或已離開的聊天室不能加入訂閱。")
-    if notes is not None:
-        if not isinstance(notes, str) or len(notes) > 2000:
-            raise ValueError("備註請限制在 2000 字以內。")
-        try:
-            conn.execute('UPDATE recipients SET alias=?, notes=?, weather_subscribed=?, subscription_at=? WHERE recipients.channel_id=current_channel() AND recipient_id=?',
-                         (alias.strip(), notes.strip(), int(subscribed), int(time.time() * 1000), recipient_id))
-        except sqlite3.OperationalError:
-            conn.execute('UPDATE recipients SET alias=?, weather_subscribed=?, subscription_at=? WHERE recipients.channel_id=current_channel() AND recipient_id=?',
-                         (alias.strip(), int(subscribed), int(time.time() * 1000), recipient_id))
-    else:
+
+    if contact_type is not None:
+        contact_type = str(contact_type).strip()
+        if contact_type not in {'organization', 'person_business', 'person_private', ''}:
+            raise ValueError("聯絡對象類型無效。")
+
+    if notes is not None and (not isinstance(notes, str) or len(notes) > 2000):
+        raise ValueError("備忘筆記請限制在 2000 字以內。")
+
+    phone = str(phone).strip() if phone is not None else ""
+    email = str(email).strip() if email is not None else ""
+    postal_code = str(postal_code).strip() if postal_code is not None else ""
+    address = str(address).strip() if address is not None else ""
+    organization_name = str(organization_name).strip() if organization_name is not None else ""
+    job_title = str(job_title).strip() if job_title is not None else ""
+    work_phone = str(work_phone).strip() if work_phone is not None else ""
+    work_phone_ext = str(work_phone_ext).strip() if work_phone_ext is not None else ""
+    work_email = str(work_email).strip() if work_email is not None else ""
+    notes_val = str(notes).strip() if notes is not None else ""
+
+    # If contact_type is set, ensure fields follow non-applicable rules
+    if contact_type == 'organization':
+        job_title = ""
+        work_phone = ""
+        work_phone_ext = ""
+        work_email = ""
+    elif contact_type == 'person_private':
+        organization_name = ""
+        job_title = ""
+        work_phone = ""
+        work_phone_ext = ""
+        work_email = ""
+
+    stamp = int(time.time() * 1000)
+    try:
+        conn.execute("""UPDATE recipients SET
+                        alias=?, notes=?, contact_type=?, phone=?, email=?, postal_code=?, address=?,
+                        organization_name=?, job_title=?, work_phone=?, work_phone_ext=?, work_email=?,
+                        weather_subscribed=?, subscription_at=?
+                        WHERE recipients.channel_id=current_channel() AND recipient_id=?""",
+                     (alias.strip(), notes_val, contact_type or "", phone, email, postal_code, address,
+                      organization_name, job_title, work_phone, work_phone_ext, work_email,
+                      int(subscribed), stamp, recipient_id))
+    except sqlite3.OperationalError:
         conn.execute('UPDATE recipients SET alias=?, weather_subscribed=?, subscription_at=? WHERE recipients.channel_id=current_channel() AND recipient_id=?',
-                     (alias.strip(), int(subscribed), int(time.time() * 1000), recipient_id))
+                     (alias.strip(), int(subscribed), stamp, recipient_id))
+
     if tag_ids is not None and isinstance(tag_ids, list):
         try:
             set_contact_tags(conn, recipient_id, tag_ids)
