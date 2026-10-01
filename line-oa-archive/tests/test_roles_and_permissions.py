@@ -126,6 +126,25 @@ class RolesAndPermissionsTests(unittest.TestCase):
         status, res = self.request(server, '/api/chat-notes', ADMIN, {'action': 'add', 'recipient_id': CONTACT_USER, 'title': 'Note 1'}, organization=ORG_A, channel='primary')
         self.assertEqual(status, 403)
 
+    def test_platform_admin_manages_only_org_admins_and_not_personnel(self):
+        # 甲級只管理 OA 與乙級：可建立組織管理員，不能建立丙、丁級，也不能使用乙級的人員與組織設定 API。
+        self.setup_roles_environment()
+        server = self.server()
+        status, _ = self.request(server, '/api/accounts/save', ADMIN, {
+            'email': 'boss2@org-a.com', 'role': 'company_admin', 'company': ORG_A, 'active': True})
+        self.assertEqual(status, 200)
+        for role in ('sender', 'assistant'):
+            status, res = self.request(server, '/api/accounts/save', ADMIN, {
+                'email': f'{role}2@org-a.com', 'role': role, 'company': ORG_A, 'active': True})
+            self.assertEqual(status, 400)
+            self.assertIn('組織的管理員', res.get('error', ''))
+        self.assertEqual(self.request(server, '/api/personnel', ADMIN)[0], 403)
+        self.assertEqual(self.request(server, '/api/personnel/save', ADMIN, {
+            'email': 'x@org-a.com', 'role': 'sender', 'active': True})[0], 403)
+        self.assertEqual(self.request(server, '/api/org-settings/save', ADMIN, {'name': 'Renamed'})[0], 403)
+        # 乙級仍可使用自己的人員與權限。
+        self.assertEqual(self.request(server, '/api/personnel', COMPANY_ADMIN)[0], 200)
+
     def test_company_admin_can_manage_sender_and_assistant_in_own_org(self):
         self.setup_roles_environment()
         server = self.server()

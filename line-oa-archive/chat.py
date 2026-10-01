@@ -15,6 +15,9 @@ import channels
 import line_api
 
 MEDIA_CACHE_DIR = app.BASE_DIR / "data" / "media_cache"
+SINGLE_MEDIA_MAX_BYTES = 20 * 1024 * 1024        # 20 MB max per single media
+TOTAL_MEDIA_MAX_BYTES = 10 * 1024 * 1024 * 1024   # 10 GB total media storage
+MEDIA_RETENTION_DAYS = 365                       # 1 year retention for media files
 
 LIMITS = {
     "canned_replies_per_oa": 100,
@@ -22,6 +25,9 @@ LIMITS = {
     "messages_page_size": 50,
     "rooms_page_size": 50,
     "text_max_length": 5000,
+    "single_media_max_bytes": SINGLE_MEDIA_MAX_BYTES,
+    "total_media_max_bytes": TOTAL_MEDIA_MAX_BYTES,
+    "media_retention_days": MEDIA_RETENTION_DAYS,
 }
 
 
@@ -563,22 +569,101 @@ def cache_group_member(conn, group_id, user_id, display_name, picture_url=""):
     )
 
 
+def get_media_storage_stats(conn=None) -> dict:
+    """Calculate current media storage usage and return capacity metrics."""
+    MEDIA_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    total_bytes = 0
+    file_count = 0
+
+    for p in MEDIA_CACHE_DIR.glob("*.bin"):
+        try:
+            total_bytes += p.stat().st_size
+            file_count += 1
+        except Exception:
+            pass
+
+    limit_bytes = TOTAL_MEDIA_MAX_BYTES
+    percent = round((total_bytes / limit_bytes) * 100, 2) if limit_bytes > 0 else 0.0
+
+    return {
+        "total_bytes": total_bytes,
+        "total_mb": round(total_bytes / (1024 * 1024), 2),
+        "limit_bytes": limit_bytes,
+        "limit_gb": 10,
+        "file_count": file_count,
+        "percent": percent,
+        "retention_days": MEDIA_RETENTION_DAYS,
+        "single_limit_mb": 20,
+        "warning": total_bytes >= (limit_bytes * 0.9),
+    }
+
+
+def cleanup_expired_media(max_age_days=MEDIA_RETENTION_DAYS) -> dict:
+    """Remove media files older than max_age_days (default 365 days)."""
+    MEDIA_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    now_ts = time.time()
+    cutoff_ts = now_ts - (max_age_days * 86400)
+
+    deleted_count = 0
+    freed_bytes = 0
+
+    for bin_file in list(MEDIA_CACHE_DIR.glob("*.bin")):
+        try:
+            st = bin_file.stat()
+            if st.st_mtime < cutoff_ts:
+                freed_bytes += st.st_size
+                bin_file.unlink(missing_ok=True)
+                json_file = bin_file.with_suffix(".json")
+                if json_file.exists():
+                    json_file.unlink(missing_ok=True)
+                deleted_count += 1
+        except Exception:
+            pass
+
+    return {
+        "ok": True,
+        "deleted_count": deleted_count,
+        "freed_bytes": freed_bytes,
+        "freed_mb": round(freed_bytes / (1024 * 1024), 2),
+    }
+
+
 def get_chat_media(conn, message_id: str) -> tuple[bytes, str]:
-    """Get binary media data and mime type for a message (from local cache or LINE Content API)."""
+    """Get binary media data and mime type for a message (enforces 20MB single limit & 10GB total limit)."""
     channel_id = channels.current_id()
     MEDIA_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     cache_file = MEDIA_CACHE_DIR / f"{channel_id}_{message_id}.bin"
     meta_file = MEDIA_CACHE_DIR / f"{channel_id}_{message_id}.json"
 
+    # Check local cache
     if cache_file.exists() and meta_file.exists():
         try:
+            # Check 1-year retention limit
+            mtime = cache_file.stat().st_mtime
+            if time.time() - mtime > (MEDIA_RETENTION_DAYS * 86400):
+                cache_file.unlink(missing_ok=True)
+                meta_file.unlink(missing_ok=True)
+                raise ValueError("此媒體檔案已超過 1 年保存期限，無法讀取原始內容。")
+
             meta = json.loads(meta_file.read_text(encoding="utf-8"))
             return cache_file.read_bytes(), meta.get("content_type", "application/octet-stream")
+        except ValueError:
+            raise
         except Exception:
             pass
 
+    # Check total storage limit before fetching new media
+    stats = get_media_storage_stats(conn)
+    if stats["total_bytes"] >= TOTAL_MEDIA_MAX_BYTES:
+        raise ValueError("媒體儲存容量已達 10 GB 上限，系統已停止下載新媒體，請清理過期媒體。")
+
     # Download from LINE API
     data, content_type = line_api.get_message_content(message_id)
+
+    # Check single file 20 MB limit
+    if len(data) > SINGLE_MEDIA_MAX_BYTES:
+        raise ValueError("單一媒體檔案超過 20 MB 上限，系統不予保存。")
+
     try:
         cache_file.write_bytes(data)
         meta_file.write_text(
@@ -588,3 +673,234 @@ def get_chat_media(conn, message_id: str) -> tuple[bytes, str]:
     except Exception:
         pass
     return data, content_type
+
+
+def search_messages(conn, chat_id: str, query: str, limit: int = 50) -> dict:
+    """Search messages within a specific chat room by keyword."""
+    query = (query or "").strip()
+    if not query:
+        return {"messages": [], "count": 0}
+
+    limit = min(max(1, int(limit or 50)), 200)
+
+    # Fetch recipient info
+    rec_row = conn.execute(
+        "SELECT kind, display_name, alias FROM recipients WHERE channel_id=current_channel() AND recipient_id=?",
+        (chat_id,)
+    ).fetchone()
+    if not rec_row:
+        return {"messages": [], "count": 0}
+
+    kind, display_name, alias = rec_row
+
+    # Group members cache
+    members_cache = {}
+    if kind != "user":
+        m_rows = conn.execute(
+            "SELECT user_id, display_name FROM group_member_cache WHERE channel_id=current_channel() AND group_id=?",
+            (chat_id,)
+        ).fetchall()
+        for mr in m_rows:
+            members_cache[mr[0]] = mr[1]
+
+    rows = conn.execute(
+        """SELECT message_id, conversation_type, conversation_id, sender_user_id,
+                  message_type, text_content, sent_at, received_at, unsent_at,
+                  direction, sent_by, send_method
+           FROM line_messages
+           WHERE channel_id=current_channel() AND conversation_id=? AND (unsent_at IS NULL OR unsent_at='')
+                 AND text_content LIKE ?
+           ORDER BY COALESCE(sent_at, received_at) DESC LIMIT ?""",
+        (chat_id, f"%{query}%", limit)
+    ).fetchall()
+
+    results = []
+    for r in rows:
+        msg_id = r[0]
+        sender_uid = r[3]
+        m_type = r[4]
+        text = r[5]
+        sent_at = r[6] or r[7]
+        direction = r[9] or "inbound"
+        sent_by = r[10]
+
+        sender_name = ""
+        if direction == "outbound":
+            sender_name = sent_by or "管理員"
+        elif kind == "user":
+            sender_name = alias or display_name or "使用者"
+        else:
+            sender_name = members_cache.get(sender_uid) or (f"成員 {sender_uid[:6]}" if sender_uid else "成員")
+
+        results.append({
+            "message_id": msg_id,
+            "direction": direction,
+            "sender_name": sender_name,
+            "message_type": m_type,
+            "text_content": text,
+            "sent_at": sent_at,
+        })
+
+    return {
+        "messages": results,
+        "count": len(results),
+        "query": query,
+    }
+
+
+def export_chat_history(conn, chat_id: str, format: str = "txt", actor: str = "管理員") -> tuple[bytes, str, str]:
+    """Export conversation history of a chat room in TXT or CSV format."""
+    rec_row = conn.execute(
+        "SELECT kind, display_name, alias, phone, email, contact_type FROM recipients WHERE channel_id=current_channel() AND recipient_id=?",
+        (chat_id,)
+    ).fetchone()
+    if not rec_row:
+        raise ValueError("找不到指定的聊天室。")
+
+    kind, display_name, alias, phone, email, contact_type = rec_row
+    primary_name = alias or display_name or chat_id
+    kind_label = "個人對話" if kind == "user" else "群組對話"
+
+    # Fetch group member cache if group
+    members_cache = {}
+    if kind != "user":
+        m_rows = conn.execute(
+            "SELECT user_id, display_name FROM group_member_cache WHERE channel_id=current_channel() AND group_id=?",
+            (chat_id,)
+        ).fetchall()
+        for mr in m_rows:
+            members_cache[mr[0]] = mr[1]
+
+    # Fetch all messages chronologically
+    rows = conn.execute(
+        """SELECT message_id, sender_user_id, message_type, text_content,
+                  COALESCE(sent_at, received_at) as msg_time, unsent_at,
+                  direction, sent_by, send_method
+           FROM line_messages
+           WHERE channel_id=current_channel() AND conversation_id=?
+           ORDER BY COALESCE(sent_at, received_at) ASC""",
+        (chat_id,)
+    ).fetchall()
+
+    now_dt = datetime.now(timezone.utc)
+    # Convert to Asia/Taipei time string
+    from datetime import timedelta
+    tz_taipei = timezone(timedelta(hours=8))
+    export_time_str = now_dt.astimezone(tz_taipei).strftime("%Y-%m-%d %H:%M:%S")
+    date_slug = now_dt.astimezone(tz_taipei).strftime("%Y%m%d_%H%M")
+
+    # Audit export event
+    import reports
+    reports.audit(
+        conn,
+        actor,
+        "chat.export",
+        channels.current_id() or "",
+        f"匯出聊天紀錄（對象：{primary_name}，格式：{format.upper()}，共 {len(rows)} 則）"
+    )
+
+    clean_name = re.sub(r'[\/:*?"<>| ]', '_', primary_name)[:30]
+
+    if format.lower() == "csv":
+        import csv
+        import io
+        output = io.StringIO()
+        # UTF-8 BOM
+        output.write('\ufeff')
+        writer = csv.writer(output)
+        writer.writerow(["時間", "發送方向", "發話者", "訊息類型", "訊息內容"])
+
+        for r in rows:
+            msg_id, sender_uid, m_type, text, msg_time, unsent_at, direction, sent_by, send_method = r
+            if unsent_at:
+                content = "[對方已收回訊息]"
+            elif m_type == "text":
+                content = text or ""
+            else:
+                content = f"[{m_type}]"
+
+            if direction == "outbound":
+                speaker = sent_by or "管理員"
+                dir_label = "發出"
+            elif kind == "user":
+                speaker = primary_name
+                dir_label = "接收"
+            else:
+                speaker = members_cache.get(sender_uid) or (f"成員 {sender_uid[:6]}" if sender_uid else "成員")
+                dir_label = "接收"
+
+            # Format msg_time
+            t_str = ""
+            if msg_time:
+                try:
+                    dt = datetime.fromisoformat(msg_time.replace("Z", "+00:00")).astimezone(tz_taipei)
+                    t_str = dt.strftime("%Y-%m-%d %H:%M:%S")
+                except Exception:
+                    t_str = msg_time
+
+            writer.writerow([t_str, dir_label, speaker, m_type, content])
+
+        data = output.getvalue().encode("utf-8-sig")
+        mime = "text/csv; charset=utf-8"
+        filename = f"chat_{clean_name}_{date_slug}.csv"
+        return data, mime, filename
+
+    else:
+        # TXT format
+        lines = [
+            "================================================================================",
+            "  LINE OA 聊天紀錄匯出",
+            "================================================================================",
+            f"  聊天對象：{primary_name} ({chat_id})",
+            f"  對話類型：{kind_label}",
+            f"  匯出時間：{export_time_str} (Asia/Taipei)",
+            f"  匯出人員：{actor}",
+            f"  訊息總數：{len(rows)} 則",
+            "================================================================================",
+            "",
+        ]
+
+        for r in rows:
+            msg_id, sender_uid, m_type, text, msg_time, unsent_at, direction, sent_by, send_method = r
+            t_str = ""
+            if msg_time:
+                try:
+                    dt = datetime.fromisoformat(msg_time.replace("Z", "+00:00")).astimezone(tz_taipei)
+                    t_str = dt.strftime("%Y-%m-%d %H:%M:%S")
+                except Exception:
+                    t_str = msg_time
+
+            if direction == "outbound":
+                speaker = f"管理員 ({sent_by or '系統'})"
+            elif kind == "user":
+                speaker = primary_name
+            else:
+                speaker = members_cache.get(sender_uid) or (f"成員 {sender_uid[:6]}" if sender_uid else "成員")
+
+            if unsent_at:
+                content = "[對方已收回訊息]"
+            elif m_type == "text":
+                content = text or ""
+            elif m_type == "image":
+                content = "[圖片訊息]"
+            elif m_type == "video":
+                content = "[影片訊息]"
+            elif m_type == "audio":
+                content = "[語音訊息]"
+            elif m_type == "file":
+                content = "[檔案訊息]"
+            elif m_type == "sticker":
+                content = "[貼圖]"
+            else:
+                content = f"[{m_type} 訊息]"
+
+            lines.append(f"[{t_str}] {speaker}: {content}")
+
+        lines.append("")
+        lines.append("--- 聊天紀錄結束 ---")
+
+        data = "\n".join(lines).encode("utf-8")
+        mime = "text/plain; charset=utf-8"
+        filename = f"chat_{clean_name}_{date_slug}.txt"
+        return data, mime, filename
+

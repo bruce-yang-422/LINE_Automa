@@ -10,7 +10,7 @@ const token = remote ? "" : location.hash.slice(1) || sessionStorage.getItem("li
 if(location.hash){if(!remote)sessionStorage.setItem("lineAdminToken",token);history.replaceState(null,"",location.pathname+location.search);}
 $("logout").hidden=!remote;
 const state={session:null,view:new URLSearchParams(location.search).get("view")||"overview",reports:[],contacts:[],tags:[],jobs:[],cases:[],caseFilter:"all",casePriority:"all",caseQuery:"",savedFilters:[],chatNotes:new Map(),settings:{users:[]},events:[],previews:new Map(),selected:new Set(),report:null,step:1,audience:"selected",search:"",kind:"all",company:"",department:"",tagFilter:"",page:1,reportFilter:"all",historyFilter:"all",subFilter:"all",busy:false,loaded:false,authLost:false};
-const titles={overview:"工作總覽","oa-list":"OA 一覽",chat:"聊天對話",reports:"報告中心",send:"建立發送",cases:"案件管理",contacts:"聯絡對象",subscriptions:"天氣訂閱",history:"發送紀錄",schedule:"排程管理",personnel:"人員與權限","org-settings":"組織設定",settings:"平台設定",organizations:"組織管理",channels:"LINE OA 管理"};
+const titles={overview:"工作總覽","oa-list":"OA 一覽",chat:"聊天對話",reports:"報告中心",send:"建立發送",cases:"案件管理",contacts:"聯絡對象",subscriptions:"天氣訂閱",history:"發送紀錄",schedule:"排程管理",personnel:"人員與權限","org-settings":"組織設定",organizations:"組織管理",channels:"LINE OA 管理"};
 const admin=()=>["administrator","company_admin","sender","assistant"].includes(state.session?.role);
 const manager=()=>["administrator","company_admin"].includes(state.session?.role);
 const canSend=()=>["company_admin","sender"].includes(state.session?.role)&&Boolean(state.session?.modules?.messaging);
@@ -111,11 +111,17 @@ async function load(){
   }else{state.contacts=[];state.tags=[];state.jobs=[];state.cases=[];state.savedFilters=[];state.chatNotes.clear();state.events=[];state.settings=manager()?await api("/api/settings"):{users:[]};state.selected.clear();}
   document.querySelector('nav [data-view="subscriptions"]').hidden=!weatherModule();
   document.querySelector('nav [data-view="send"]').hidden=!admin()||!state.session.modules.messaging;
-  document.querySelector('nav [data-view="settings"]').hidden=!manager();
-  document.querySelector(".sidebar-bottom .nav-label").hidden=!manager();
-  if(state.view==="settings"&&!manager())state.view="overview";
+  // Management menu per level (spec 權限與角色規格 8.3): A sees 組織 + LINE OA, B sees LINE OA + 人員與權限 + 組織設定, C/D see none.
+  const orgAdmin=state.session?.role==="company_admin";
+  const navAllowed={admin:superAdmin(),company:orgAdmin,"admin-company":superAdmin()||orgAdmin};
+  const managementItems=[...document.querySelectorAll("#management-nav [data-nav-role]")];
+  managementItems.forEach(el=>{el.hidden=!navAllowed[el.dataset.navRole];});
+  $("management-nav-label").hidden=!managementItems.some(el=>!el.hidden);
+  if(state.view==="settings")state.view=superAdmin()?"organizations":"overview";
   if(state.view==="organizations"&&!superAdmin())state.view="reports";
-  if(lineUI.registry&&!lineDataReady()&&!["settings","organizations","channels"].includes(state.view))state.view="channels";
+  if(["personnel","org-settings"].includes(state.view)&&!orgAdmin)state.view="overview";
+  if(state.view==="channels"&&!navAllowed["admin-company"])state.view="overview";
+  if(lineUI.registry&&!lineDataReady()&&!["organizations","channels"].includes(state.view))state.view="channels";
   workspaceHeader();
   state.loaded=true;state.authLost=false;$("connection").innerHTML='<span class="status-dot"></span>已連線';
   $("sync-time").textContent="最後更新 "+new Date().toLocaleTimeString("zh-TW",{hour12:false});
@@ -539,7 +545,7 @@ function saveFilterModal(){
 }
 
 function render(){
-  if(lineUI.registry&&!lineDataReady()&&!["settings","organizations","channels","oa-list"].includes(state.view))state.view="channels";
+  if(lineUI.registry&&!lineDataReady()&&!["organizations","channels","oa-list"].includes(state.view))state.view="channels";
   if(!titles[state.view])state.view="overview";
   $("crumb").textContent=titles[state.view]||"工作空間";document.title=(titles[state.view]||"工作台")+" · LINE 自動化";
   document.querySelectorAll("nav [data-view]").forEach(el=>{const current=el.dataset.view===state.view;el.classList.toggle("active",current);if(current)el.setAttribute("aria-current","page");else el.removeAttribute("aria-current");});
@@ -556,7 +562,6 @@ function render(){
     schedule:schedulePage,
     personnel:personnelPage,
     "org-settings":orgSettingsPage,
-    settings:settingsPage,
     channels:channelsPage,
     organizations:organizationsPage
   };
@@ -1022,6 +1027,7 @@ document.addEventListener("click",async event=>{
     else if(action==="edit-dispatch-scope")dispatchScopeForm(id);
     else if(action==="edit-sender-grant")senderGrantForm(id);
     else if(action==="new-account")accountForm();
+    else if(action==="new-org-admin")accountForm("",{role:"company_admin",company:id||management.org});
     else if(action==="edit-account")accountForm(id);
     else if(action==="audience"){state.audience=id;render();}
     else if(action==="back-report"){state.step=1;render();}
@@ -1049,6 +1055,7 @@ document.addEventListener("input",event=>{
   if(event.target.id==="contact-search"){state.search=event.target.value;state.page=1;if($("contact-list"))$("contact-list").innerHTML=contactList();}
   if(event.target.id==="case-search"){state.caseQuery=event.target.value;if(state.view==="cases")render();}
   if(event.target.id==="chat-list-search"){if(typeof chatUI!=="undefined"){chatUI.query=event.target.value;if($("chat-room-list"))$("chat-room-list").innerHTML=renderChatRoomItems();}}
+  if(event.target.id==="chat-inner-search-input"){if(typeof chatUI!=="undefined"){chatUI.searchQuery=event.target.value;const stream=$("chat-messages-stream");if(stream)stream.innerHTML=renderMessageBubbles();}}
   if(event.target.id==="oa-switcher-filter"){
     const q=event.target.value.toLowerCase();
     document.querySelectorAll(".oa-switcher-item").forEach(item=>{
@@ -1208,6 +1215,14 @@ document.addEventListener("submit",async event=>{if(event.target.id==="password-
         active:form.elements.active.checked,
         channel_ids
       });
+    }else if(form.id==="chat-response-hours-form"){
+      await api('/api/chat/response-hours/save', {
+        enabled: Boolean(form.elements.enabled?.checked),
+        timezone: values.timezone || "Asia/Taipei"
+      });
+      $("modal").close();
+      notice("回應時間設定已儲存。");
+      return;
     }else if(form.id==="org-settings-form")await api('/api/org-settings/save',values);
     else if(form.id==="account-form")await api('/api/accounts/save',{...values,active:form.elements.active.checked});
     else return;

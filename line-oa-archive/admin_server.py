@@ -498,7 +498,14 @@ class AdminHandler(BaseHTTPRequestHandler):
             return
         if self.path not in files and not self.select_line_channel():
             return
-        read_routes = {"/api/channels", "/api/session", "/api/reports", "/api/organizations", "/api/chat-notes", "/api/chat-notes/trash", "/api/saved-filters", "/api/cases", "/api/cases/prefix", "/api/cases/export", "/api/template-packs", "/api/template-packs/templates", "/api/categories", "/api/chat/rooms", "/api/chat/messages", "/api/chat/canned-replies", "/api/chat/response-hours"}
+        read_routes = {
+            "/api/channels", "/api/session", "/api/reports", "/api/organizations",
+            "/api/chat-notes", "/api/chat-notes/trash", "/api/saved-filters",
+            "/api/cases", "/api/cases/prefix", "/api/cases/export",
+            "/api/template-packs", "/api/template-packs/templates", "/api/categories",
+            "/api/chat/rooms", "/api/chat/messages", "/api/chat/canned-replies",
+            "/api/chat/response-hours", "/api/chat/media/stats", "/api/chat/export"
+        }
         if self.path not in files and self.path not in read_routes and not re.fullmatch(r"/api/reports/(weather|[0-9a-f]{32})", self.path) and not re.fullmatch(r"/api/cases/[0-9a-f]{32}", self.path):
             if self.user['role'] in {'sender', 'assistant'} and self.path in {'/api/view-options','/api/settings'}:
                 self.respond(403, {'error':'此功能僅供管理員使用。'})
@@ -584,7 +591,9 @@ class AdminHandler(BaseHTTPRequestHandler):
                     actor=self.identity
                 )
                 from urllib.parse import quote
-                self.respond(200, content, content_type=mime, headers={'Content-Disposition': f'attachment; filename="{filename}"; filename*=UTF-8\'\'{quote(filename)}'})
+                ext = "xlsx" if query.get('format', 'csv').lower() == "xlsx" else "csv"
+                ascii_name = f"cases_export.{ext}"
+                self.respond(200, content, content_type=mime, headers={'Content-Disposition': f'attachment; filename="{ascii_name}"; filename*=UTF-8\'\'{quote(filename)}'})
         elif re.fullmatch(r"/api/cases/[0-9a-f]{32}", self.path):
             case_id = self.path.rsplit("/", 1)[1]
             with app.database_connection() as conn:
@@ -606,9 +615,10 @@ class AdminHandler(BaseHTTPRequestHandler):
         elif self.path == "/api/oa-list":
             self.respond(200, {"channels": channels.oa_list(self.user)})
         elif self.path == "/api/personnel":
+            # 人員與權限只給乙級（組織管理員）；甲級在「組織」頁管理組織管理員帳號。
             org_id = self.user.get('company')
-            if not org_id and self.user['role'] != 'administrator':
-                self.respond(403, {'error': '尚未指定組織。'})
+            if self.user['role'] != 'company_admin' or not org_id:
+                self.respond(403, {'error': '人員與權限僅供組織管理員使用。'})
                 return
             with app.database_connection() as conn:
                 conn.row_factory = sqlite3.Row
@@ -651,7 +661,10 @@ class AdminHandler(BaseHTTPRequestHandler):
                     if should_log:
                         reports.audit(conn, self.identity, "vendor.view", channels.current_id(), f"供應商曾於 {t_str} 查看", org_id)
             with app.database_connection() as conn:
-                res = chat.list_messages(conn, chat_id=cid, limit=query.get('limit'), before_id=query.get('before_id'))
+                if query.get('q'):
+                    res = chat.search_messages(conn, chat_id=cid, query=query.get('q'), limit=query.get('limit'))
+                else:
+                    res = chat.list_messages(conn, chat_id=cid, limit=query.get('limit'), before_id=query.get('before_id'))
             self.respond(200, res)
         elif self.path == "/api/chat/canned-replies":
             with app.database_connection() as conn:
@@ -661,6 +674,23 @@ class AdminHandler(BaseHTTPRequestHandler):
             with app.database_connection() as conn:
                 res = chat.get_response_hours(conn)
             self.respond(200, res)
+        elif self.path == "/api/chat/media/stats":
+            with app.database_connection() as conn:
+                res = chat.get_media_storage_stats(conn)
+            self.respond(200, res)
+        elif self.path == "/api/chat/export":
+            if self.user['role'] == 'administrator':
+                self.respond(403, {'error': '平台管理員無法匯出客戶營運資料。'})
+                return
+            cid = query.get('recipient_id') or query.get('chat_id') or ''
+            with app.database_connection() as conn:
+                content, mime, filename = chat.export_chat_history(
+                    conn, cid, format=query.get('format', 'txt'), actor=self.identity
+                )
+                from urllib.parse import quote
+                ext = "csv" if query.get('format', 'txt').lower() == "csv" else "txt"
+                ascii_name = f"chat_export.{ext}"
+                self.respond(200, content, content_type=mime, headers={'Content-Disposition': f'attachment; filename="{ascii_name}"; filename*=UTF-8\'\'{quote(filename)}'})
         elif re.fullmatch(r"/api/chat/media/[0-9a-zA-Z_]+", self.path):
             msg_id = self.path.rsplit('/', 1)[1]
             try:
@@ -703,7 +733,7 @@ class AdminHandler(BaseHTTPRequestHandler):
             '/api/saved-filters', '/api/saved-filters/save', '/api/saved-filters/delete',
             '/api/cases', '/api/cases/save', '/api/cases/transition', '/api/cases/activity',
             '/api/template-packs/toggle', '/api/categories/preview', '/api/categories/apply',
-            '/api/chat/mark-read', '/api/chat/status'
+            '/api/chat/mark-read', '/api/chat/status', '/api/chat/media/cleanup'
         }
         allowed_sender_posts = allowed_assistant_posts | {
             '/api/send', '/api/jobs/cancel', '/api/assets/upload', '/api/channels/save',
@@ -942,22 +972,27 @@ class AdminHandler(BaseHTTPRequestHandler):
                     res = chat.save_response_hours(conn, payload)
                     reports.audit(conn, actor_label, "response_hours.save", "", "儲存回應時間設定", self.user.get('company', ''))
                 self.respond(200, res)
+            elif self.path == '/api/chat/media/cleanup':
+                res = chat.cleanup_expired_media(max_age_days=int(payload.get('days') or chat.MEDIA_RETENTION_DAYS))
+                with app.database_connection() as conn:
+                    reports.audit(conn, actor_label, "media.cleanup", "", f"清理過期媒體（刪除 {res.get('deleted_count')} 筆，釋放 {res.get('freed_mb')} MB）", self.user.get('company', ''))
+                self.respond(200, res)
 
             elif self.path == '/api/personnel/save':
-                if self.user['role'] not in {'company_admin', 'administrator'}:
+                if self.user['role'] != 'company_admin':
                     self.respond(403, {'error': '只有組織管理員可以管理組織人員。'})
                     return
-                org_id = self.user.get('company') if self.user['role'] == 'company_admin' else payload.get('org_id', self.user.get('company'))
+                org_id = self.user.get('company')
                 payload['org_id'] = org_id
                 payload['company'] = org_id
                 reports.save_user(payload, actor_label)
                 reports.save_membership(payload, actor_label)
                 self.respond(200, {'ok': True})
             elif self.path == '/api/org-settings/save':
-                if self.user['role'] not in {'company_admin', 'administrator'}:
+                if self.user['role'] != 'company_admin':
                     self.respond(403, {'error': '只有組織管理員可以修改組織設定。'})
                     return
-                org_id = self.user.get('company') if self.user['role'] == 'company_admin' else payload.get('org_id', self.user.get('company'))
+                org_id = self.user.get('company')
                 payload['org_id'] = org_id
                 reports.save_organization(payload, actor_label)
                 self.respond(200, {'ok': True})
@@ -1050,6 +1085,9 @@ class AdminHandler(BaseHTTPRequestHandler):
                 reports.restore_weather(self.identity)
                 self.respond(200, {'ok': True})
             elif self.path == "/api/accounts/save":
+                # 甲級只建立平台管理員與組織管理員；操作人員、協作人員由該組織的管理員在「人員與權限」建立。
+                if self.user['role'] == 'administrator' and payload.get('role') in {'sender', 'assistant'}:
+                    raise ValueError('操作人員與協作人員請由該組織的管理員在「人員與權限」建立。')
                 reports.save_user(payload, self.identity)
                 self.respond(200, {"ok": True})
             else:

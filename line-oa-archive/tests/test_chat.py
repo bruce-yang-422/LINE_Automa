@@ -169,13 +169,82 @@ class ChatSystemTests(unittest.TestCase):
             self.assertTrue(data.get("ok"))
             self.assertEqual(data["status"], "pending")
 
-        # 5. GET /api/chat/messages
-        req = Request(f"{base}/api/chat/messages?recipient_id={self.user1}", headers=headers)
+        # 6. GET /api/chat/messages with in-chat search query
+        from urllib.parse import quote
+        req = Request(f"{base}/api/chat/messages?recipient_id={self.user1}&q={quote('發票')}", headers=headers)
         with urlopen(req) as resp:
             data = json.load(resp)
             self.assertIn("messages", data)
-            self.assertEqual(data["chat_status"], "pending")
+
+        # 7. GET /api/chat/media/stats
+        req = Request(f"{base}/api/chat/media/stats", headers=headers)
+        with urlopen(req) as resp:
+            data = json.load(resp)
+            self.assertIn("total_bytes", data)
+            self.assertIn("limit_gb", data)
+            self.assertEqual(data["limit_gb"], 10)
+
+        # 8. GET /api/chat/export (TXT and CSV)
+        req_txt = Request(f"{base}/api/chat/export?chat_id={self.user1}&format=txt", headers=headers)
+        with urlopen(req_txt) as resp:
+            txt_content = resp.read().decode("utf-8")
+            self.assertIn("LINE OA 聊天紀錄匯出", txt_content)
+            self.assertIn("小愛", txt_content)
+
+        req_csv = Request(f"{base}/api/chat/export?chat_id={self.user1}&format=csv", headers=headers)
+        with urlopen(req_csv) as resp:
+            csv_content = resp.read().decode("utf-8-sig")
+            self.assertIn("時間,發送方向,發話者,訊息類型,訊息內容", csv_content)
+
+        # 9. POST /api/chat/media/cleanup
+        req_clean = Request(f"{base}/api/chat/media/cleanup", data=json.dumps({"days": 365}).encode(), headers=headers)
+        with urlopen(req_clean) as resp:
+            data = json.load(resp)
+            self.assertTrue(data.get("ok"))
+
+    def test_search_and_export_and_media_limits(self):
+        with app.database_connection() as conn:
+            past_ts = "2025-01-01T10:00:00.000Z"
+            conn.execute(
+                """INSERT INTO line_messages
+                   (channel_id, message_id, conversation_type, conversation_id, sender_user_id, message_type, text_content, sent_at, direction)
+                   VALUES (current_channel(), 'msg_search_1', 'user', ?, ?, 'text', '我想確認退貨退款流程', ?, 'inbound')""",
+                (self.user1, self.user1, past_ts)
+            )
+
+            # 1. Search messages within chat room
+            res = chat.search_messages(conn, self.user1, "退款")
+            self.assertEqual(res["count"], 1)
+            self.assertIn("退貨退款", res["messages"][0]["text_content"])
+
+            # 2. Export chat in TXT and CSV
+            txt_bytes, txt_mime, txt_name = chat.export_chat_history(conn, self.user1, format="txt", actor="Admin")
+            self.assertIn("text/plain", txt_mime)
+            self.assertTrue(txt_name.endswith(".txt"))
+            self.assertIn("退貨退款", txt_bytes.decode("utf-8"))
+
+            csv_bytes, csv_mime, csv_name = chat.export_chat_history(conn, self.user1, format="csv", actor="Admin")
+            self.assertIn("text/csv", csv_mime)
+            self.assertTrue(csv_name.endswith(".csv"))
+            self.assertIn("退貨退款", csv_bytes.decode("utf-8-sig"))
+
+            # 3. Media storage limits & stats
+            stats = chat.get_media_storage_stats(conn)
+            self.assertEqual(stats["limit_gb"], 10)
+            self.assertEqual(stats["retention_days"], 365)
+
+            # Mock LINE API returning data > 20 MB (single limit)
+            with patch("line_api.get_message_content") as mock_get_content:
+                mock_get_content.return_value = (b"0" * (21 * 1024 * 1024), "image/jpeg")
+                with self.assertRaises(ValueError) as cm:
+                    chat.get_chat_media(conn, "msg_oversized")
+                self.assertIn("超過 20 MB 上限", str(cm.exception))
+
+            # Cleanup expired media
+            clean_res = chat.cleanup_expired_media(max_age_days=0)
+            self.assertTrue(clean_res["ok"])
 
 
 if __name__ == "__main__":
     unittest.main()
+

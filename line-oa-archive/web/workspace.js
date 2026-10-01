@@ -186,7 +186,7 @@ function workspaceAction(action,id){
 
 function commandEntries(query){
   const q=query.trim().toLowerCase();
-  const allowedViews=["overview","reports",...(admin()?["contacts","schedule","history"]:[]),...(canSend()?["send"]:[]),...(weatherModule()?["subscriptions"]:[]),...(manager()?["settings"]:[]),...(superAdmin()?["organizations"]:[])];
+  const allowedViews=["overview","reports",...(admin()?["contacts","schedule","history"]:[]),...(canSend()?["send"]:[]),...(weatherModule()?["subscriptions"]:[]),...(superAdmin()?["organizations","channels"]:[]),...(state.session?.role==="company_admin"?["channels","personnel","org-settings"]:[])];
   const entries=allowedViews.map(id=>({kind:"page",id,title:titles[id],detail:"前往頁面",symbol:"grid"}));
   if(q){
     entries.push(...state.reports.map(r=>({kind:"report",id:r.report_id,title:r.title,detail:scope(r),symbol:"file"})));

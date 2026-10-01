@@ -5,6 +5,8 @@ const chatUI = {
   selectedId: "",
   filter: "all",
   query: "",
+  searchQuery: "",
+  searchOpen: false,
   messages: [],
   activeReplyToken: null,
   replyExpiresIn: 0,
@@ -49,10 +51,13 @@ function chatPage() {
     <!-- 1. Left Sidebar: Chat List -->
     <aside class="chat-sidebar-col">
       <div class="chat-sidebar-header">
-        <label class="search-field">
-          ${icon("search")}
-          <input id="chat-list-search" type="search" value="${esc(chatUI.query)}" placeholder="搜尋聯絡對象或訊息…" aria-label="搜尋聊天">
-        </label>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <label class="search-field" style="flex:1;">
+            ${icon("search")}
+            <input id="chat-list-search" type="search" value="${esc(chatUI.query)}" placeholder="搜尋聯絡對象或訊息…" aria-label="搜尋聊天">
+          </label>
+          <button type="button" class="icon-button" data-action="open-chat-settings" title="聊天設定與容量管理" aria-label="聊天設定">${icon("settings")}</button>
+        </div>
         <div class="chat-filter-tabs segmented section-space">
           ${[["all", "全部"], ["unread", "未讀"], ["pending", "待處理"], ["done", "處理完畢"]].map(([id, t]) => `
             <button data-action="chat-filter" data-id="${id}" class="${chatUI.filter === id ? 'active' : ''}">${t}</button>
@@ -149,10 +154,23 @@ function renderConversationView(room) {
         <button data-action="toggle-chat-status" data-id="${esc(room.recipient_id)}" data-status="pending" class="${chatUI.chatStatus === 'pending' ? 'active' : ''}">待處理</button>
         <button data-action="toggle-chat-status" data-id="${esc(room.recipient_id)}" data-status="done" class="${chatUI.chatStatus === 'done' ? 'active' : ''}">處理完畢</button>
       </div>
+      <button class="icon-button ${chatUI.searchOpen ? 'active' : ''}" data-action="toggle-chat-search" title="在對話中搜尋" aria-label="在對話中搜尋">${icon("search")}</button>
+      ${state.session?.role !== 'administrator' ? `<button class="btn small text" data-action="open-chat-export-modal" data-id="${esc(room.recipient_id)}" title="匯出對話紀錄">${icon("download")} 匯出</button>` : ''}
       <button class="btn small" data-action="open-case-modal-from-chat" data-id="${esc(room.recipient_id)}">${icon("folder")}+ 建立案件</button>
       <button class="icon-button" data-action="toggle-chat-info" aria-label="切換資訊面板">${icon("users")}</button>
     </div>
   </div>
+
+  ${chatUI.searchOpen ? `
+    <div class="chat-search-bar" style="display:flex;align-items:center;gap:8px;padding:8px 16px;background:var(--card-subtle,#f8fafc);border-bottom:1px solid var(--line,#e2e8f0);">
+      <label class="search-field" style="flex:1;">
+        ${icon("search")}
+        <input id="chat-inner-search-input" type="search" placeholder="在對話中搜尋訊息關鍵字…" value="${esc(chatUI.searchQuery)}" autofocus>
+      </label>
+      ${chatUI.searchQuery ? `<span class="badge" style="font-size:12px;">找到 ${chatUI.messages.filter(m => (m.text_content || '').toLowerCase().includes(chatUI.searchQuery.toLowerCase())).length} 則</span>` : ''}
+      <button type="button" class="btn text small" data-action="close-chat-search">關閉</button>
+    </div>
+  ` : ''}
 
   <div class="chat-messages-scroll" id="chat-messages-stream">
     ${renderMessageBubbles()}
@@ -200,6 +218,13 @@ function renderReplyTokenBanner() {
   </div>`;
 }
 
+function highlightSearchText(text, q) {
+  if (!q || !text) return esc(text).replace(/\n/g, '<br>');
+  const safeQ = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const parts = text.split(new RegExp(`(${safeQ})`, 'gi'));
+  return parts.map(p => p.toLowerCase() === q.toLowerCase() ? `<mark style="background:#fef08a;color:#854d0e;padding:1px 3px;border-radius:3px;font-weight:600;">${esc(p)}</mark>` : esc(p)).join("").replace(/\n/g, '<br>');
+}
+
 function renderMessageBubbles() {
   if (chatUI.loadingMessages) {
     return `<div class="loading-panel"><span class="spinner"></span><p>讀取訊息歷程…</p></div>`;
@@ -208,10 +233,15 @@ function renderMessageBubbles() {
     return `<div class="empty section-space"><p class="muted">尚無對話訊息紀錄</p></div>`;
   }
 
+  const displayList = chatUI.searchQuery ? chatUI.messages.filter(m => (m.text_content || '').toLowerCase().includes(chatUI.searchQuery.toLowerCase())) : chatUI.messages;
+  if (chatUI.searchQuery && !displayList.length) {
+    return `<div class="empty section-space"><p class="muted">找不到符合「${esc(chatUI.searchQuery)}」的對話訊息</p></div>`;
+  }
+
   let lastDateStr = "";
   let html = "";
 
-  chatUI.messages.forEach(m => {
+  displayList.forEach(m => {
     const dateStr = formatChatDateHeader(m.sent_at);
     if (dateStr && dateStr !== lastDateStr) {
       html += `<div class="chat-date-divider"><span>${esc(dateStr)}</span></div>`;
@@ -246,7 +276,7 @@ function renderMessageBubbles() {
       bubbleContent = `<div class="chat-media-sticker"><span class="badge" style="font-size:12px;">🌟 [貼圖]</span></div>`;
     } else {
       const text = m.text_content || `[${m.message_type}]`;
-      bubbleContent = `<div class="chat-bubble-text">${esc(text).replace(/\\n/g, '<br>')}</div>`;
+      bubbleContent = `<div class="chat-bubble-text">${highlightSearchText(text, chatUI.searchQuery)}</div>`;
     }
 
     html += `<div class="chat-message-row ${isOutbound ? 'outbound' : 'inbound'}">
@@ -537,9 +567,111 @@ function chatAction(action, id, target) {
         category: note.note_type || "一般"
       });
     }
+  if (action === "toggle-chat-search") {
+    chatUI.searchOpen = !chatUI.searchOpen;
+    if (!chatUI.searchOpen) chatUI.searchQuery = "";
+    render();
+    if (chatUI.searchOpen) setTimeout(() => $("chat-inner-search-input")?.focus(), 50);
+    return true;
+  }
+  if (action === "close-chat-search") {
+    chatUI.searchOpen = false;
+    chatUI.searchQuery = "";
+    render();
+    return true;
+  }
+  if (action === "open-chat-export-modal") {
+    openChatExportModal(id || chatUI.selectedId);
+    return true;
+  }
+  if (action === "open-chat-settings") {
+    openChatSettingsModal();
+    return true;
+  }
+  if (action === "cleanup-expired-media") {
+    api("/api/chat/media/cleanup", {}).then(res => {
+      openChatSettingsModal();
+      notice(`已清理過期媒體：刪除 ${res.deleted_count} 筆，釋放 ${res.freed_mb} MB。`);
+    }).catch(e => notice(e.message, true));
     return true;
   }
   return false;
+}
+
+function openChatExportModal(recipient_id) {
+  const r = chatUI.rooms.find(x => x.recipient_id === recipient_id) || { name: "聊天室" };
+  const title = r.name || r.display_name || "聊天室";
+  modal("匯出聊天紀錄", `<div>
+    <p class="muted" style="margin-bottom:16px;">匯出 <strong>${esc(title)}</strong> 的完整對話訊息紀錄（文字與時間戳記，不含二進位媒體檔）：</p>
+    <div style="display:flex;flex-direction:column;gap:12px;">
+      <a href="/api/chat/export?chat_id=${encodeURIComponent(recipient_id)}&format=txt" download class="btn primary" style="display:flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;padding:10px 16px;">
+        ${icon("file")} 下載純文字紀錄檔 (.txt)
+      </a>
+      <a href="/api/chat/export?chat_id=${encodeURIComponent(recipient_id)}&format=csv" download class="btn" style="display:flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;padding:10px 16px;">
+        ${icon("download")} 下載試算表格式 (.csv, 含 UTF-8 BOM)
+      </a>
+    </div>
+  </div>`);
+}
+
+async function openChatSettingsModal() {
+  modal("聊天設定與容量管理", '<div class="loading-panel"><span class="spinner"></span><p>讀取設定中…</p></div>');
+  try {
+    const [hoursRes, statsRes] = await Promise.all([
+      api("/api/chat/response-hours"),
+      api("/api/chat/media/stats")
+    ]);
+    const stats = statsRes || { total_mb: 0, percent: 0, file_count: 0 };
+    modal("聊天設定與容量管理", `<div>
+      <div class="card" style="margin-bottom:16px;">
+        <h3 style="margin-top:0;">提醒偏好設定</h3>
+        <p class="muted" style="font-size:13px;margin:4px 0 12px;">有新訊息時的提醒方式（依目前瀏覽器本機儲存）：</p>
+        <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:14px;cursor:pointer;">
+          <input type="checkbox" id="chat-pref-notify" ${localStorage.getItem("chat_pref_notify") !== "0" ? "checked" : ""}>
+          顯示瀏覽器桌面通知
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:14px;cursor:pointer;">
+          <input type="checkbox" id="chat-pref-sound" ${localStorage.getItem("chat_pref_sound") === "1" ? "checked" : ""}>
+          播放新訊息提示音
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer;">
+          <input type="checkbox" id="chat-pref-preview" ${localStorage.getItem("chat_pref_preview") !== "0" ? "checked" : ""}>
+          在通知中預覽訊息內容
+        </label>
+      </div>
+
+      <div class="card" style="margin-bottom:16px;">
+        <h3 style="margin-top:0;">回應時間設定</h3>
+        <p class="muted" style="font-size:13px;margin:4px 0 12px;">設定每週回應時段（非回應時段將靜音並停止發出瀏覽器桌面通知）：</p>
+        <form id="chat-response-hours-form">
+          <label style="display:flex;align-items:center;gap:8px;margin-bottom:12px;font-size:14px;cursor:pointer;">
+            <input type="checkbox" name="enabled" ${hoursRes.enabled ? "checked" : ""}>
+            <strong>啟用回應時間排程通知過濾</strong>
+          </label>
+          <div class="form-grid">
+            <div>${field("時區", "timezone", hoursRes.timezone || "Asia/Taipei", 'readonly')}</div>
+          </div>
+          <div class="form-actions" style="margin-top:12px;">
+            <button class="btn primary small" type="submit">儲存回應時間設定</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="card">
+        <h3 style="margin-top:0;">媒體儲存容量與保存期限</h3>
+        <p class="muted" style="font-size:13px;margin:4px 0 12px;">單台主機儲存上限：10 GB（單一檔案上限 20 MB，文字保存 5 年，媒體檔案保存 1 年）</p>
+        <div style="background:var(--line,#e2e8f0);height:10px;border-radius:5px;overflow:hidden;margin-bottom:8px;">
+          <div style="background:${stats.warning ? '#ef4444' : 'var(--accent,#00b900)'};width:${Math.min(100, Math.max(2, stats.percent))}%;height:100%;"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;font-size:13px;">
+          <span>已使用 <strong>${stats.total_mb} MB</strong> / 10 GB (${stats.percent}%) · 共 ${stats.file_count} 個媒體檔</span>
+          <button type="button" class="btn small" data-action="cleanup-expired-media">🧹 清理過期媒體</button>
+        </div>
+      </div>
+    </div>`);
+  } catch (e) {
+    modal("載入失敗", `<p class="callout warn">${esc(e.message)}</p>`);
+  }
 }
 
 async function viewChatNotesTrashModal(recipient_id) {
