@@ -362,6 +362,10 @@ class AdminHandler(BaseHTTPRequestHandler):
             self.respond(403, {"error": "請從本機控制台或已設定的管理網址登入。"})
             return False
         if require_token and not hmac.compare_digest(self.headers.get("Authorization", ""), "Bearer " + self.server.token):
+            query = getattr(self, 'query', {})
+            query_token = query.get('token', '') if isinstance(query, dict) else ''
+            if query_token and hmac.compare_digest(query_token, self.server.token):
+                return self.apply_view()
             return site_auth.authorize(self)
         return self.apply_view() if require_token else True
 
@@ -478,6 +482,7 @@ class AdminHandler(BaseHTTPRequestHandler):
         parsed = urlsplit(self.path)
         self.path = parsed.path
         query = {k: v[0] for k, v in parse_qs(parsed.query).items()}
+        self.query = query
         if site_auth.handle_get(self):
             return
         files = {"/": (app.BASE_DIR.parent / "index.html", "text/html; charset=utf-8"),

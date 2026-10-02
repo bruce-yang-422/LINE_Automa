@@ -254,26 +254,31 @@ function renderMessageBubbles() {
 
     const isOutbound = m.direction === "outbound";
     const timeStr = formatChatTime(m.sent_at);
+    const mediaUrl = id => `/api/chat/media/${encodeURIComponent(id)}${token ? '?token=' + encodeURIComponent(token) : ''}`;
     let bubbleContent = "";
     if (m.message_type === "image") {
+      const src = mediaUrl(m.message_id);
       bubbleContent = `<div class="chat-media-image">
-        <a href="/api/chat/media/${esc(m.message_id)}" target="_blank" title="點擊放大檢視圖片">
-          <img src="/api/chat/media/${esc(m.message_id)}" alt="LINE 圖片" class="chat-img-thumb" loading="lazy" onerror="this.onerror=null;this.parentElement.innerHTML='<span class=\\'muted\\' style=\\'font-size:12px;\\'>🖼️ [圖片已過期或無法載入]</span>';">
+        <a href="${src}" target="_blank" title="點擊在新分頁放大檢視圖片">
+          <img src="${src}" alt="LINE 圖片" class="chat-img-thumb" loading="lazy" onerror="this.onerror=null;this.parentElement.innerHTML='<span class=\\'muted\\' style=\\'font-size:12px;\\'>🖼️ [圖片已過期或無法載入]</span>';">
         </a>
       </div>`;
     } else if (m.message_type === "video") {
+      const src = mediaUrl(m.message_id);
       bubbleContent = `<div class="chat-media-video">
-        <video src="/api/chat/media/${esc(m.message_id)}" controls style="max-width:320px;border-radius:8px;"></video>
-        <div style="margin-top:4px;"><a href="/api/chat/media/${esc(m.message_id)}" download="video_${esc(m.message_id)}.mp4" class="btn text small">⬇️ 下載影片</a></div>
+        <video src="${src}" controls style="max-width:320px;border-radius:8px;"></video>
+        <div style="margin-top:4px;"><a href="${src}" download="video_${esc(m.message_id)}.mp4" class="btn text small">⬇️ 下載影片</a></div>
       </div>`;
     } else if (m.message_type === "audio") {
+      const src = mediaUrl(m.message_id);
       bubbleContent = `<div class="chat-media-audio">
-        <audio src="/api/chat/media/${esc(m.message_id)}" controls style="max-width:280px;"></audio>
+        <audio src="${src}" controls style="max-width:280px;"></audio>
       </div>`;
     } else if (m.message_type === "file") {
       const fileName = (m.text_content || "傳送的檔案").trim();
+      const src = mediaUrl(m.message_id);
       bubbleContent = `<div class="chat-media-file">
-        <a href="/api/chat/media/${esc(m.message_id)}" download="${esc(fileName)}" class="btn small" style="display:inline-flex;align-items:center;gap:6px;font-weight:500;">
+        <a href="${src}" download="${esc(fileName)}" class="btn small" style="display:inline-flex;align-items:center;gap:6px;font-weight:500;">
           📄 ${esc(fileName)}
         </a>
       </div>`;
