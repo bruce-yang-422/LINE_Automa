@@ -9,6 +9,7 @@ async function loadChannels(){
   const previousChannel=lineUI.channel;
   const data=await api('/api/channels');
   lineUI.registry=data.registry_enabled;lineUI.spaces=data.workspaces;lineUI.channels=data.channels;
+  state.channels=data.channels || [];
   lineUI.key='lineOA:'+state.session.identity+':'+(previewOrganization||'');
   let saved={};try{saved=JSON.parse(sessionStorage.getItem(lineUI.key)||'{}');}catch(_){}
   lineUI.workspace=lineUI.spaces.some(w=>w.id===saved.workspace)?saved.workspace:(lineUI.channels.find(c=>c.active)?.workspace_id||lineUI.spaces[0]?.id||'');

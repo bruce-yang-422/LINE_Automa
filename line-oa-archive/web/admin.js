@@ -1037,10 +1037,10 @@ function render(){
 }
 
 function oaListPage(){
-  const channelsList = state.channels || [];
+  const channelsList = lineUI.channels || state.channels || [];
   const q = (state.oaSearch || "").toLowerCase().trim();
   const filtered = channelsList.filter(c => !q || c.name.toLowerCase().includes(q) || (orgName(c.org_id)||"").toLowerCase().includes(q) || (c.basic_id||"").toLowerCase().includes(q));
-  const currentId = channels.current_id();
+  const currentId = lineUI.channel;
 
   return heading("LINE OA 一覽", "查看並快速進入您獲授權存取的 LINE 官方帳號", `<div class="mg-tools" data-s="s1da9fac"><input type="search" id="oa-list-search" value="${esc(state.oaSearch||"")}" placeholder="搜尋 OA 名稱或組織…" data-s="s3d82166"></div>`)+`
   <div class="dashboard-grid" data-s="s3f2d80e">
@@ -1236,8 +1236,8 @@ function myAccountModal(){
 }
 
 function openOaSwitcherModal(){
-  const allOas = state.channels || [];
-  const currentId = channels.current_id();
+  const allOas = lineUI.channels || state.channels || [];
+  const currentId = lineUI.channel;
   modal("切換 LINE OA", `<div class="oa-switcher-modal">
     <div data-s="s7142fa2">
       <input type="search" id="oa-switcher-filter" placeholder="搜尋 LINE OA 名稱或組織…" data-s="sb48bce0">
@@ -1718,6 +1718,7 @@ document.addEventListener("input",event=>{
   if(event.target.id==="case-search"){state.caseQuery=event.target.value;if(state.view==="cases")render();}
   if(event.target.id==="chat-list-search"){if(typeof chatUI!=="undefined"){chatUI.query=event.target.value;if($("chat-room-list"))$("chat-room-list").innerHTML=renderChatRoomItems();}}
   if(event.target.id==="chat-inner-search-input"){if(typeof chatUI!=="undefined"){chatUI.searchQuery=event.target.value;const stream=$("chat-messages-stream");if(stream)stream.innerHTML=renderMessageBubbles();}}
+  if(event.target.id==="oa-list-search"){state.oaSearch=event.target.value;if(state.view==="oa-list")render();}
   if(event.target.id==="oa-switcher-filter"){
     const q=event.target.value.toLowerCase();
     document.querySelectorAll(".oa-switcher-item").forEach(item=>{
