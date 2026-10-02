@@ -1391,10 +1391,14 @@ document.addEventListener("click",async event=>{
     if(action==="switch-oa-direct"){
       const channelId=target.dataset.channel;
       const orgId=target.dataset.org;
-      if(channelId){
-        localStorage.setItem("lineSelectedChannel",channelId);
-        if(orgId)localStorage.setItem(organizationKey,orgId);
-        location.replace(location.pathname+"?view="+encodeURIComponent(state.view||"overview"));
+      const targetChannel=(lineUI.channels||state.channels||[]).find(c=>c.channel_id===channelId);
+      const targetWorkspace=targetChannel?.workspace_id||("o:"+(orgId||""));
+      if($("modal").open)$("modal").close();
+      if(channelId===lineUI.channel){
+        navigate("overview");
+      }else if(channelId){
+        if(orgId&&organizationKey)try{localStorage.setItem(organizationKey,orgId);}catch(_){}
+        changeLineContext(targetWorkspace, channelId);
       }
     }
     else if(action==="go-oa-list-from-switcher"){$("modal").close();navigate("oa-list");}
