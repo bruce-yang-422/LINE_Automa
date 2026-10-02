@@ -72,6 +72,7 @@ function chatPage() {
             ${icon("search")}
             <input id="chat-list-search" type="search" value="${esc(chatUI.query)}" placeholder="搜尋聯絡對象或訊息…" aria-label="搜尋聊天">
           </label>
+          <button type="button" class="icon-button" data-action="refresh-chat-profiles" title="同步最新 LINE 大頭貼與名稱" aria-label="重新整理名單">${icon("refresh")}</button>
           <button type="button" class="icon-button" data-action="open-chat-settings" title="聊天設定與容量管理" aria-label="聊天設定">${icon("settings")}</button>
         </div>
         <div class="chat-filter-tabs segmented section-space">
@@ -467,6 +468,14 @@ async function loadChatRooms() {
     if (container) {
       container.innerHTML = renderChatRoomItems();
     }
+    if (!chatUI._syncedProfiles && chatUI.rooms.some(r => !r.picture_url && r.kind !== 'room')) {
+      chatUI._syncedProfiles = true;
+      api("/api/profiles", {}).then(async () => {
+        const recheck = await api("/api/chat/rooms");
+        chatUI.rooms = recheck.rooms || [];
+        if ($("chat-room-list")) $("chat-room-list").innerHTML = renderChatRoomItems();
+      }).catch(() => {});
+    }
   } catch (e) {
     console.error("Failed to load chat rooms:", e);
   }
@@ -693,6 +702,15 @@ function chatAction(action, id, target) {
   }
   if (action === "open-chat-settings") {
     openChatSettingsModal();
+    return true;
+  }
+  if (action === "refresh-chat-profiles") {
+    notice("正在向 LINE 同步最新名稱與大頭貼…");
+    api("/api/profiles", {}).then(async res => {
+      await loadChatRooms();
+      if ($("chat-room-list")) $("chat-room-list").innerHTML = renderChatRoomItems();
+      notice(`已同步完成：更新 ${res.updated} 個對象，${res.failed} 個未完成。`);
+    }).catch(e => notice(e.message, true));
     return true;
   }
   if (action === "cleanup-expired-media") {

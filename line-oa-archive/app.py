@@ -65,6 +65,10 @@ def initialize_database() -> None:
             conn.execute("ALTER TABLE recipients ADD COLUMN picture_url TEXT NOT NULL DEFAULT ''")
         except Exception:
             pass
+        try:
+            conn.execute("UPDATE recipients SET profile_next_at = 0 WHERE picture_url = ''")
+        except Exception:
+            pass
         if version == 0:
             conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
