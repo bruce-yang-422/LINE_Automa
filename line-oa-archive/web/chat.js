@@ -247,7 +247,9 @@ function getFileMeta(fileName) {
     return { iconName: 'pdf', label: 'PDF 文件', color: '#ef4444', bg: '#fef2f2', border: '#fca5a5' };
   } else if (['doc', 'docx'].includes(ext)) {
     return { iconName: 'doc', label: 'Word 文件', color: '#2563eb', bg: '#eff6ff', border: '#bfdbfe' };
-  } else if (['xls', 'xlsx', 'csv'].includes(ext)) {
+  } else if (ext === 'csv') {
+    return { iconName: 'csv', label: 'CSV 數據檔', color: '#0d9488', bg: '#f0fdfa', border: '#99f6e4' };
+  } else if (['xls', 'xlsx'].includes(ext)) {
     return { iconName: 'sheet', label: 'Excel 試算表', color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0' };
   } else if (['ppt', 'pptx'].includes(ext)) {
     return { iconName: 'slide', label: '簡報 PPT', color: '#ea580c', bg: '#fff7ed', border: '#fed7aa' };
