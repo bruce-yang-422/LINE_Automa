@@ -18,9 +18,16 @@ BASE_DIR = Path(__file__).resolve().parent
 DATABASE_PATH = Path(os.environ.get("DATABASE_PATH", "data/line_archive.db"))
 if not DATABASE_PATH.is_absolute():
     DATABASE_PATH = BASE_DIR / DATABASE_PATH
-CHANNEL_SECRET = os.environ.get("LINE_CHANNEL_SECRET", "")
 MAX_BODY_BYTES = 1_048_576
 IMAGE_DIR = BASE_DIR / "published-images"
+
+
+def public_base_url() -> str:
+    """對外 HTTPS 網址（.env 的 PUBLIC_BASE_URL），供 LINE 讀取公開圖片。"""
+    value = os.environ.get("PUBLIC_BASE_URL", "").strip()
+    if not value:
+        raise ValueError("請在 .env 設定 PUBLIC_BASE_URL（對外 HTTPS 網址）後重新啟動 LINE 服務。")
+    return value
 
 
 @contextmanager
@@ -35,136 +42,34 @@ def database_connection():
         conn.close()
 
 
+SCHEMA_VERSION = 1
+
+
 def initialize_database() -> None:
-    """啟動時自動建立資料夾與資料表，保留既有紀錄。"""
+    """建立資料夾並執行 schema.sql（可重複執行，不改動既有資料）。
+
+    schema.sql 是唯一的資料結構來源；之後若需變更，以編號的升級檔處理並遞增 SCHEMA_VERSION，
+    不在這裡寫補欄位或重建表的程式。
+    """
     DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
     with database_connection() as conn:
+        version = conn.execute("PRAGMA user_version").fetchone()[0]
+        if version > SCHEMA_VERSION:
+            raise RuntimeError("資料庫結構版本比程式新，請更新程式。")
+        if version == 0 and conn.execute("SELECT 1 FROM sqlite_master WHERE type='table'").fetchone():
+            # 第七階段以前的資料庫沒有結構版本，欄位與目前程式不同；不能沿用，須備份後重建。
+            raise RuntimeError("這是舊版結構的資料庫，請先備份並依安裝說明重建資料庫。")
         conn.execute("PRAGMA journal_mode=WAL")
         conn.executescript((BASE_DIR / "schema.sql").read_text(encoding="utf-8"))
-        for col in ("notes", "contact_type", "phone", "email", "postal_code", "address", "organization_name", "job_title", "work_phone", "work_phone_ext", "work_email"):
-            try:
-                conn.execute(f"ALTER TABLE recipients ADD COLUMN {col} TEXT NOT NULL DEFAULT ''")
-            except sqlite3.OperationalError:
-                pass
-        for col in ("direction", "sent_by", "send_method", "delivery_status", "media_path", "reply_token"):
-            try:
-                conn.execute(f"ALTER TABLE line_messages ADD COLUMN {col} TEXT NOT NULL DEFAULT ''")
-            except sqlite3.OperationalError:
-                pass
-        try:
-            conn.execute("ALTER TABLE line_channels ADD COLUMN case_prefix TEXT NOT NULL DEFAULT ''")
-        except sqlite3.OperationalError:
-            pass
-        for col in ("ref_no", "continued_from_id", "source_note_id", "due_date"):
-            try:
-                conn.execute(f"ALTER TABLE cases ADD COLUMN {col} TEXT NOT NULL DEFAULT ''")
-            except sqlite3.OperationalError:
-                pass
-        try:
-            conn.execute("ALTER TABLE cases ADD COLUMN is_locked INTEGER NOT NULL DEFAULT 0")
-        except sqlite3.OperationalError:
-            pass
-        for col in ("source_message_id", "source_snapshot"):
-            try:
-                conn.execute(f"ALTER TABLE case_activities ADD COLUMN {col} TEXT NOT NULL DEFAULT ''")
-            except sqlite3.OperationalError:
-                pass
-        for col in ("title", "note_type", "tags_json", "about_member_id", "due_date", "deleted_at"):
-            try:
-                conn.execute(f"ALTER TABLE chat_notes ADD COLUMN {col} TEXT NOT NULL DEFAULT ''")
-            except sqlite3.OperationalError:
-                pass
-        for col in ("is_pinned", "is_locked", "is_completed"):
-            try:
-                conn.execute(f"ALTER TABLE chat_notes ADD COLUMN {col} INTEGER NOT NULL DEFAULT 0")
-            except sqlite3.OperationalError:
-                pass
-
-        # 遷移 workspace_users / organization_members CHECK 限制以支援 assistant 角色
-        try:
-            cur = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='workspace_users'")
-            row = cur.fetchone()
-            if row and "'assistant'" not in row[0]:
-                conn.execute("ALTER TABLE workspace_users RENAME TO workspace_users_old")
-                conn.execute("""CREATE TABLE workspace_users (
-                    email TEXT PRIMARY KEY,
-                    display_name TEXT NOT NULL DEFAULT '',
-                    role TEXT NOT NULL CHECK(role IN ('administrator','company_admin','sender','assistant')),
-                    company TEXT NOT NULL DEFAULT '',
-                    department TEXT NOT NULL DEFAULT '',
-                    recipient_id TEXT NOT NULL DEFAULT '',
-                    active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1))
-                )""")
-                conn.execute("INSERT INTO workspace_users SELECT * FROM workspace_users_old")
-                conn.execute("DROP TABLE workspace_users_old")
-        except Exception:
-            pass
-
-        try:
-            cur = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='organization_members'")
-            row = cur.fetchone()
-            if row and "'assistant'" not in row[0]:
-                conn.execute("ALTER TABLE organization_members RENAME TO organization_members_old")
-                conn.execute("""CREATE TABLE organization_members (
-                    email TEXT NOT NULL,
-                    org_id TEXT NOT NULL,
-                    role TEXT NOT NULL CHECK(role IN ('company_admin','sender','assistant')),
-                    department TEXT NOT NULL DEFAULT '',
-                    recipient_id TEXT NOT NULL DEFAULT '',
-                    active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)),
-                    PRIMARY KEY(email,org_id)
-                )""")
-                conn.execute("INSERT INTO organization_members SELECT * FROM organization_members_old")
-                conn.execute("DROP TABLE organization_members_old")
-        except Exception:
-            pass
-
-        # 建立 oa_member_access 表
-        conn.execute("""CREATE TABLE IF NOT EXISTS oa_member_access (
-            channel_id TEXT NOT NULL,
-            email TEXT NOT NULL,
-            org_id TEXT NOT NULL,
-            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-            PRIMARY KEY (channel_id, email, org_id)
-        )""")
-
-        # 遷移舊版個人 OA 至「個人」組織
-        try:
-            pers_channels = conn.execute("SELECT channel_id, owner_email, name FROM line_channels WHERE (org_id='' OR org_id IS NULL) AND owner_email<>''").fetchall()
-            for cid, owner_email, cname in pers_channels:
-                user_row = conn.execute("SELECT display_name FROM workspace_users WHERE email=?", (owner_email,)).fetchone()
-                display_name = user_row[0] if user_row and user_row[0] else owner_email
-                org_name = f"{display_name}（個人）"
-                member_row = conn.execute("SELECT m.org_id FROM organization_members m JOIN organizations o ON o.org_id=m.org_id WHERE m.email=? AND o.kind='personal'", (owner_email,)).fetchone()
-                if member_row:
-                    org_id = member_row[0]
-                else:
-                    import uuid
-                    org_id = uuid.uuid4().hex[:12]
-                    conn.execute("INSERT INTO organizations (org_id, name, kind, active, reports_enabled, messaging_enabled, weather_enabled) VALUES (?, ?, 'personal', 1, 1, 1, 0)",
-                                 (org_id, org_name))
-                conn.execute("INSERT OR IGNORE INTO organization_members (email, org_id, role, active) VALUES (?, ?, 'company_admin', 1)",
-                             (owner_email, org_id))
-                conn.execute("UPDATE line_channels SET org_id=?, owner_email='' WHERE channel_id=?", (org_id, cid))
-                conn.execute("UPDATE report_sources SET company=? WHERE channel_id=?", (org_id, cid))
-        except Exception:
-            pass
-
-        # 已移除「一般收件者」(employee) 角色：這類人只在 LINE 收訊，不應有後台帳號。
-        # 舊資料庫的 CHECK 仍允許此值，故每次啟動清除殘留資料；仍有其他組織身分的帳號只移除 employee 成員資格。
-        conn.execute("DELETE FROM organization_members WHERE role='employee'")
-        orphans = "SELECT email FROM workspace_users WHERE role='employee' AND email NOT IN (SELECT email FROM organization_members)"
-        for table in ("site_sessions", "site_activation", "site_credentials", "sender_grants"):
-            conn.execute(f"DELETE FROM {table} WHERE email IN ({orphans})")
-        conn.execute(f"DELETE FROM workspace_users WHERE email IN ({orphans})")
+        if version == 0:
+            conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
 
-
-def valid_signature(body: bytes, signature: str, secret=None) -> bool:
-    expected = base64.b64encode(
-        hmac.new((CHANNEL_SECRET if secret is None else secret).encode("utf-8"), body, hashlib.sha256).digest()
-    ).decode("ascii")
-    return bool((CHANNEL_SECRET if secret is None else secret) and signature) and hmac.compare_digest(expected, signature)
+def valid_signature(body: bytes, signature: str, secret: str) -> bool:
+    if not secret or not signature:
+        return False
+    expected = base64.b64encode(hmac.new(secret.encode("utf-8"), body, hashlib.sha256).digest()).decode("ascii")
+    return hmac.compare_digest(expected, signature)
 
 
 def source_fields(event: dict) -> tuple[str, str, str | None] | None:
@@ -303,8 +208,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         try:
             row = channels.webhook_channel(self.path)
-            with channels.use(row['channel_id'] if row else ''):
-                if row and not channels.operational(row):
+            with channels.use(row['channel_id']):
+                if not channels.operational(row):
                     self.respond(403, "OA 已停用")
                     return
                 self.receive_webhook(row)
@@ -312,9 +217,6 @@ class Handler(BaseHTTPRequestHandler):
             self.respond(404, "找不到可使用的 Webhook")
 
     def receive_webhook(self, channel) -> None:
-        if not self.path.startswith("/webhook"):
-            self.respond(404, "找不到資源")
-            return
         try:
             size = int(self.headers.get("Content-Length", ""))
         except ValueError:
@@ -324,13 +226,13 @@ class Handler(BaseHTTPRequestHandler):
             self.respond(413, "請求本文大小超出允許範圍")
             return
         body = self.rfile.read(size)
-        if not valid_signature(body, self.headers.get("x-line-signature", ""), channels.credentials()[1] if channel else None):
+        if not valid_signature(body, self.headers.get("x-line-signature", ""), channels.credentials()[1]):
             self.respond(401, "簽章無效")
             return
         try:
             payload = json.loads(body)
             events = payload["events"]
-            if channel and payload.get('destination') != channel['bot_user_id']:
+            if payload.get('destination') != channel['bot_user_id']:
                 self.respond(401, "Webhook OA 身分不符")
                 return
             if not isinstance(events, list):
@@ -340,14 +242,13 @@ class Handler(BaseHTTPRequestHandler):
             return
         try:
             replies = save_events(events)
-            if channel:
-                channels.seen(channel["channel_id"])
+            channels.seen(channel["channel_id"])
         except sqlite3.Error:
             self.respond(503, "資料庫無法使用")
             return
         self.respond(200, "ok")
         # Acknowledge persisted subscriptions before calling LINE; redelivery won't toggle or reply twice.
-        if replies and channels.access_token():
+        if replies:
             import line_api
             for token, text in replies:
                 try:
@@ -358,8 +259,6 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    if not CHANNEL_SECRET:
-        raise SystemExit("請先設定 LINE_CHANNEL_SECRET")
     initialize_database()
     profiles = recipients.ProfileRefresher()
     profiles.start()

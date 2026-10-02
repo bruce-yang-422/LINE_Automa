@@ -12,6 +12,7 @@ from uuid import uuid4
 import app
 import admin_server
 import recipients
+from oa_fixture import CHANNEL, register_oa, use_oa
 
 USER = "U" + "1" * 32
 USER2 = "U" + "2" * 32
@@ -29,10 +30,12 @@ class RecipientTests(unittest.TestCase):
             p = patch.object(app, target, value)
             p.start()
             self.addCleanup(p.stop)
-        p = patch.dict(os.environ, {"LINE_CHANNEL_ACCESS_TOKEN": "fake-test-token"}, clear=True)
+        p = patch.dict(os.environ, {"PUBLIC_BASE_URL": "https://reports.example.test"}, clear=True)
         p.start()
         self.addCleanup(p.stop)
         app.initialize_database()
+        register_oa()
+        use_oa(self)
 
     def event(self, rid=USER, message="訂閱天氣", stamp=1000, event_type="message", message_id=None):
         kind = "user" if rid.startswith("U") else "group"
@@ -73,7 +76,7 @@ class RecipientTests(unittest.TestCase):
         with app.database_connection() as conn:
             recipients.update_contact(conn, USER, "測試同事", True)
         app.initialize_database()
-        self.assertEqual(self.contact()["alias"], "測試同事")
+        self.assertEqual(self.contact()["custom_name"], "測試同事")
         self.assertTrue(self.contact()["weather_subscribed"])
         with app.database_connection() as conn:
             conn.execute("DELETE FROM recipients")
@@ -108,7 +111,7 @@ class RecipientTests(unittest.TestCase):
         self.addCleanup(dispatcher.close)
         job_id = str(uuid4())
         with app.database_connection() as conn:
-            conn.execute("INSERT INTO send_jobs (job_id,audience,image_path,image_url) VALUES (?,'subscribers','test.png','https://example.test/image.png')", (job_id,))
+            conn.execute("INSERT INTO send_jobs (channel_id,job_id,audience,image_path,image_url) VALUES (?,?,'subscribers','test.png','https://example.test/image.png')", (CHANNEL, job_id))
             conn.executemany("INSERT INTO send_deliveries (job_id,recipient_id,label,retry_key) VALUES (?,?,?,?)",
                              [(job_id, rid, rid, str(uuid4())) for rid in (USER, USER2)])
         def fake_send(token, rid, url, retry_key):
@@ -133,7 +136,7 @@ class RecipientTests(unittest.TestCase):
                 urlopen(Request(url, headers=headers), timeout=2)
             self.assertIn(raised.exception.code, (401, 403))
             raised.exception.close()
-        with urlopen(Request(url, headers={"Authorization": "Bearer " + server.token}), timeout=2) as response:
+        with urlopen(Request(url, headers={"Authorization": "Bearer " + server.token, "X-Line-Channel": CHANNEL}), timeout=2) as response:
             self.assertEqual(json.load(response)["contacts"], [])
 
 
@@ -143,7 +146,7 @@ class RecipientTests(unittest.TestCase):
         self.addCleanup(dispatcher.close)
         job_id = str(uuid4())
         with app.database_connection() as conn:
-            conn.execute("INSERT INTO send_jobs (job_id,audience,image_path,image_url) VALUES (?,'selected','test.png','https://example.test/image.png')", (job_id,))
+            conn.execute("INSERT INTO send_jobs (channel_id,job_id,audience,image_path,image_url) VALUES (?,?,'selected','test.png','https://example.test/image.png')", (CHANNEL, job_id))
             conn.executemany("INSERT INTO send_deliveries (job_id,recipient_id,label,retry_key) VALUES (?,?,?,?)",
                              [(job_id, rid, rid, str(uuid4())) for rid in (USER, USER2)])
         with patch.object(admin_server, "send_push", side_effect=[ValueError("送達狀態不明"), "request-id"]) as send:

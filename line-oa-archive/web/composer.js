@@ -2,7 +2,7 @@
 // Draft images stay private until the user confirms a delivery.
 const messageFormats={images:["單圖／多圖","依序傳送 1–5 張圖片"],card:["圖文卡片","圖片、標題、說明與連結按鈕"],carousel:["輪播卡片","橫向滑動，最多 12 張卡片"],imagemap:["圖文訊息","一張圖片，分區點擊不同連結"]};
 const mapLayouts={one:["全圖 1 區",1],two:["左右 2 區",2],four:["四宮格",4],six:["六宮格",6]};
-let messageDraft={format:"images",alt_text:"圖片訊息",company:"",items:[],layout:"one",areas:[{label:"區塊 1",url:""}]};
+let messageDraft={format:"images",alt_text:"圖片訊息",organization_id:"",items:[],layout:"one",areas:[{label:"區塊 1",url:""}]};
 const mapPreviewState={area:0,mode:"edit",tapped:null,cache:{}};
 const composerState={tab:"compose",templateCategory:"all"};
 
@@ -174,7 +174,7 @@ function composerEditor(){
         <div class="format-picker">${Object.entries(messageFormats).map(([key,[title,note]])=>`<button class="format-option ${d.format===key?'active':''}" data-action="message-format" data-id="${key}" aria-pressed="${d.format===key}"><strong>${title}</strong><small>${note}</small></button>`).join("")}</div>
         <div class="composer-grid section-space">
           <div class="composer-controls">
-            ${superAdmin()?`<label class="field">圖片所屬組織<select id="asset-company">${options(lineUI.registry?oaOrganizationOptions():[["","平台個人素材"],...organizationOptions().slice(1)],d.company)}</select><small>組織素材只能傳給同組織的發送對象。</small></label>`:''}
+            ${superAdmin()?`<label class="field">圖片所屬組織<select id="asset-company">${options(lineUI.registry?oaOrganizationOptions():[["","平台個人素材"],...organizationOptions().slice(1)],d.organization_id)}</select><small>組織素材只能傳給同組織的發送對象。</small></label>`:''}
             <label class="field section-space">${d.format==='images'?'訊息名稱（方便管理紀錄）':'通知摘要（顯示於 LINE 聊天列表）'}<input id="composition-alt" maxlength="400" value="${esc(d.alt_text)}"></label>
             <label class="upload-picker section-space">${icon('image')}<strong>點選並選擇圖片</strong><span>每張最多 8 MB，支援 JPG／PNG</span><input id="composition-files" type="file" accept="image/png,image/jpeg,.png,.jpg,.jpeg" ${['images','carousel'].includes(d.format)?'multiple':''}></label>
             <p class="subtitle">上傳後會調整尺寸與壓縮，保存本次選擇的副本。${d.format==='imagemap'?'圖文訊息高寬比須介於 1:2 至 2:1。':''}</p>
@@ -197,10 +197,10 @@ function composerEditor(){
 
 function refreshComposer(){if($("composition-fields"))$("composition-fields").innerHTML=composerFields();refreshComposerPreview();if($("choose-composition"))$("choose-composition").disabled=!messageDraft.items.length;}
 function refreshComposerPreview(){if($("composition-preview"))$("composition-preview").innerHTML=composerPreview(messageDraft,true);}
-async function uploadFile(file,company){
+async function uploadFile(file,organization_id){
   if(!file||file.size>8*1024*1024)throw new Error("請選擇 8 MB 以內的 JPG／PNG。");
   const data=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(',')[1]);reader.onerror=()=>reject(new Error('無法讀取選擇的檔案。'));reader.readAsDataURL(file);});
-  return api('/api/assets/upload',{name:file.name,data,company});
+  return api('/api/assets/upload',{name:file.name,data,organization_id});
 }
 function compositionPayload(draft){return {format:draft.format,alt_text:draft.alt_text,layout:draft.layout,areas:draft.areas.map(a=>({label:a.label,url:a.url})),items:draft.items.map(({asset_id,title,text,label,url})=>({asset_id,title,text,label,url}))};}
 function validateComposition(draft){
@@ -317,7 +317,7 @@ function composerAction(action,id){
   }
   if(action==='clear-composition'){
     if(!window.confirm('確定要清空目前的圖片與互動訊息內容嗎？'))return true;
-    messageDraft={format:"images",alt_text:"圖片訊息",company:"",items:[],layout:"one",areas:[{label:"區塊 1",url:""}]};
+    messageDraft={format:"images",alt_text:"圖片訊息",organization_id:"",items:[],layout:"one",areas:[{label:"區塊 1",url:""}]};
     render();
     notice('已清空編輯內容。');
     return true;
@@ -363,7 +363,7 @@ function composerAction(action,id){
     if(sessionStorage.getItem('linePendingJob'))throw new Error('請先確認上次提交結果。');
     validateComposition(messageDraft);
     const draft=structuredClone(messageDraft);
-    state.report={category:'composition',title:messageFormats[draft.format][0]+'：'+draft.alt_text,status:'ready',scope:'composition',company:superAdmin()?draft.company:state.session.user.company,composition:compositionPayload(draft),draft};
+    state.report={category:'composition',title:messageFormats[draft.format][0]+'：'+draft.alt_text,status:'ready',scope:'composition',organization_id:superAdmin()?draft.organization_id:state.session.user.organization_id,composition:compositionPayload(draft),draft};
     state.step=2;state.selected.clear();state.audience='selected';render();window.scrollTo({top:0});return true;
   }
   return false;
@@ -378,22 +378,22 @@ document.addEventListener('input',event=>{const el=event.target;
 document.addEventListener('change',async event=>{
   const el=event.target;
   try{
-    if(el.id==='asset-company'){messageDraft.company=el.value;messageDraft.items=[];refreshComposer();notice('已切換素材歸屬，請重新選擇圖片。');}
-    if(el.form?.id==='report-form'&&el.name==='company'){el.form.elements.asset_id.value='';el.form.querySelector('#report-upload-preview').innerHTML='';}
+    if(el.id==='asset-company'){messageDraft.organization_id=el.value;messageDraft.items=[];refreshComposer();notice('已切換素材歸屬，請重新選擇圖片。');}
+    if(el.form?.id==='report-form'&&el.name==='organization_id'){el.form.elements.asset_id.value='';el.form.querySelector('#report-upload-preview').innerHTML='';}
     if(!['composition-files','report-file'].includes(el.id))return;
     if(state.session.preview)throw new Error('視角預覽僅供檢視，請返回原帳號上傳。');
     const files=[...el.files];if(!files.length)return;
     const form=el.form;
-    if(form&&!form.elements.company.value&&!(lineUI.registry&&selectedWorkspace()?.kind==='personal'))throw new Error('請先選擇報告所屬組織，再選擇圖片。');
+    if(form&&!form.elements.organization_id.value)throw new Error('請先選擇報告所屬組織，再選擇圖片。');
     const limit={images:5,card:1,carousel:12,imagemap:1}[messageDraft.format];
     if(!form&&messageDraft.items.length+files.length>limit)throw new Error(`此格式最多 ${limit} 張；請先移除不需要的圖片。`);
     state.busy=true;el.disabled=true;
     const submit=form?.querySelector('[type="submit"]');if(submit)submit.disabled=true;
-    const companySelect=form?.elements.company||$('asset-company');if(companySelect)companySelect.disabled=true;
+    const companySelect=form?.elements.organization_id||$('asset-company');if(companySelect)companySelect.disabled=true;
     const status=form?$('report-upload-preview'):$('upload-status');status.textContent='正在上傳並處理圖片…';
     try{
       for(const file of files){
-        const asset=await uploadFile(file,form?form.elements.company.value:messageDraft.company);
+        const asset=await uploadFile(file,form?form.elements.organization_id.value:messageDraft.organization_id);
         if(form){form.elements.asset_id.value=asset.asset_id;form.elements.source_path.value='';status.innerHTML=`<img class="upload-thumbnail" src="${asset.preview}" alt="已選圖片"><p>${esc(asset.name)} · ${asset.width} × ${asset.height} · ${Math.ceil(asset.size/1024)} KB</p>`;}
         else{messageDraft.items.push({...asset,title:file.name.replace(/\.[^.]+$/,'').slice(0,80),text:'',label:'開啟連結',url:''});refreshComposer();status.textContent=`已選擇 ${messageDraft.items.length} 張圖片。`;notice('');}
       }

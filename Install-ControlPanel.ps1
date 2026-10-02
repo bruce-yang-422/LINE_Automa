@@ -25,4 +25,4 @@ $shortcut.IconLocation = "$(Join-Path $PSScriptRoot 'line-oa-archive\web\assets\
 $shortcut.WindowStyle = 7
 $shortcut.Save()
 Write-Output "已建立捷徑：$shortcutPath"
-Write-Output '首次使用請按「編輯 LINE 設定」填入 Channel secret，再按「啟動 LINE」。'
+Write-Output '請在 line-oa-archive\.env 填入 PUBLIC_BASE_URL（與需要時的 ADMIN_PUBLIC_HOST）；首次使用請按「啟動 LINE」，再按「開啟管理後台」完成首次設定與 LINE OA 連線。'

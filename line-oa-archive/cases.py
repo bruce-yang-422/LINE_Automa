@@ -425,7 +425,7 @@ def add_activity(conn: sqlite3.Connection, case_id: str, activity_type: str, act
 def get_case(conn: sqlite3.Connection, case_id: str) -> dict | None:
     conn.row_factory = sqlite3.Row
     row = conn.execute(
-        """SELECT c.*, r.display_name as subject_display_name, r.alias as subject_alias, r.kind as subject_kind,
+        """SELECT c.*, r.display_name as subject_display_name, r.custom_name as subject_custom_name, r.kind as subject_kind,
                   r.contact_type as subject_contact_type, r.organization_name as subject_org_name
         FROM cases c
         LEFT JOIN recipients r ON c.case_subject_id=r.recipient_id AND r.channel_id=c.channel_id
@@ -477,7 +477,7 @@ def list_cases(conn: sqlite3.Connection, status: str = None, subject_id: str = N
                category: str = None, start_date: str = None, end_date: str = None, limit: int = limits.CASE_EXPORT_MAX) -> list:
     conn.row_factory = sqlite3.Row
     sql = """
-        SELECT c.*, r.display_name as subject_display_name, r.alias as subject_alias, r.kind as subject_kind,
+        SELECT c.*, r.display_name as subject_display_name, r.custom_name as subject_custom_name, r.kind as subject_kind,
                r.contact_type as subject_contact_type, r.organization_name as subject_org_name,
                (SELECT COUNT(*) FROM case_activities ca WHERE ca.case_id=c.case_id) as activity_count,
                (SELECT MAX(ca.created_at) FROM case_activities ca WHERE ca.case_id=c.case_id) as last_activity_at
@@ -509,7 +509,7 @@ def list_cases(conn: sqlite3.Connection, status: str = None, subject_id: str = N
         q = f"%{query.strip()}%"
         sql += """ AND (
             c.case_no LIKE ? OR c.title LIKE ? OR c.description LIKE ? OR c.ref_no LIKE ?
-            OR r.alias LIKE ? OR r.display_name LIKE ?
+            OR r.custom_name LIKE ? OR r.display_name LIKE ?
             OR c.case_id IN (SELECT case_id FROM case_number_aliases WHERE old_case_no LIKE ?)
             OR c.case_id IN (SELECT case_id FROM case_activities WHERE content LIKE ?)
         )"""
@@ -613,7 +613,7 @@ def generate_cases_csv(cases_data: list, include_contacts: bool = False) -> str:
 
     for c in cases_data:
         old_no = ", ".join([a['old_case_no'] for a in c.get('aliases', [])])
-        subject_name = c.get('subject_alias') or c.get('subject_display_name') or c.get('case_subject_id', '')
+        subject_name = c.get('subject_custom_name') or c.get('subject_display_name') or c.get('case_subject_id', '')
         row = [
             escape_csv_formula(c.get('case_no', '')),
             escape_csv_formula(old_no),
@@ -796,7 +796,7 @@ def export_cases(conn: sqlite3.Connection, filters: dict, fmt: str, include_acti
         s1_rows = [s1_headers]
         for c in cases_data:
             old_no = ", ".join([a['old_case_no'] for a in c.get('aliases', [])])
-            subject_name = c.get('subject_alias') or c.get('subject_display_name') or c.get('case_subject_id', '')
+            subject_name = c.get('subject_custom_name') or c.get('subject_display_name') or c.get('case_subject_id', '')
             r = [
                 c.get('case_no', ''),
                 old_no,

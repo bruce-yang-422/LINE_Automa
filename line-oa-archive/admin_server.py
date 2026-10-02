@@ -32,7 +32,7 @@ import template_packs
 
 
 def contact_label(row):
-    return row["alias"] or row["display_name"] or (("個人" if row["kind"] == "user" else "群組") + " · " + row["recipient_id"][-8:])
+    return row["custom_name"] or row["display_name"] or (("個人" if row["kind"] == "user" else "群組") + " · " + row["recipient_id"][-8:])
 
 
 def select_contacts(conn, audience, ids):
@@ -56,8 +56,8 @@ def select_contacts(conn, audience, ids):
 def job_status(job_id=None, user=None):
     with app.database_connection() as conn:
         conn.row_factory = sqlite3.Row
-        scope_sql = " AND company=? AND company<>''" if user and user['role'] != 'administrator' and not channels.personal_owner(user) else ''
-        scope_args = (user['company'],) if scope_sql else ()
+        scope_sql = " AND organization_id=? AND organization_id<>''" if user and user['role'] != 'platform_admin' else ''
+        scope_args = (user['organization_id'],) if scope_sql else ()
         if job_id:
             jobs = conn.execute('SELECT * FROM send_jobs WHERE send_jobs.channel_id=current_channel() AND job_id=?' + scope_sql, (job_id,) + scope_args).fetchall()
         else:
@@ -66,17 +66,17 @@ def job_status(job_id=None, user=None):
         result = []
         for row in jobs:
             item = dict(row)
-            if user and user['role']=='sender' and item['actor']!=user['email']:
+            if user and user['role']=='operator' and item['actor']!=user['email']:
                 continue
-            if user and not reports.same_company(user, item['company']):
+            if user and not reports.same_organization(user, item['organization_id']):
                 continue
             item["deliveries"] = [dict(r) for r in conn.execute(
                 "SELECT recipient_id,label,status,request_id,error FROM send_deliveries WHERE job_id=?", (row["job_id"],))]
-            if user and user['role']=='sender':
+            if user and user['role']=='operator':
                 permitted = {r['recipient_id'] for r in recipients.list_contacts(conn) if reports.allowed_contact(user,r)}
                 if any(r['recipient_id'] not in permitted for r in item['deliveries']):
                     continue
-            if user and user['role'] != 'administrator':
+            if user and user['role'] != 'platform_admin':
                 item.pop('image_path', None)
             result.append(item)
         return result
@@ -128,14 +128,14 @@ class Dispatcher:
         job_id = str(UUID(str(job_id)))
         user = reports.actor_user(actor, organization)
         with self.lock, app.database_connection() as conn:
-            job = conn.execute('SELECT company,actor FROM send_jobs WHERE send_jobs.channel_id=current_channel() AND job_id=?', (job_id,)).fetchone()
-            if not job or not reports.same_company(user, job[0]) or (user['role']=='sender' and job[1]!=actor):
+            job = conn.execute('SELECT organization_id,actor FROM send_jobs WHERE send_jobs.channel_id=current_channel() AND job_id=?', (job_id,)).fetchone()
+            if not job or not reports.same_organization(user, job[0]) or (user['role']=='operator' and job[1]!=actor):
                 raise ValueError('找不到可操作的預約。')
             changed = conn.execute("UPDATE send_jobs SET status='cancelled' WHERE send_jobs.channel_id=current_channel() AND job_id=? AND status='scheduled'", (job_id,)).rowcount
             if not changed:
                 raise ValueError("此預約已開始處理或已取消，請重新整理紀錄。")
             conn.execute("UPDATE send_deliveries SET status='cancelled' WHERE job_id=? AND status='pending'", (job_id,))
-            reports.audit(conn, actor, "send.cancel", job_id, "取消預約", user['company'])
+            reports.audit(conn, actor, "send.cancel", job_id, "取消預約", user['organization_id'])
 
     def submit(self, payload, actor="本機管理員", organization=None):
         job_id = str(UUID(str(payload.get("job_id", ""))))
@@ -182,8 +182,8 @@ class Dispatcher:
             if not channels.access_token():
                 raise ValueError("請先設定 LINE OA 憑證。")
             audience = payload.get("audience")
-            if user['role'] != 'administrator' and (audience != 'selected' or payload.get('image_path')):
-                raise ValueError('組織管理員請選擇已授權報告或文字訊息，以及本組織的對象。')
+            if user['role'] != 'platform_admin' and (audience != 'selected' or payload.get('image_path')):
+                raise ValueError('管理員請選擇已授權報告或文字訊息，以及本組織的對象。')
             with app.database_connection() as conn:
                 selected = select_contacts(conn, audience, payload.get("ids"))
             if any(not reports.allowed_contact(user, row) for row in selected):
@@ -212,20 +212,20 @@ class Dispatcher:
             elif message_text:
                 source, url, report_title = "", "", "文字訊息：" + message_text.strip()[:32]
             else:
-                url, content = publish_image(source, os.environ.get("PUBLIC_BASE_URL", "https://reports.stack-base.com"))
+                url, content = publish_image(source, app.public_base_url())
                 if report_id and hashlib.sha256(content).hexdigest() != payload["report_version"]:
                     raise ValueError("報告在準備時已變更，請重新預覽；尚未發送。")
                 verify_public_image(url, content)
-            companies = {row['company'] for row in selected}
-            company = user['company'] if user['role'] != 'administrator' else (report['company'] if report_id else (next(iter(companies)) if message_text and len(companies) == 1 else ''))
-            if prepared and user['role'] == 'administrator':
-                company = next((item['asset']['company'] for item in prepared['items'] if item['asset']['company']), '')
+            organization_ids = {row['organization_id'] for row in selected}
+            organization_id = user['organization_id'] if user['role'] != 'platform_admin' else (report['organization_id'] if report_id else (next(iter(organization_ids)) if message_text and len(organization_ids) == 1 else ''))
+            if prepared and user['role'] == 'platform_admin':
+                organization_id = next((item['asset']['organization_id'] for item in prepared['items'] if item['asset']['organization_id']), '')
             with app.database_connection() as conn:
-                conn.execute('INSERT INTO send_jobs (channel_id,job_id,audience,image_path,image_url,actor,report_title,report_id,scheduled_at,message_text,status,company,messages_json) VALUES (current_channel(),?,?,?,?,?,?,?,?,?,?,?,?)',
-                             (job_id, audience, str(source), url, actor, report_title, report_id, scheduled_at, message_text, 'scheduled' if scheduled_at else 'queued', company, json.dumps(messages, ensure_ascii=False)))
+                conn.execute('INSERT INTO send_jobs (channel_id,job_id,audience,image_path,image_url,actor,report_title,report_id,scheduled_at,message_text,status,organization_id,messages_json) VALUES (current_channel(),?,?,?,?,?,?,?,?,?,?,?,?)',
+                             (job_id, audience, str(source), url, actor, report_title, report_id, scheduled_at, message_text, 'scheduled' if scheduled_at else 'queued', organization_id, json.dumps(messages, ensure_ascii=False)))
                 conn.executemany("INSERT INTO send_deliveries (job_id,recipient_id,label,retry_key) VALUES (?,?,?,?)",
                                  [(job_id, r["recipient_id"], contact_label(r), str(uuid4())) for r in selected])
-                reports.audit(conn, actor, "send.create", job_id, f"{report_title} · {len(selected)} 個聊天室", company)
+                reports.audit(conn, actor, "send.create", job_id, f"{report_title} · {len(selected)} 個聊天室", organization_id)
             if not scheduled_at:
                 self.pool.submit(self.run, job_id)
             return job_status(job_id)[0]
@@ -261,13 +261,13 @@ class Dispatcher:
                     current = conn.execute('SELECT active,weather_subscribed FROM recipients WHERE recipients.channel_id=current_channel() AND recipient_id=?', (recipient_id,)).fetchone()
                     skip = (self.closing.is_set() or not current or not current[0] or
                             (job["audience"] == "subscribers" and not current[1]))
-                    if job['company']:
-                        org=next((o for o in reports.organizations() if o['org_id']==job['company']),None)
+                    if job['organization_id']:
+                        org=next((o for o in reports.organizations() if o['org_id']==job['organization_id']),None)
                         if not org or not org['active'] or not org['messaging_enabled'] or (job['report_id'] and job['report_id']!='weather' and not org['reports_enabled']):
                             skip=True
                         if job['messages_json'] != '[]':
-                            contact = conn.execute('SELECT company FROM recipients WHERE recipients.channel_id=current_channel() AND recipient_id=?', (recipient_id,)).fetchone()
-                            if not contact or contact[0] != job['company']:
+                            contact = conn.execute('SELECT organization_id FROM recipients WHERE recipients.channel_id=current_channel() AND recipient_id=?', (recipient_id,)).fetchone()
+                            if not contact or contact[0] != job['organization_id']:
                                 skip = True
                     if job["report_id"]:
                         source = reports.find(job["report_id"])
@@ -278,12 +278,12 @@ class Dispatcher:
                         except ValueError:
                             skip = True
                     if job["actor"] and job["actor"] != "本機管理員":
-                        actor = reports.actor_user(job["actor"],job['company'])
+                        actor = reports.actor_user(job["actor"],job['organization_id'])
                         if not reports.can_send(actor) or not reports.module_enabled(actor,'messaging'):
                             skip = True
-                        elif actor['role'] != 'administrator':
+                        elif actor['role'] != 'platform_admin':
                             contact = conn.execute('SELECT * FROM recipients WHERE recipients.channel_id=current_channel() AND recipient_id=?', (recipient_id,)).fetchone()
-                            if (not reports.same_company(actor, job['company']) or not contact or not reports.allowed_contact(actor, dict(contact))
+                            if (not reports.same_organization(actor, job['organization_id']) or not contact or not reports.allowed_contact(actor, dict(contact))
                                     or (job['report_id'] and (not source or not reports.can_view(source, actor)))):
                                 skip = True
                     conn.execute("UPDATE send_deliveries SET status=? WHERE job_id=? AND recipient_id=?",
@@ -347,7 +347,7 @@ class AdminHandler(BaseHTTPRequestHandler):
     def authorized(self, require_token=True):
         self.auth_method = 'local'
         self.identity = "本機管理員"
-        self.user = {"email": self.identity, "display_name": "本機管理員", "role": "administrator", "company": "", "department": ""}
+        self.user = {"email": self.identity, "display_name": "本機管理員", "role": "platform_admin", "organization_id": "", "department": ""}
         for name in ("Host", "Origin", "Authorization", "Cookie", "X-CSRF-Token", "X-Forwarded-Proto", "X-Workspace-View-As", "X-Workspace-Organization", "X-Workspace-Preview-Organization"):
             if len(self.headers.get_all(name, [])) > 1:
                 self.respond(403, {"error": "不接受重複的驗證標頭。"})
@@ -370,7 +370,7 @@ class AdminHandler(BaseHTTPRequestHandler):
         self.preview = False
         self.preview_edit = False
         org=self.headers.get('X-Workspace-Organization')
-        if org and self.user['role']!='administrator':
+        if org and self.user['role']!='platform_admin':
             # Header values are ASCII; legacy organization keys may contain Chinese.
             from urllib.parse import unquote
             self.user=reports.login_account(self.identity,unquote(org))
@@ -384,14 +384,14 @@ class AdminHandler(BaseHTTPRequestHandler):
             self.respond(403, {"error": "只有管理員可以切換成員視角。"})
             return False
         from urllib.parse import unquote
-        preview_org=unquote(self.headers.get('X-Workspace-Preview-Organization','')) or (self.user['company'] if self.user['role']!='administrator' else None)
+        preview_org=unquote(self.headers.get('X-Workspace-Preview-Organization','')) or (self.user['organization_id'] if self.user['role']!='platform_admin' else None)
         user = reports.account(target,preview_org)
-        if not user or (target,user['company']) not in {(row['email'],row['company']) for row in reports.view_options(self.user)}:
+        if not user or (target,user['organization_id']) not in {(row['email'],row['organization_id']) for row in reports.view_options(self.user)}:
             self.respond(403, {"error": "此成員帳號已停用或角色已變更，請返回管理員視角。"})
             return False
         
         # 乙級管理員視角切換編輯狀態判斷（甲級只能檢視）
-        if self.user['role'] == 'company_admin' and self.headers.get('X-Workspace-Preview-Edit') in ('1', 'true'):
+        if self.user['role'] == 'org_admin' and self.headers.get('X-Workspace-Preview-Edit') in ('1', 'true'):
             self.preview_edit = True
 
         self.identity, self.user, self.preview = user["email"], user, True
@@ -414,19 +414,40 @@ class AdminHandler(BaseHTTPRequestHandler):
         try:
             if channel_id:
                 row = channels.authorize(channel_id, self.user)
-                if row['org_id'] and self.user['role'] != 'administrator':
+                if self.user['role'] != 'platform_admin':
                     self.user = reports.account(self.identity, row['org_id'])
                     if not self.user:
                         raise ValueError('組織成員資格已失效。')
-                elif not row['org_id'] and self.user['role'] != 'administrator':
-                    self.user = {**self.user, 'company': ''}
                 channels._current.set(channel_id)
-            elif channels.configured() and self.path not in globals_:
+            elif self.path not in globals_:
                 raise ValueError('請先選擇工作區與 LINE OA。')
         except ValueError as exc:
             self.respond(403, {'error': str(exc)})
             return False
         return True
+
+    def first_admin_setup(self):
+        """權限規格第 9 節：尚無啟用中的平台管理員時，只能從本機控制台建立第一位平台管理員。"""
+        if getattr(self, 'auth_method', '') != 'local' or self.preview:
+            self.respond(403, {'error': '首次設定只能從本機控制台開啟的管理後台進行。'})
+            return
+        if reports.has_platform_admin():
+            self.respond(403, {'error': '系統已完成首次設定；新增平台管理員請使用 create_admin.py。'})
+            return
+        try:
+            size = int(self.headers.get("Content-Length", "0"))
+            if not 0 < size <= 8192 or self.headers.get_content_type() != "application/json":
+                raise ValueError("請求格式不正確。")
+            payload = json.loads(self.rfile.read(size))
+            if not isinstance(payload, dict):
+                raise ValueError("請求格式不正確。")
+            email = reports.create_platform_admin(payload.get('email'), payload.get('display_name', ''), '本機管理員（首次設定）')
+            raw = site_auth.issue_activation(email, '本機管理員（首次設定）')
+        except (ValueError, TypeError) as error:
+            self.respond(400, {"error": str(error) if isinstance(error, ValueError) and not isinstance(error, json.JSONDecodeError) else "請求格式不正確。"})
+            return
+        public = f"https://{self.server.public_host}/login#setup={raw}" if self.server.public_host else ''
+        self.respond(200, {'email': email, 'url': public, 'local_url': f"http://127.0.0.1:{self.server.server_port}/login#setup={raw}", 'expires_in': 1800})
 
     def admin_only(self):
         if not reports.manager(self.user):
@@ -438,7 +459,7 @@ class AdminHandler(BaseHTTPRequestHandler):
         with app.database_connection() as conn:
             rows = recipients.list_contacts(conn)
         result = [row for row in rows if reports.allowed_contact(self.user, row)]
-        if self.user['role'] != 'administrator':
+        if self.user['role'] != 'platform_admin':
             result = [{key: value for key, value in row.items() if key not in {'weather_subscribed', 'subscription_at'}} for row in result]
         return result
 
@@ -489,7 +510,7 @@ class AdminHandler(BaseHTTPRequestHandler):
             "/api/chat/response-hours", "/api/chat/media/stats", "/api/chat/export"
         }
         if self.path not in files and self.path not in read_routes and not re.fullmatch(r"/api/reports/(weather|[0-9a-f]{32})", self.path) and not re.fullmatch(r"/api/cases/[0-9a-f]{32}", self.path):
-            if self.user['role'] in {'sender', 'assistant'} and self.path in {'/api/view-options','/api/settings'}:
+            if self.user['role'] in {'operator', 'collaborator'} and self.path in {'/api/view-options','/api/settings'}:
                 self.respond(403, {'error':'此功能僅供管理員使用。'})
                 return
             if not reports.operator(self.user):
@@ -497,9 +518,11 @@ class AdminHandler(BaseHTTPRequestHandler):
                 return
 
         # 甲級平台管理員查閱客戶營運內容時寫入操作紀錄
-        if self.user['role'] == 'administrator' and self.path in {'/api/chat-notes', '/api/cases', '/api/chat/messages', '/api/contacts'}:
+        if self.user['role'] == 'platform_admin' and self.path in {'/api/chat-notes', '/api/cases', '/api/chat/messages', '/api/contacts'}:
             with app.database_connection() as conn:
-                reports.audit(conn, self.identity, "vendor.view", channels.current_id() or "all", f"平台管理員檢視客戶營運內容（{self.path}）")
+                # 記在該 OA 所屬組織，讓組織管理員在操作紀錄看得到（權限規格 6.2）。
+                reports.audit(conn, self.identity, "vendor.view", channels.current_id() or "all", f"平台管理員檢視客戶營運內容（{self.path}）",
+                              channels.current_organization_id() or '')
 
         if self.path in files:
             path, mime = files[self.path]
@@ -514,14 +537,15 @@ class AdminHandler(BaseHTTPRequestHandler):
         elif self.path == "/api/session":
             self.respond(200, {"identity": self.identity, "user": self.user, "role": self.user["role"],
                                "principal": self.principal, "preview": self.preview, "auth": site_auth.status(self),
-                               "memberships": [m for m in reports.memberships(self.identity) if m['active'] and m['org_active'] and m['role'] in {'company_admin','sender','assistant'}] if not self.preview and self.server.workspace_ready else [],
+                               "memberships": [m for m in reports.memberships(self.identity) if m['active'] and m['org_active'] and m['role'] in {'org_admin','operator','collaborator'}] if not self.preview and self.server.workspace_ready else [],
                                "modules": {m:reports.module_enabled(self.user,m) for m in ('reports','messaging','weather')},
+                               "needs_setup": getattr(self, 'auth_method', '') == 'local' and not reports.has_platform_admin(),
                                "limits": limits.as_dict()})
         elif self.path == '/api/organizations':
-            self.respond(200,{'organizations':[o for o in reports.organizations() if self.user['role']=='administrator' or reports.same_company(self.user,o['org_id'])],
-                              'memberships':reports.memberships() if self.user['role']=='administrator' else []})
+            self.respond(200,{'organizations':[o for o in reports.organizations() if self.user['role']=='platform_admin' or reports.same_organization(self.user,o['org_id'])],
+                              'memberships':reports.memberships() if self.user['role']=='platform_admin' else []})
         elif self.path == "/api/view-options":
-            self.respond(200, {"users": [{key: row[key] for key in ("email", "display_name", "company", "department", "role", "organization_name")}
+            self.respond(200, {"users": [{key: row[key] for key in ("email", "display_name", "organization_id", "department", "role", "organization_name")}
                                            for row in reports.view_options(self.user)]})
         elif self.path == "/api/reports":
             self.respond(200, {"reports": [reports.describe(row) for row in reports.sources() if reports.can_view(row, self.user)]})
@@ -534,14 +558,14 @@ class AdminHandler(BaseHTTPRequestHandler):
             self.respond(200, {"events": reports.activity(self.user)})
         elif self.path == "/api/settings":
             self.respond(200, {"remote_enabled": bool(self.server.public_host),
-                               "weather_report_removed": reports.weather_removed() if self.user['role']=='administrator' else False,
+                               "weather_report_removed": reports.weather_removed() if self.user['role']=='platform_admin' else False,
                                "admin_host": self.server.public_host,
                                "users": reports.scoped_users(self.user),
-                               "report_sources": reports.sources() if self.user['role'] == 'administrator' else [],
-                               "line_configured": bool(channels.get()) if channels.configured() else bool(os.environ.get("LINE_CHANNEL_ACCESS_TOKEN")),
+                               "report_sources": reports.sources() if self.user['role'] == 'platform_admin' else [],
+                               "line_configured": bool(channels.get()),
                                "public_base": os.environ.get("PUBLIC_BASE_URL", ""),
-                               "dispatch_scopes": reports.dispatch_scopes() if self.user['role']=='administrator' else [],
-                               "sender_grants": [{"email":m['email'],"company":m['org_id'],**reports.grant({'email':m['email'],'company':m['org_id']})} for m in reports.memberships() if m['role']=='sender'] if self.user['role']=='administrator' else [],
+                               "dispatch_scopes": reports.dispatch_scopes() if self.user['role']=='platform_admin' else [],
+                               "sender_grants": [{"email":m['email'],"organization_id":m['org_id'],**reports.grant({'email':m['email'],'organization_id':m['org_id']})} for m in reports.memberships() if m['role']=='operator'] if self.user['role']=='platform_admin' else [],
                                "role": self.user['role']})
         elif self.path == "/api/contacts":
             self.respond(200, {"contacts": self.scoped_contacts(), "tags": self.scoped_tags()})
@@ -563,8 +587,8 @@ class AdminHandler(BaseHTTPRequestHandler):
             with app.database_connection() as conn:
                 self.respond(200, {"prefix": cases.get_or_init_prefix(conn)})
         elif self.path == "/api/cases/export":
-            if self.user['role'] != 'company_admin':
-                self.respond(403, {'error': '只有組織管理員可以匯出案件。'})
+            if self.user['role'] != 'org_admin':
+                self.respond(403, {'error': '只有管理員可以匯出案件。'})
                 return
             with app.database_connection() as conn:
                 content, mime, filename = cases.export_cases(
@@ -584,7 +608,7 @@ class AdminHandler(BaseHTTPRequestHandler):
                 self.respond(200 if c else 404, {"case": c} if c else {"error": "找不到此案件。"})
         elif self.path == "/api/template-packs":
             with app.database_connection() as conn:
-                self.respond(200, {"packs": template_packs.list_all_packs(conn, self.user.get('company'), channels.current_id())})
+                self.respond(200, {"packs": template_packs.list_all_packs(conn, self.user.get('organization_id'), channels.current_id())})
         elif self.path == "/api/template-packs/templates":
             with app.database_connection() as conn:
                 self.respond(200, template_packs.get_oa_enabled_templates(conn, channels.current_id(), query.get('contact_name', '')))
@@ -601,15 +625,15 @@ class AdminHandler(BaseHTTPRequestHandler):
         elif self.path == "/api/oa-list":
             self.respond(200, {"channels": channels.oa_list(self.user)})
         elif self.path == "/api/personnel":
-            # 人員與權限只給乙級（組織管理員）；甲級在「組織」頁管理組織管理員帳號。
-            org_id = self.user.get('company')
-            if self.user['role'] != 'company_admin' or not org_id:
-                self.respond(403, {'error': '人員與權限僅供組織管理員使用。'})
+            # 人員與權限只給乙級（管理員）；甲級在「組織」頁管理管理員帳號。
+            org_id = self.user.get('organization_id')
+            if self.user['role'] != 'org_admin' or not org_id:
+                self.respond(403, {'error': '人員與權限僅供管理員使用。'})
                 return
             with app.database_connection() as conn:
                 conn.row_factory = sqlite3.Row
                 members = conn.execute("""
-                    SELECT m.email, m.role, m.department, m.active, u.display_name, u.recipient_id
+                    SELECT m.email, m.role, m.department, m.active, u.display_name
                     FROM organization_members m
                     JOIN workspace_users u ON u.email = m.email
                     WHERE m.org_id=?
@@ -625,15 +649,15 @@ class AdminHandler(BaseHTTPRequestHandler):
                 self.respond(200, {
                     "members": member_list,
                     "channels": [dict(c) for c in org_channels],
-                    "dispatch_scopes": [dict(s) for s in conn.execute("SELECT * FROM dispatch_scopes WHERE company=? AND active=1", (org_id,)).fetchall()]
+                    "dispatch_scopes": [dict(s) for s in conn.execute("SELECT * FROM dispatch_scopes WHERE organization_id=? AND active=1", (org_id,)).fetchall()]
                 })
         elif self.path == "/api/chat/messages":
             cid = query.get('recipient_id') or query.get('chat_id') or ''
-            if self.user['role'] == 'administrator' and channels.current_id():
+            if self.user['role'] == 'platform_admin' and channels.current_id():
                 with app.database_connection() as conn:
                     tz_taipei = timezone(timedelta(hours=8))
                     t_str = datetime.now(tz_taipei).strftime('%Y-%m-%d %H:%M')
-                    org_id = channels.organization_id() or ''
+                    org_id = channels.current_organization_id() or ''
                     last = conn.execute("SELECT created_at FROM audit_events WHERE actor=? AND action='vendor.view' AND channel_id=? ORDER BY event_id DESC LIMIT 1", (self.identity, channels.current_id())).fetchone()
                     should_log = True
                     if last:
@@ -665,7 +689,7 @@ class AdminHandler(BaseHTTPRequestHandler):
                 res = chat.get_media_storage_stats(conn)
             self.respond(200, res)
         elif self.path == "/api/chat/export":
-            if self.user['role'] == 'administrator':
+            if self.user['role'] == 'platform_admin':
                 self.respond(403, {'error': '平台管理員無法匯出客戶營運資料。'})
                 return
             cid = query.get('recipient_id') or query.get('chat_id') or ''
@@ -702,6 +726,9 @@ class AdminHandler(BaseHTTPRequestHandler):
             return
         if not self.authorized():
             return
+        if self.path == '/api/setup/first-admin':
+            self.first_admin_setup()
+            return
         if not self.select_line_channel():
             return
         if not reports.operator(self.user):
@@ -712,7 +739,7 @@ class AdminHandler(BaseHTTPRequestHandler):
             self.respond(403, {'error': '視角預覽僅供檢視，請先切換為編輯狀態或返回原帳號操作。'})
             return
 
-        allowed_assistant_posts = {
+        allowed_collaborator_posts = {
             '/api/contacts/bulk', '/api/contact', '/api/tags/save', '/api/tags/delete',
             '/api/chat-notes', '/api/chat-notes/save', '/api/chat-notes/delete',
             '/api/chat-notes/pin', '/api/chat-notes/lock', '/api/chat-notes/restore', '/api/chat-notes/convert-to-case',
@@ -726,27 +753,27 @@ class AdminHandler(BaseHTTPRequestHandler):
             '/api/categories/save', '/api/categories/delete', '/api/categories/reorder',
             '/api/chat/mark-read', '/api/chat/status', '/api/chat/media/cleanup'
         }
-        allowed_sender_posts = allowed_assistant_posts | {
+        allowed_operator_posts = allowed_collaborator_posts | {
             '/api/send', '/api/jobs/cancel', '/api/assets/upload', '/api/channels/save',
             '/api/channels/verify', '/api/channels/active', '/api/chat/send',
             '/api/chat/canned-replies/save', '/api/chat/canned-replies/delete', '/api/chat/response-hours/save'
         }
 
-        if self.user['role'] == 'assistant' and (self.path not in allowed_assistant_posts and not re.fullmatch(r'/api/cases/[0-9a-f]{32}(/lock)?', self.path)):
-            self.respond(403, {'error': '協助人員無法傳送訊息或變更系統發送設定。'})
+        if self.user['role'] == 'collaborator' and (self.path not in allowed_collaborator_posts and not re.fullmatch(r'/api/cases/[0-9a-f]{32}(/lock)?', self.path)):
+            self.respond(403, {'error': '協作人員無法傳送訊息或變更系統發送設定。'})
             return
 
-        if self.user['role'] == 'sender' and (self.path not in allowed_sender_posts and not re.fullmatch(r'/api/cases/[0-9a-f]{32}(/(lock|notify))?', self.path)):
-            self.respond(403, {'error': '營運人員不能修改聯絡對象分類、來源或帳號授權。'})
+        if self.user['role'] == 'operator' and (self.path not in allowed_operator_posts and not re.fullmatch(r'/api/cases/[0-9a-f]{32}(/(lock|notify))?', self.path)):
+            self.respond(403, {'error': '操作人員不能修改聯絡對象分類、來源或帳號授權。'})
             return
 
         admin_only_posts = {'/api/reports/save', '/api/reports/remove', '/api/reports/restore-weather', '/api/organizations/save'}
-        if self.path in admin_only_posts and self.user['role'] != 'administrator':
+        if self.path in admin_only_posts and self.user['role'] != 'platform_admin':
             self.respond(403, {'error': '模組歸屬及來源設定由平台管理員管理。'})
             return
 
         org_admin_only_posts = {'/api/memberships/save', '/api/accounts/save', '/api/dispatch-scopes/save', '/api/sender-grants/save'}
-        if self.path in org_admin_only_posts and self.user['role'] not in {'administrator', 'company_admin'}:
+        if self.path in org_admin_only_posts and self.user['role'] not in {'platform_admin', 'org_admin'}:
             self.respond(403, {'error': '管理員才能變更成員與授權設定。'})
             return
 
@@ -764,7 +791,7 @@ class AdminHandler(BaseHTTPRequestHandler):
             '/api/categories/apply', '/api/categories/save', '/api/categories/delete', '/api/categories/reorder',
             '/api/chat/canned-replies/save', '/api/chat/canned-replies/delete', '/api/chat/response-hours/save', '/api/chat/status'
         }
-        if self.user['role'] == 'administrator' and (self.path in customer_write_paths or re.fullmatch(r'/api/cases/[0-9a-f]{32}(/(lock|notify))?', self.path)):
+        if self.user['role'] == 'platform_admin' and (self.path in customer_write_paths or re.fullmatch(r'/api/cases/[0-9a-f]{32}(/(lock|notify))?', self.path)):
             self.respond(403, {'error': '平台管理員對客戶營運內容只有閱讀權，無法修改或傳送。'})
             return
 
@@ -796,12 +823,12 @@ class AdminHandler(BaseHTTPRequestHandler):
             elif self.path == '/api/tags/save':
                 with app.database_connection() as conn:
                     tid = recipients.save_tag(conn, payload.get('name'), payload.get('color'), payload.get('id'))
-                    reports.audit(conn, actor_label, "tag.save", tid, f"儲存標籤「{payload.get('name')}」", self.user.get('company', ''))
+                    reports.audit(conn, actor_label, "tag.save", tid, f"儲存標籤「{payload.get('name')}」", self.user.get('organization_id', ''))
                 self.respond(200, {'ok': True, 'tag_id': tid, 'tag': {'id': tid, 'name': payload.get('name'), 'color': payload.get('color')}})
             elif self.path == '/api/tags/delete':
                 with app.database_connection() as conn:
                     recipients.delete_tag(conn, payload.get('id'))
-                    reports.audit(conn, actor_label, "tag.delete", str(payload.get('id')), "刪除標籤", self.user.get('company', ''))
+                    reports.audit(conn, actor_label, "tag.delete", str(payload.get('id')), "刪除標籤", self.user.get('organization_id', ''))
                 self.respond(200, {'ok': True})
             elif self.path == '/api/contacts/bulk':
                 action = payload.get('action')
@@ -811,14 +838,14 @@ class AdminHandler(BaseHTTPRequestHandler):
                     if action in {'add_tags', 'remove_tags'}:
                         tag_ids = payload.get('tag_ids', [])
                         res = recipients.bulk_update_tags(conn, ids, tag_ids, 'add' if action == 'add_tags' else 'remove')
-                        reports.audit(conn, actor_label, "contacts.bulk_tag", f"{len(ids)} contacts", "批次更新標籤", self.user.get('company', ''))
+                        reports.audit(conn, actor_label, "contacts.bulk_tag", f"{len(ids)} contacts", "批次更新標籤", self.user.get('organization_id', ''))
                         res_data.update(res)
                     elif action == 'set_subscription':
-                        if self.user['role'] != 'administrator':
+                        if self.user['role'] != 'platform_admin':
                             raise ValueError('天氣訂閱由平台管理員設定。')
                         sub = bool(payload.get('subscribed'))
                         recipients.bulk_update_subscription(conn, ids, sub)
-                        reports.audit(conn, actor_label, "contacts.bulk_sub", f"{len(ids)} contacts", "批次更新訂閱", self.user.get('company', ''))
+                        reports.audit(conn, actor_label, "contacts.bulk_sub", f"{len(ids)} contacts", "批次更新訂閱", self.user.get('organization_id', ''))
                     else:
                         raise ValueError('不支援的操作。')
                 self.respond(200, res_data)
@@ -827,16 +854,16 @@ class AdminHandler(BaseHTTPRequestHandler):
                 with app.database_connection() as conn:
                     if action == 'delete':
                         chat_notes.delete_chat_note(conn, payload.get('note_id') or payload.get('id'))
-                        reports.audit(conn, actor_label, "chat_note.delete", payload.get('note_id') or payload.get('id', ''), "刪除對話記事", self.user.get('company', ''))
+                        reports.audit(conn, actor_label, "chat_note.delete", payload.get('note_id') or payload.get('id', ''), "刪除對話記事", self.user.get('organization_id', ''))
                         self.respond(200, {'ok': True})
                     else:
                         res = chat_notes.save_chat_note(conn, payload, actor_label)
-                        reports.audit(conn, actor_label, "chat_note.save", res.get('recipient_id', ''), "儲存對話記事", self.user.get('company', ''))
+                        reports.audit(conn, actor_label, "chat_note.save", res.get('recipient_id', ''), "儲存對話記事", self.user.get('organization_id', ''))
                         self.respond(200, {'ok': True, 'note': res})
             elif self.path == '/api/chat-notes/delete':
                 with app.database_connection() as conn:
                     chat_notes.delete_chat_note(conn, payload.get('note_id') or payload.get('id'))
-                    reports.audit(conn, actor_label, "chat_note.delete", payload.get('id', ''), "刪除對話記事", self.user.get('company', ''))
+                    reports.audit(conn, actor_label, "chat_note.delete", payload.get('id', ''), "刪除對話記事", self.user.get('organization_id', ''))
                 self.respond(200, {'ok': True})
             elif self.path == '/api/chat-notes/pin':
                 with app.database_connection() as conn:
@@ -853,7 +880,7 @@ class AdminHandler(BaseHTTPRequestHandler):
             elif self.path == '/api/chat-notes/convert-to-case':
                 with app.database_connection() as conn:
                     new_case = chat_notes.convert_note_to_case(conn, payload.get('note_id') or payload.get('id'), actor_label)
-                    reports.audit(conn, actor_label, "chat_note.convert_to_case", new_case.get('case_id', ''), f"記事轉為案件 {new_case.get('case_no')}", self.user.get('company', ''))
+                    reports.audit(conn, actor_label, "chat_note.convert_to_case", new_case.get('case_id', ''), f"記事轉為案件 {new_case.get('case_no')}", self.user.get('organization_id', ''))
                     self.respond(200, {'ok': True, 'case': new_case})
             elif self.path == '/api/chat-notes/complete':
                 with app.database_connection() as conn:
@@ -872,29 +899,29 @@ class AdminHandler(BaseHTTPRequestHandler):
                 with app.database_connection() as conn:
                     if action == 'delete':
                         chat_notes.delete_saved_filter(conn, payload.get('filter_id') or payload.get('id'))
-                        reports.audit(conn, actor_label, "saved_filter.delete", payload.get('filter_id') or payload.get('id', ''), "刪除自訂篩選條件", self.user.get('company', ''))
+                        reports.audit(conn, actor_label, "saved_filter.delete", payload.get('filter_id') or payload.get('id', ''), "刪除自訂篩選條件", self.user.get('organization_id', ''))
                         self.respond(200, {'ok': True})
                     else:
                         res = chat_notes.save_saved_filter(conn, payload)
-                        reports.audit(conn, actor_label, "saved_filter.save", res.get('name', ''), "儲存自訂篩選條件", self.user.get('company', ''))
+                        reports.audit(conn, actor_label, "saved_filter.save", res.get('name', ''), "儲存自訂篩選條件", self.user.get('organization_id', ''))
                         self.respond(200, {'ok': True, 'filter': res})
             elif self.path == '/api/saved-filters/delete':
                 with app.database_connection() as conn:
                     chat_notes.delete_saved_filter(conn, payload.get('filter_id') or payload.get('id'))
-                    reports.audit(conn, actor_label, "saved_filter.delete", payload.get('id', ''), "刪除自訂篩選條件", self.user.get('company', ''))
+                    reports.audit(conn, actor_label, "saved_filter.delete", payload.get('id', ''), "刪除自訂篩選條件", self.user.get('organization_id', ''))
                 self.respond(200, {'ok': True})
             elif self.path in ('/api/cases', '/api/cases/save'):
                 case_id = payload.get('case_id') or payload.get('id')
                 with app.database_connection() as conn:
                     if case_id:
                         res = cases.update_case(conn, case_id, payload, actor_label)
-                        reports.audit(conn, actor_label, "case.update", case_id, f"更新案件 {res.get('case_no')}", self.user.get('company', ''))
+                        reports.audit(conn, actor_label, "case.update", case_id, f"更新案件 {res.get('case_no')}", self.user.get('organization_id', ''))
                     else:
                         res = cases.create_case(conn, payload, actor_label)
-                        reports.audit(conn, actor_label, "case.create", res.get('case_id', ''), f"建立案件 {res.get('case_no')}", self.user.get('company', ''))
+                        reports.audit(conn, actor_label, "case.create", res.get('case_id', ''), f"建立案件 {res.get('case_no')}", self.user.get('organization_id', ''))
                 self.respond(200, {'ok': True, 'case': res})
             elif self.path == '/api/cases/prefix':
-                if self.user['role'] not in {'company_admin', 'administrator'}:
+                if self.user['role'] not in {'org_admin', 'platform_admin'}:
                     raise ValueError('只有管理員可以修改案件編號前綴。')
                 with app.database_connection() as conn:
                     res = cases.update_case_prefix(conn, payload.get('prefix'), payload.get('mode', 'apply_new_only'), actor_label)
@@ -906,8 +933,8 @@ class AdminHandler(BaseHTTPRequestHandler):
                 self.respond(200, {'ok': True, 'case': res})
             elif re.fullmatch(r'/api/cases/[0-9a-f]{32}/notify', self.path):
                 case_id = self.path.split('/')[3]
-                if self.user['role'] not in {'company_admin', 'sender'}:
-                    raise ValueError('只有組織管理員與營運人員可以傳送進度通知。')
+                if self.user['role'] not in {'org_admin', 'operator'}:
+                    raise ValueError('只有管理員與操作人員可以傳送進度通知。')
                 with app.database_connection() as conn:
                     res = cases.notify_case_subject(conn, case_id, payload.get('message_text') or payload.get('text', ''), actor_label)
                 self.respond(200, {'ok': True, 'case': res})
@@ -917,23 +944,23 @@ class AdminHandler(BaseHTTPRequestHandler):
                 with app.database_connection() as conn:
                     if action == 'add_note' or (payload.get('note') and 'status' not in payload):
                         res = cases.add_activity(conn, case_id, 'note', actor_label, payload.get('note', ''))
-                        reports.audit(conn, actor_label, "case.activity", case_id, "新增案件處理紀錄", self.user.get('company', ''))
+                        reports.audit(conn, actor_label, "case.activity", case_id, "新增案件處理紀錄", self.user.get('organization_id', ''))
                         self.respond(200, {'ok': True, 'activity': res})
                     elif 'status' in payload:
                         to_status = payload.get('status')
                         res = cases.transition_case(conn, case_id, to_status, payload, actor_label)
-                        reports.audit(conn, actor_label, "case.transition", case_id, f"案件 {res.get('case_no')} 狀態變更為 {to_status}", self.user.get('company', ''))
+                        reports.audit(conn, actor_label, "case.transition", case_id, f"案件 {res.get('case_no')} 狀態變更為 {to_status}", self.user.get('organization_id', ''))
                         self.respond(200, {'ok': True, 'case': res})
                     else:
                         res = cases.update_case(conn, case_id, payload, actor_label)
-                        reports.audit(conn, actor_label, "case.update", case_id, f"更新案件 {res.get('case_no')}", self.user.get('company', ''))
+                        reports.audit(conn, actor_label, "case.update", case_id, f"更新案件 {res.get('case_no')}", self.user.get('organization_id', ''))
                         self.respond(200, {'ok': True, 'case': res})
             elif self.path == '/api/cases/transition':
                 case_id = payload.get('case_id') or payload.get('id')
                 to_status = payload.get('status')
                 with app.database_connection() as conn:
                     res = cases.transition_case(conn, case_id, to_status, payload, actor_label)
-                    reports.audit(conn, actor_label, "case.transition", case_id, f"案件 {res.get('case_no')} 狀態變更為 {to_status}", self.user.get('company', ''))
+                    reports.audit(conn, actor_label, "case.transition", case_id, f"案件 {res.get('case_no')} 狀態變更為 {to_status}", self.user.get('organization_id', ''))
                 self.respond(200, {'ok': True, 'case': res})
             elif self.path == '/api/cases/activity':
                 case_id = payload.get('case_id') or payload.get('id')
@@ -941,47 +968,47 @@ class AdminHandler(BaseHTTPRequestHandler):
                 content = payload.get('content') or payload.get('note') or ''
                 with app.database_connection() as conn:
                     res = cases.add_activity(conn, case_id, activity_type, actor_label, content)
-                    reports.audit(conn, actor_label, "case.activity", case_id, "新增案件處理紀錄", self.user.get('company', ''))
+                    reports.audit(conn, actor_label, "case.activity", case_id, "新增案件處理紀錄", self.user.get('organization_id', ''))
                 self.respond(200, {'ok': True, 'activity': res})
             elif self.path == '/api/template-packs/save':
                 with app.database_connection() as conn:
-                    res = template_packs.save_custom_pack(conn, self.user.get('company', ''), payload, actor_label)
+                    res = template_packs.save_custom_pack(conn, self.user.get('organization_id', ''), payload, actor_label)
                 self.respond(200, {'ok': True, **res})
             elif self.path == '/api/template-packs/delete':
                 with app.database_connection() as conn:
-                    template_packs.delete_custom_pack(conn, self.user.get('company', ''), payload.get('pack_id'), actor_label)
+                    template_packs.delete_custom_pack(conn, self.user.get('organization_id', ''), payload.get('pack_id'), actor_label)
                 self.respond(200, {'ok': True})
             elif self.path == '/api/template-packs/copy':
                 with app.database_connection() as conn:
-                    res = template_packs.copy_pack(conn, self.user.get('company', ''), payload.get('source_pack_key'), payload.get('name', ''), actor_label)
+                    res = template_packs.copy_pack(conn, self.user.get('organization_id', ''), payload.get('source_pack_key'), payload.get('name', ''), actor_label)
                 self.respond(200, {'ok': True, **res})
             elif self.path == '/api/template-packs/lock':
                 with app.database_connection() as conn:
-                    template_packs.toggle_pack_lock(conn, self.user.get('company', ''), payload.get('pack_id'), bool(payload.get('is_locked')), actor_label)
+                    template_packs.toggle_pack_lock(conn, self.user.get('organization_id', ''), payload.get('pack_id'), bool(payload.get('is_locked')), actor_label)
                 self.respond(200, {'ok': True})
             elif self.path == '/api/templates/save':
                 with app.database_connection() as conn:
-                    res = template_packs.save_template(conn, self.user.get('company', ''), payload.get('template_type', 'case'), payload, actor_label)
+                    res = template_packs.save_template(conn, self.user.get('organization_id', ''), payload.get('template_type', 'case'), payload, actor_label)
                 self.respond(200, {'ok': True, **res})
             elif self.path == '/api/templates/delete':
                 with app.database_connection() as conn:
-                    template_packs.delete_template(conn, self.user.get('company', ''), payload.get('template_type', 'case'), payload.get('template_id'), actor_label)
+                    template_packs.delete_template(conn, self.user.get('organization_id', ''), payload.get('template_type', 'case'), payload.get('template_id'), actor_label)
                 self.respond(200, {'ok': True})
             elif self.path == '/api/templates/copy':
                 with app.database_connection() as conn:
-                    res = template_packs.copy_template(conn, self.user.get('company', ''), payload.get('template_type', 'case'), payload.get('source_id'), payload.get('target_pack_id'), payload.get('name', ''), actor_label)
+                    res = template_packs.copy_template(conn, self.user.get('organization_id', ''), payload.get('template_type', 'case'), payload.get('source_id'), payload.get('target_pack_id'), payload.get('name', ''), actor_label)
                 self.respond(200, {'ok': True, **res})
             elif self.path == '/api/templates/move':
                 with app.database_connection() as conn:
-                    template_packs.move_template(conn, self.user.get('company', ''), payload.get('template_type', 'case'), payload.get('template_id'), payload.get('target_pack_id'), actor_label)
+                    template_packs.move_template(conn, self.user.get('organization_id', ''), payload.get('template_type', 'case'), payload.get('template_id'), payload.get('target_pack_id'), actor_label)
                 self.respond(200, {'ok': True})
             elif self.path == '/api/templates/lock':
                 with app.database_connection() as conn:
-                    template_packs.toggle_template_lock(conn, self.user.get('company', ''), payload.get('template_type', 'case'), payload.get('template_id'), bool(payload.get('is_locked')), actor_label)
+                    template_packs.toggle_template_lock(conn, self.user.get('organization_id', ''), payload.get('template_type', 'case'), payload.get('template_id'), bool(payload.get('is_locked')), actor_label)
                 self.respond(200, {'ok': True})
             elif self.path == '/api/templates/create-from-source':
                 with app.database_connection() as conn:
-                    res = template_packs.create_template_from_source(conn, self.user.get('company', ''), payload.get('source_type', 'case'), payload.get('source_id'), payload.get('target_pack_id'), payload.get('name', ''), actor_label)
+                    res = template_packs.create_template_from_source(conn, self.user.get('organization_id', ''), payload.get('source_type', 'case'), payload.get('source_id'), payload.get('target_pack_id'), payload.get('name', ''), actor_label)
                 self.respond(200, {'ok': True, **res})
             elif self.path == '/api/categories/save':
                 with app.database_connection() as conn:
@@ -1013,7 +1040,7 @@ class AdminHandler(BaseHTTPRequestHandler):
                 use_reply = bool(payload.get('use_reply_token', True))
                 with app.database_connection() as conn:
                     res = chat.send_chat_message(conn, cid, text, actor_label, use_reply_token=use_reply)
-                    reports.audit(conn, actor_label, "chat.send", cid, f"傳送訊息（{res.get('send_method')}）", self.user.get('company', ''))
+                    reports.audit(conn, actor_label, "chat.send", cid, f"傳送訊息（{res.get('send_method')}）", self.user.get('organization_id', ''))
                 self.respond(200, res)
             elif self.path == '/api/chat/mark-read':
                 cid = payload.get('recipient_id') or payload.get('chat_id') or ''
@@ -1025,47 +1052,45 @@ class AdminHandler(BaseHTTPRequestHandler):
                 status = payload.get('status') or 'open'
                 with app.database_connection() as conn:
                     res = chat.set_chat_status(conn, cid, status, actor_label)
-                    reports.audit(conn, actor_label, "chat.status", cid, f"變更聊天狀態為 {status}", self.user.get('company', ''))
+                    reports.audit(conn, actor_label, "chat.status", cid, f"變更聊天狀態為 {status}", self.user.get('organization_id', ''))
                 self.respond(200, res)
             elif self.path == '/api/chat/canned-replies/save':
                 with app.database_connection() as conn:
                     res = chat.save_canned_reply(conn, payload, actor_label)
-                    reports.audit(conn, actor_label, "canned_reply.save", res.get('id', ''), "儲存預設訊息", self.user.get('company', ''))
+                    reports.audit(conn, actor_label, "canned_reply.save", res.get('id', ''), "儲存預設訊息", self.user.get('organization_id', ''))
                 self.respond(200, {'ok': True, 'reply': res})
             elif self.path == '/api/chat/canned-replies/delete':
                 rid = payload.get('id') or payload.get('reply_id') or ''
                 with app.database_connection() as conn:
                     chat.delete_canned_reply(conn, rid)
-                    reports.audit(conn, actor_label, "canned_reply.delete", rid, "刪除預設訊息", self.user.get('company', ''))
+                    reports.audit(conn, actor_label, "canned_reply.delete", rid, "刪除預設訊息", self.user.get('organization_id', ''))
                 self.respond(200, {'ok': True})
             elif self.path == '/api/chat/response-hours/save':
                 with app.database_connection() as conn:
                     res = chat.save_response_hours(conn, payload)
-                    reports.audit(conn, actor_label, "response_hours.save", "", "儲存回應時間設定", self.user.get('company', ''))
+                    reports.audit(conn, actor_label, "response_hours.save", "", "儲存回應時間設定", self.user.get('organization_id', ''))
                 self.respond(200, res)
             elif self.path == '/api/chat/media/cleanup':
                 res = chat.cleanup_expired_media(max_age_days=int(payload.get('days') or limits.MEDIA_RETENTION_DAYS))
                 with app.database_connection() as conn:
-                    reports.audit(conn, actor_label, "media.cleanup", "", f"清理過期媒體（刪除 {res.get('deleted_count')} 筆，釋放 {res.get('freed_mb')} MB）", self.user.get('company', ''))
+                    reports.audit(conn, actor_label, "media.cleanup", "", f"清理過期媒體（刪除 {res.get('deleted_count')} 筆，釋放 {res.get('freed_mb')} MB）", self.user.get('organization_id', ''))
                 self.respond(200, res)
 
             elif self.path == '/api/personnel/save':
-                if self.user['role'] != 'company_admin':
-                    self.respond(403, {'error': '只有組織管理員可以管理組織人員。'})
+                if self.user['role'] != 'org_admin':
+                    self.respond(403, {'error': '只有管理員可以管理組織人員。'})
                     return
-                org_id = self.user.get('company')
+                org_id = self.user.get('organization_id')
                 payload['org_id'] = org_id
-                payload['company'] = org_id
+                payload['organization_id'] = org_id
                 reports.save_user(payload, actor_label)
                 reports.save_membership(payload, actor_label)
                 self.respond(200, {'ok': True})
             elif self.path == '/api/org-settings/save':
-                if self.user['role'] != 'company_admin':
-                    self.respond(403, {'error': '只有組織管理員可以修改組織設定。'})
+                if self.user['role'] != 'org_admin':
+                    self.respond(403, {'error': '只有管理員可以修改組織設定。'})
                     return
-                org_id = self.user.get('company')
-                payload['org_id'] = org_id
-                reports.save_organization(payload, actor_label)
+                reports.save_organization_profile(self.user.get('organization_id'), payload, actor_label)
                 self.respond(200, {'ok': True})
 
             elif self.path == '/api/assets/upload':
@@ -1085,17 +1110,17 @@ class AdminHandler(BaseHTTPRequestHandler):
             elif self.path == "/api/contact":
                 with app.database_connection() as conn:
                     conn.execute('BEGIN IMMEDIATE')
-                    current = conn.execute('SELECT company,weather_subscribed FROM recipients WHERE recipients.channel_id=current_channel() AND recipient_id=?', (payload.get('id'),)).fetchone()
-                    if not current or not reports.same_company(self.user, current[0]):
+                    current = conn.execute('SELECT organization_id,weather_subscribed FROM recipients WHERE recipients.channel_id=current_channel() AND recipient_id=?', (payload.get('id'),)).fetchone()
+                    if not current or not reports.same_organization(self.user, current[0]):
                         raise ValueError('找不到可管理的聯絡對象。')
-                    if self.user['role'] != 'administrator':
-                        if payload.get('company', current[0]) != current[0] or 'subscribed' in payload:
+                    if self.user['role'] != 'platform_admin':
+                        if payload.get('organization_id', current[0]) != current[0] or 'subscribed' in payload:
                             raise ValueError('組織歸屬與個人天氣模組由平台管理員設定。')
                         payload['subscribed'] = bool(current[1])
                     recipients.update_contact(
                         conn,
                         payload.get("id"),
-                        payload.get("alias", ""),
+                        payload.get("custom_name", ""),
                         payload.get("subscribed", False),
                         notes=payload.get("notes"),
                         tag_ids=payload.get("tag_ids"),
@@ -1115,14 +1140,14 @@ class AdminHandler(BaseHTTPRequestHandler):
                         if not isinstance(department, str) or len(department.strip()) > 60:
                             raise ValueError("部門名稱請限制在 60 字以內。")
                         conn.execute('UPDATE recipients SET department=? WHERE recipients.channel_id=current_channel() AND recipient_id=?', (department.strip(), payload["id"]))
-                    company = payload.get("company")
-                    if company is not None:
-                        channels.enforce_company(company)
-                    if company is not None:
-                        if not isinstance(company, str) or len(company.strip()) > 60:
+                    organization_id = payload.get("organization_id")
+                    if organization_id is not None:
+                        channels.enforce_organization(organization_id)
+                    if organization_id is not None:
+                        if not isinstance(organization_id, str) or len(organization_id.strip()) > 60:
                             raise ValueError("組織名稱請限制在 60 字以內。")
-                        conn.execute('UPDATE recipients SET company=? WHERE recipients.channel_id=current_channel() AND recipient_id=?', (company.strip(), payload["id"]))
-                    reports.audit(conn, actor_label, "contact.update", payload["id"], "更新備註與分類", self.user.get('company', ''))
+                        conn.execute('UPDATE recipients SET organization_id=? WHERE recipients.channel_id=current_channel() AND recipient_id=?', (organization_id.strip(), payload["id"]))
+                    reports.audit(conn, actor_label, "contact.update", payload["id"], "更新備註與分類", self.user.get('organization_id', ''))
                 self.respond(200, {"ok": True})
             elif self.path == "/api/profiles":
                 load_settings()
@@ -1140,12 +1165,12 @@ class AdminHandler(BaseHTTPRequestHandler):
                     elif result == 'failed':
                         failed += 1
                 with app.database_connection() as conn:
-                    reports.audit(conn, actor_label, "profiles.update", "recipients", f"更新 {updated} 個 LINE 名稱，{failed} 個未完成", self.user.get('company', ''))
+                    reports.audit(conn, actor_label, "profiles.update", "recipients", f"更新 {updated} 個 LINE 名稱，{failed} 個未完成", self.user.get('organization_id', ''))
                 self.respond(200, {"updated": updated, "failed": failed})
             elif self.path == "/api/send":
-                self.respond(202, self.server.dispatcher.submit(payload, actor=self.identity, organization=self.user['company']))
+                self.respond(202, self.server.dispatcher.submit(payload, actor=self.identity, organization=self.user['organization_id']))
             elif self.path == "/api/jobs/cancel":
-                self.server.dispatcher.cancel(payload.get("job_id"), self.identity, self.user['company'])
+                self.server.dispatcher.cancel(payload.get("job_id"), self.identity, self.user['organization_id'])
                 self.respond(200, {"ok": True})
             elif self.path == "/api/reports/save":
                 self.respond(201, reports.save(payload, self.identity))
@@ -1156,8 +1181,8 @@ class AdminHandler(BaseHTTPRequestHandler):
                 reports.restore_weather(self.identity)
                 self.respond(200, {'ok': True})
             elif self.path == "/api/accounts/save":
-                # 甲級只建立平台管理員與組織管理員；操作人員、協作人員由該組織的管理員在「人員與權限」建立。
-                if self.user['role'] == 'administrator' and payload.get('role') in {'sender', 'assistant'}:
+                # 甲級只建立平台管理員與管理員；操作人員、協作人員由該組織的管理員在「人員與權限」建立。
+                if self.user['role'] == 'platform_admin' and payload.get('role') in {'operator', 'collaborator'}:
                     raise ValueError('操作人員與協作人員請由該組織的管理員在「人員與權限」建立。')
                 reports.save_user(payload, self.identity)
                 self.respond(200, {"ok": True})

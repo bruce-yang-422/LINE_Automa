@@ -18,7 +18,9 @@ import admin_server
 import composer
 import reports
 import send_image
+import channels
 import test_workspace
+from test_workspace import CHANNEL_B
 
 
 class ComposerTests(unittest.TestCase):
@@ -27,15 +29,15 @@ class ComposerTests(unittest.TestCase):
     server = test_workspace.WorkspaceTests.server
     request = test_workspace.WorkspaceTests.request
 
-    def upload(self, company='A', fmt='PNG'):
+    def upload(self, organization_id='A', fmt='PNG'):
         image = Image.new('RGB', (400, 300), (40, 100, 130))
         stream = BytesIO()
         image.save(stream, format=fmt)
-        return composer.upload({'name':r'C:\private\report.jpg', 'company':company,
+        return composer.upload({'name':r'C:\private\report.jpg', 'organization_id':organization_id,
                                 'data':base64.b64encode(stream.getvalue()).decode()}, reports.account('admin@example.com'))
 
-    def draft(self, kind='carousel', count=2, company='A'):
-        uploaded = self.upload(company)
+    def draft(self, kind='carousel', count=2, organization_id='A'):
+        uploaded = self.upload(organization_id)
         return {'format':kind, 'alt_text':'季度報告', 'items':[{'asset_id':uploaded['asset_id'], 'title':f'報告 {i}',
                 'text':'營運摘要', 'label':'查看報告', 'url':'https://example.com/report'} for i in range(count)]}
 
@@ -62,14 +64,15 @@ class ComposerTests(unittest.TestCase):
         server = self.server()
         self.assertEqual(self.request(server, '/api/assets/upload', 'nobody@example.com', {})[0], 401)
         self.assertEqual(self.request(server, '/api/assets/upload', 'admin@example.com', {}, view_as='alice@example.com')[0], 403)
-        reports.save_user({'email':'manager@example.com','role':'company_admin','company':'A','active':True}, 'admin@example.com')
-        image = self.upload('B')
+        reports.save_user({'email':'manager@example.com','role':'org_admin','organization_id':'A','active':True}, 'admin@example.com')
+        with channels.use(CHANNEL_B):
+            image = self.upload('B')
         with self.assertRaises(ValueError): composer.asset(image['asset_id'], reports.account('manager@example.com'))
         with self.assertRaises(ValueError): composer.asset('../test.db', reports.account('admin@example.com'))
         raw = base64.b64encode((self.root/'data/uploads'/(image['asset_id']+'.png')).read_bytes()).decode()
-        status, uploaded = self.request(server, '/api/assets/upload', 'manager@example.com', {'data':raw,'company':'B','name':'test.png'})
+        status, uploaded = self.request(server, '/api/assets/upload', 'manager@example.com', {'data':raw,'organization_id':'B','name':'test.png'})
         self.assertEqual(status, 201)
-        self.assertEqual(uploaded['company'], 'A')
+        self.assertEqual(uploaded['organization_id'], 'A')
         reports.save_organization({'org_id':'A','name':'A','kind':'company','active':True,'reports_enabled':True,'messaging_enabled':False,'weather_enabled':False},'admin@example.com')
         self.assertEqual(self.request(server, '/api/assets/upload', 'manager@example.com', {'data':raw})[0], 400)
 
@@ -104,10 +107,10 @@ class ComposerTests(unittest.TestCase):
 
     def test_uploaded_report_can_be_saved_without_manual_path(self):
         asset=self.upload()
-        report=reports.save({'title':'上傳報告','category':'company','company':'A','scope':'company','asset_id':asset['asset_id']},'admin@example.com')
+        report=reports.save({'title':'上傳報告','category':'company','organization_id':'A','scope':'company','asset_id':asset['asset_id']},'admin@example.com')
         self.assertEqual(reports.describe(reports.find(report['report_id']))['status'],'ready')
         with self.assertRaises(ValueError):
-            reports.save({'title':'錯誤組織','category':'company','company':'B','scope':'company','asset_id':asset['asset_id']},'admin@example.com')
+            reports.save({'title':'錯誤組織','category':'company','organization_id':'B','scope':'company','asset_id':asset['asset_id']},'admin@example.com')
 
     def test_scheduled_composition_is_frozen_and_uses_existing_retry_key(self):
         dispatcher=admin_server.Dispatcher();self.addCleanup(dispatcher.close)
@@ -117,7 +120,7 @@ class ComposerTests(unittest.TestCase):
         with patch.object(send_image,'ROOT',self.root), patch.object(admin_server,'verify_public_image'), patch.object(admin_server,'load_settings'):
             job=dispatcher.submit(payload, 'admin@example.com')
         messages=json.loads(job['messages_json'])
-        self.assertEqual(job['status'],'scheduled');self.assertEqual(job['company'],'A')
+        self.assertEqual(job['status'],'scheduled');self.assertEqual(job['organization_id'],'A')
         draft['items'][0]['title']='Edited afterwards'
         composer.asset(draft['items'][0]['asset_id'], reports.account('admin@example.com'))['path'].unlink()
         with app.database_connection() as conn:
@@ -137,7 +140,7 @@ class ComposerTests(unittest.TestCase):
         with patch.object(send_image,'ROOT',self.root), patch.object(admin_server,'verify_public_image'), patch.object(admin_server,'load_settings'):
             job=dispatcher.submit(payload,'admin@example.com')
         with app.database_connection() as conn:
-            conn.execute("UPDATE recipients SET company='B' WHERE recipient_id=?",(test_workspace.USER,))
+            conn.execute("UPDATE recipients SET organization_id='B' WHERE recipient_id=?",(test_workspace.USER,))
             conn.execute("UPDATE send_jobs SET status='queued',scheduled_at='' WHERE job_id=?",(job['job_id'],))
         with patch.object(admin_server,'send_push') as send: dispatcher.run(job['job_id'])
         send.assert_not_called()

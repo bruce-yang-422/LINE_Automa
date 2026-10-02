@@ -8,7 +8,7 @@ function workspaceHeader(){
   const user=state.session?.user;
   const context=document.getElementById("workspace-context-name");
   const ch = typeof selectedOA === "function" ? selectedOA() : null;
-  if(context) context.textContent=ch ? ch.name : (superAdmin()?"平台管理":orgName(user?.company));
+  if(context) context.textContent=ch ? ch.name : (superAdmin()?"平台管理":orgName(user?.organization_id));
   const kind = document.getElementById("workspace-context-kind");
   if(kind) kind.textContent=ch ? orgName(ch.org_id) : (superAdmin()?"跨組織":roleName(state.session?.role));
   const wrap = document.getElementById("workspace-context");
@@ -58,7 +58,7 @@ function contactDetailPanel(){
           ${r.email?`<dt>Email</dt><dd><a href="mailto:${esc(r.email)}">${esc(r.email)}</a></dd>`:""}
           ${r.work_email?`<dt>公務 Email</dt><dd><a href="mailto:${esc(r.work_email)}">${esc(r.work_email)}</a></dd>`:""}
           ${fullAddress?`<dt>地址</dt><dd>${esc(fullAddress)}</dd>`:""}
-          <dt>自訂名稱</dt><dd>${esc(r.alias||r.custom_name||"尚未設定")}</dd>
+          <dt>自訂名稱</dt><dd>${esc(r.custom_name||"尚未設定")}</dd>
           <dt>LINE 名稱</dt><dd>${esc(r.display_name||"尚未取得")}</dd>
           <dt>分類標籤</dt><dd class="contact-tags">${tagsHtml}</dd>
         </dl>
@@ -66,7 +66,7 @@ function contactDetailPanel(){
       <div class="section-space">
         <h4 style="margin:0 0 8px;font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;">系統設定</h4>
         <dl>
-          <dt>系統組織</dt><dd>${esc(r.company?orgName(r.company):"尚未設定")}</dd>
+          <dt>系統組織</dt><dd>${esc(r.organization_id?orgName(r.organization_id):"尚未設定")}</dd>
           <dt>系統部門</dt><dd>${esc(r.department||"尚未設定")}</dd>
           <dt>接收狀態</dt><dd>${badge(r.active?"可接收":"已停用",r.active?"good":"")}</dd>
           <dt>最近互動</dt><dd>${esc(when(r.last_seen))}</dd>
@@ -186,11 +186,11 @@ function workspaceAction(action,id){
 
 function commandEntries(query){
   const q=query.trim().toLowerCase();
-  const allowedViews=["overview","reports",...(admin()?["contacts","schedule","history"]:[]),...(canSend()?["send"]:[]),...(weatherModule()?["subscriptions"]:[]),...(superAdmin()?["organizations","channels"]:[]),...(state.session?.role==="company_admin"?["channels","personnel","org-settings"]:[])];
+  const allowedViews=["overview","reports",...(admin()?["contacts","schedule","history"]:[]),...(canSend()?["send"]:[]),...(weatherModule()?["subscriptions"]:[]),...(superAdmin()?["organizations","channels"]:[]),...(state.session?.role==="org_admin"?["channels","personnel","org-settings"]:[])];
   const entries=allowedViews.map(id=>({kind:"page",id,title:titles[id],detail:"前往頁面",symbol:"grid"}));
   if(q){
     entries.push(...state.reports.map(r=>({kind:"report",id:r.report_id,title:r.title,detail:scope(r),symbol:"file"})));
-    if(admin())entries.push(...state.contacts.map(r=>({kind:"contact",id:r.recipient_id,title:label(r),detail:orgName(r.company)+" · "+(r.kind==="user"?"個人":"群組"),symbol:"users"})));
+    if(admin())entries.push(...state.contacts.map(r=>({kind:"contact",id:r.recipient_id,title:label(r),detail:orgName(r.organization_id)+" · "+(r.kind==="user"?"個人":"群組"),symbol:"users"})));
   }
   return entries.filter(r=>`${r.title} ${r.detail}`.toLowerCase().includes(q)).slice(0,30);
 }

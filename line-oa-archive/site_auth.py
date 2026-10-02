@@ -283,10 +283,14 @@ def handle_get(handler):
     paths = {'/login':('login.html','text/html; charset=utf-8'),'/login.js':('login.js','text/javascript; charset=utf-8')}
     assets = {'/app.css','/favicon.ico'}
     public_asset = handler.path in assets or re.fullmatch(r'/assets/brand/line-automation-logo-light\.(png|ico)',handler.path)
-    if handler.path not in paths and not public_asset:
+    if handler.path not in paths and handler.path!='/api/auth/setup-state' and not public_asset:
         return False
     try:
         context(handler)
+        if handler.path=='/api/auth/setup-state':
+            # 尚無平台管理員時，登入頁只顯示「系統尚未完成初始設定」。
+            handler.respond(200,{'initialized':reports.has_platform_admin()})
+            return True
         name,mime = paths.get(handler.path,('',''))
         if not name:
             name = handler.path.lstrip('/')
@@ -334,7 +338,7 @@ def handle_post(handler):
                 handler.respond(200,{'ok':True})
             elif handler.path in {'/api/auth/invite','/api/auth/revoke'}:
                 target = email_value(payload.get('email'))
-                if handler.user['role']!='administrator' and not (handler.path.endswith('/revoke') and target==handler.principal):
+                if handler.user['role']!='platform_admin' and not (handler.path.endswith('/revoke') and target==handler.principal):
                     raise AuthError('只有平台管理員能管理其他人的登入。',403)
                 if handler.path.endswith('/invite'):
                     raw = issue_activation(target,handler.identity)

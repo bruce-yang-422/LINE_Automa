@@ -17,11 +17,11 @@ class ProfileCacheTests(unittest.TestCase):
     def test_discovery_cache_routes_and_alias_preserved(self):
         app.save_events([self.event(message='hello'),self.event(fixtures.GROUP,event_type='join')])
         with app.database_connection() as conn:
-            conn.execute('UPDATE recipients SET alias=? WHERE recipient_id=?',('My family',fixtures.GROUP))
+            conn.execute('UPDATE recipients SET custom_name=? WHERE recipient_id=?',('My family',fixtures.GROUP))
         def lookup(path):
             # Another write succeeds while LINE is queried: no database lock held over network.
             with app.database_connection() as conn:
-                conn.execute('UPDATE recipients SET alias=alias')
+                conn.execute('UPDATE recipients SET custom_name=custom_name')
             return {'displayName':'Alice'} if path.startswith('profile/') else {'groupName':'Family'}
         with patch.object(line_api,'request',side_effect=lookup) as api:
             self.assertEqual(recipients.refresh_profile(fixtures.USER,now=100),'updated')
@@ -31,7 +31,7 @@ class ProfileCacheTests(unittest.TestCase):
             self.assertEqual(api.call_args_list[1].args,('group/'+fixtures.GROUP+'/summary',))
         self.assertEqual(self.contact()['display_name'],'Alice')
         self.assertEqual(self.contact(fixtures.GROUP)['display_name'],'Family')
-        self.assertEqual(self.contact(fixtures.GROUP)['alias'],'My family')
+        self.assertEqual(self.contact(fixtures.GROUP)['custom_name'],'My family')
 
     def test_failure_backoff_retains_messages_and_last_name(self):
         app.save_events([self.event(message='test')])
@@ -62,7 +62,7 @@ class ProfileCacheTests(unittest.TestCase):
     def test_no_token_inactive_room_and_concurrent_lease_skip(self):
         app.save_events([self.event()])
         with patch.object(line_api,'request') as api:
-            with patch.dict(os.environ,{'LINE_CHANNEL_ACCESS_TOKEN':''}):
+            with patch.object(recipients.channels,'access_token',return_value=''):
                 self.assertEqual(recipients.refresh_profile(fixtures.USER),'skipped')
             with app.database_connection() as conn:
                 conn.execute('UPDATE recipients SET profile_lease_until=500')

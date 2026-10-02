@@ -35,7 +35,7 @@ class SiteAuthTests(unittest.TestCase):
         self.server=admin_server.AdminServer(0);self.server.start();self.addCleanup(self.server.close)
         reports.bootstrap_users({'admin@example.test'})
         site_auth.change_password('admin@example.test',None,PASSWORD)
-        reports.save_user({'email':'sender@example.test','role':'sender','company':'A','active':True},'admin@example.test')
+        reports.save_user({'email':'sender@example.test','role':'operator','organization_id':'A','active':True},'admin@example.test')
 
     def request(self,path,body=None,cookie='',csrf='',extra=None,local=False):
         origin=f'http://127.0.0.1:{self.server.server_port}' if local else 'https://admin.example.test'
@@ -137,7 +137,7 @@ class SiteAuthTests(unittest.TestCase):
     def test_disable_and_reenable_does_not_restore_session(self):
         site_auth.change_password('sender@example.test',None,PASSWORD)
         cookie,_=self.login(email='sender@example.test')
-        data={'email':'sender@example.test','role':'sender','company':'A','active':False}
+        data={'email':'sender@example.test','role':'operator','organization_id':'A','active':False}
         reports.save_user(data,'admin@example.test')
         reports.save_user({**data,'active':True},'admin@example.test')
         self.assertEqual(self.request('/api/session',cookie=cookie)[0],401)

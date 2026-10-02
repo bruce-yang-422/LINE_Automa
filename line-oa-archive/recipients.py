@@ -61,7 +61,7 @@ class ProfileRefresher:
     def tick(self):
         # Names are fetched once per real OA; share copies are updated from the owner's result.
         rows = [r for r in channels._rows() if not r['shared']]
-        for channel_id in ([r['channel_id'] for r in rows if channels.operational(r)] if rows else ['']):
+        for channel_id in [r['channel_id'] for r in rows if channels.operational(r)]:
             with channels.use(channel_id):
                 self.tick_channel()
 
@@ -117,9 +117,9 @@ def handle_event(conn, event, source_type, recipient_id):
                     event_at=MAX(event_at, excluded.event_at),
                     last_seen=strftime('%Y-%m-%dT%H:%M:%fZ', 'now')""",
                  (recipient_id, source_type, active, stamp))
-    company = channels.organization_id()
-    if company is not None:
-        conn.execute('UPDATE recipients SET company=? WHERE channel_id=current_channel() AND recipient_id=?', (company, recipient_id))
+    organization_id = channels.current_organization_id()
+    if organization_id is not None:
+        conn.execute('UPDATE recipients SET organization_id=? WHERE channel_id=current_channel() AND recipient_id=?', (organization_id, recipient_id))
     # Shared workspaces hold copies of assigned recipients; follow/block state comes only from the owner's webhook.
     conn.execute(f"""UPDATE recipients SET active=o.active,event_at=o.event_at,last_seen=o.last_seen,
                      weather_subscribed=CASE WHEN o.active=0 THEN 0 ELSE recipients.weather_subscribed END
@@ -263,7 +263,7 @@ def bulk_update_subscription(conn, recipient_ids, subscribed):
 def list_contacts(conn):
     conn.row_factory = sqlite3.Row
     rows = conn.execute(
-        "SELECT * FROM recipients WHERE recipients.channel_id=current_channel() ORDER BY kind, COALESCE(NULLIF(alias,''), NULLIF(display_name,''), recipient_id)").fetchall()
+        "SELECT * FROM recipients WHERE recipients.channel_id=current_channel() ORDER BY kind, COALESCE(NULLIF(custom_name,''), NULLIF(display_name,''), recipient_id)").fetchall()
     tags_by_recipient = {}
     try:
         tag_rows = conn.execute(
@@ -282,7 +282,7 @@ def list_contacts(conn):
     result = []
     for row in rows:
         d = dict(row)
-        d["custom_name"] = d.get("alias", "")
+        d["custom_name"] = d.get("custom_name", "")
         d["notes"] = d.get("notes", "")
         d["contact_type"] = d.get("contact_type", "")
         d["phone"] = d.get("phone", "")
@@ -299,11 +299,11 @@ def list_contacts(conn):
     return result
 
 
-def update_contact(conn, recipient_id, alias, subscribed, notes=None, tag_ids=None,
+def update_contact(conn, recipient_id, custom_name, subscribed, notes=None, tag_ids=None,
                    contact_type=None, phone=None, email=None, postal_code=None, address=None,
                    organization_name=None, job_title=None, work_phone=None, work_phone_ext=None, work_email=None,
                    **kwargs):
-    if not isinstance(alias, str) or len(alias) > 80 or type(subscribed) is not bool:
+    if not isinstance(custom_name, str) or len(custom_name) > 80 or type(subscribed) is not bool:
         raise ValueError("自訂名稱最多 80 字，訂閱設定必須為勾選值。")
     row = conn.execute('SELECT active FROM recipients WHERE recipients.channel_id=current_channel() AND recipient_id=?', (recipient_id,)).fetchone()
     if not row:
@@ -346,16 +346,16 @@ def update_contact(conn, recipient_id, alias, subscribed, notes=None, tag_ids=No
     stamp = int(time.time() * 1000)
     try:
         conn.execute("""UPDATE recipients SET
-                        alias=?, notes=?, contact_type=?, phone=?, email=?, postal_code=?, address=?,
+                        custom_name=?, notes=?, contact_type=?, phone=?, email=?, postal_code=?, address=?,
                         organization_name=?, job_title=?, work_phone=?, work_phone_ext=?, work_email=?,
                         weather_subscribed=?, subscription_at=?
                         WHERE recipients.channel_id=current_channel() AND recipient_id=?""",
-                     (alias.strip(), notes_val, contact_type or "", phone, email, postal_code, address,
+                     (custom_name.strip(), notes_val, contact_type or "", phone, email, postal_code, address,
                       organization_name, job_title, work_phone, work_phone_ext, work_email,
                       int(subscribed), stamp, recipient_id))
     except sqlite3.OperationalError:
-        conn.execute('UPDATE recipients SET alias=?, weather_subscribed=?, subscription_at=? WHERE recipients.channel_id=current_channel() AND recipient_id=?',
-                     (alias.strip(), int(subscribed), stamp, recipient_id))
+        conn.execute('UPDATE recipients SET custom_name=?, weather_subscribed=?, subscription_at=? WHERE recipients.channel_id=current_channel() AND recipient_id=?',
+                     (custom_name.strip(), int(subscribed), stamp, recipient_id))
 
     if tag_ids is not None and isinstance(tag_ids, list):
         try:

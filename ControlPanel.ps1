@@ -94,17 +94,6 @@ foreach ($spec in @(@(22, '啟動 LINE', 'Start'), @(212, '停止 LINE', 'Stop')
     })
     $script:buttons += $button
 }
-$settings = New-Button 22 230 '編輯 LINE 設定'
-$settings.Add_Click({
-    $path = Join-Path $PSScriptRoot 'line-oa-archive\.env'
-    if (-not (Test-Path -LiteralPath $path)) {
-        Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'line-oa-archive\.env.example') -Destination $path
-    }
-    # This editor is intentionally visible for the user's settings entry.
-    Start-Process notepad.exe -ArgumentList "`"$path`""
-    $recent.Text = '填入 Channel secret 並儲存；修改後請重啟 LINE。'
-})
-$script:buttons += $settings
 $health = New-Button 212 230 '開啟連線檢查'
 $health.Add_Click({ Start-Process 'https://reports.stack-base.com/healthz' })
 $logs = New-Button 402 230 '查看操作紀錄'
@@ -168,7 +157,8 @@ $timer.Add_Tick({
                     $script:publicOK = $state.Public
                     $script:publicInstance = $state.Instance
                 }
-                $config.Text = '設定：' + $(if ($state.Configured) { '已填入必要設定' } else { '未完成，請按「編輯 LINE 設定」' })
+                # LINE OA 與模組在管理後台設定；.env 只放部署設定。
+                $config.Text = '設定：' + $(if (-not $state.Configured) { 'Python 環境未就緒，請重新執行安裝' } elseif (-not $state.PublicBaseUrl) { '.env 尚未填入 PUBLIC_BASE_URL' } elseif ($state.OAConfigured) { '已設定 LINE OA' } else { '尚未設定 LINE OA，請以管理後台的 LINE OA 頁設定' })
                 $local.Text = 'LINE 本機服務：' + $(if ($state.Stopping) { '停止中' } elseif ($state.Local) { '已啟動' } elseif ($state.Managed) { '啟動中或健康檢查異常' } else { '已停止或未受管理' })
                 $ready = $state.Local -and -not $state.Stopping -and $script:publicOK -and $state.Instance -eq $script:publicInstance
                 $public.Text = '公開連線：' + $(if (-not $state.Local) { '等待本機服務啟動' } elseif ($ready) { '正常' } else { '未就緒，請確認 Tunnel 路由' })

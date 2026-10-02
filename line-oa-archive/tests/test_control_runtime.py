@@ -16,9 +16,13 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 from uuid import uuid4
+
+import app
+import oa_fixture
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -31,11 +35,21 @@ class ManagedRuntimeTests(unittest.TestCase):
         for name in ("control_runtime.py", "app.py", "schema.sql", "recipients.py", "admin_server.py", "line_api.py", "send_image.py", "reports.py", "composer.py", "site_auth.py", "channels.py", "cases.py", "chat_notes.py", "chat.py", "template_packs.py", "limits.py"):
             shutil.copy2(ROOT / name, self.root / name)
         self.environment = os.environ.copy()
-        self.environment.pop("LINE_CHANNEL_SECRET", None)
         self.environment.pop("DATABASE_PATH", None)
-        self.secret = "test-secret-not-a-real-credential"
-        (self.root / ".env").write_text(
-            f'LINE_CHANNEL_SECRET="{self.secret}"\nDATABASE_PATH=data/test.db\n', encoding="utf-8-sig")
+        self.secret = "0123456789abcdef0123456789abcdef"
+        (self.root / ".env").write_text('DATABASE_PATH=data/test.db\n', encoding="utf-8-sig")
+
+    def register_oa(self):
+        """在服務建立的資料庫登記一個 OA；金鑰檔與服務共用 instance/line-credentials.key。"""
+        with patch.object(app, "BASE_DIR", self.root), patch.object(app, "DATABASE_PATH", self.root / "data/test.db"):
+            oa_fixture.register_oa(secret=self.secret)
+        return "/webhook/" + oa_fixture.CHANNEL
+
+    def signed_body(self, message_id, text):
+        body = json.dumps({"destination": oa_fixture.BOT,
+                           "events": [{"type": "message", "source": {"type": "user", "userId": "test-user"},
+                                       "message": {"id": message_id, "type": "text", "text": text}}]}).encode()
+        return body, base64.b64encode(hmac.new(self.secret.encode(), body, hashlib.sha256).digest()).decode()
 
     def start_service(self):
         with socket.socket() as sock:
@@ -79,14 +93,18 @@ class ManagedRuntimeTests(unittest.TestCase):
         self.assertEqual(state["application"], "LINE_Automation")
         self.assertEqual(state["instance"], self.instance)
         self.assertNotIn(self.secret, json.dumps(state))
-        body = json.dumps({"events": [{"type": "message", "source": {"type": "user", "userId": "test-user"},
-                                     "message": {"id": "1", "type": "text", "text": "test"}}]}).encode()
-        signature = base64.b64encode(hmac.new(self.secret.encode(), body, hashlib.sha256).digest()).decode()
-        with urlopen(Request(self.url("/webhook"), data=body, headers={"x-line-signature": signature}), timeout=2) as response:
+        path = self.register_oa()
+        body, signature = self.signed_body("1", "test")
+        with urlopen(Request(self.url(path), data=body, headers={"x-line-signature": signature}), timeout=2) as response:
             self.assertEqual(response.status, 200)
         with self.assertRaises(HTTPError) as raised:
-            urlopen(Request(self.url("/webhook"), data=body), timeout=2)
+            urlopen(Request(self.url(path), data=body), timeout=2)
         self.assertEqual(raised.exception.code, 401)
+        raised.exception.close()
+        # 已移除單一 OA 的舊入口
+        with self.assertRaises(HTTPError) as raised:
+            urlopen(Request(self.url("/webhook"), data=body, headers={"x-line-signature": signature}), timeout=2)
+        self.assertEqual(raised.exception.code, 404)
         raised.exception.close()
         (self.root / "instance" / ("stop-" + self.instance)).touch()
         self.assertEqual(self.process.wait(timeout=5), 0)
@@ -95,12 +113,11 @@ class ManagedRuntimeTests(unittest.TestCase):
 
     def test_stop_waits_for_in_flight_database_transaction(self):
         self.start_service()
-        body = json.dumps({"events": [{"type": "message", "source": {"type": "user", "userId": "test-user"},
-                                     "message": {"id": "pending", "type": "text", "text": "saved before stop"}}]}).encode()
-        signature = base64.b64encode(hmac.new(self.secret.encode(), body, hashlib.sha256).digest()).decode()
+        path = self.register_oa()
+        body, signature = self.signed_body("pending", "saved before stop")
 
         def send_message():
-            with urlopen(Request(self.url("/webhook"), data=body, headers={"x-line-signature": signature}), timeout=8) as response:
+            with urlopen(Request(self.url(path), data=body, headers={"x-line-signature": signature}), timeout=8) as response:
                 return response.status
 
         with closing(sqlite3.connect(self.root / "data/test.db")) as lock, ThreadPoolExecutor(max_workers=1) as pool:

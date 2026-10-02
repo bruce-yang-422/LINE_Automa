@@ -38,9 +38,9 @@ def upload(payload,user):
     encoded=payload.get('data','');name=payload.get('name','圖片')
     if not isinstance(encoded,str) or len(encoded)>((MAX_UPLOAD+2)//3)*4 or not isinstance(name,str) or len(name)>240:
         raise ValueError('請選擇 8 MB 以內的 JPG 或 PNG。')
-    company=payload.get('company','') if user['role']=='administrator' else user['company']
-    channels.enforce_company(company)
-    if not isinstance(company,str) or (company and not any(o['org_id']==company and o['active'] for o in reports.organizations())):
+    organization_id=payload.get('organization_id','') if user['role']=='platform_admin' else user['organization_id']
+    channels.enforce_organization(organization_id)
+    if not isinstance(organization_id,str) or (organization_id and not any(o['org_id']==organization_id and o['active'] for o in reports.organizations())):
         raise ValueError('請選擇有效組織。')
     try:
         raw=base64.b64decode(encoded,validate=True)
@@ -65,10 +65,10 @@ def upload(payload,user):
     safe_name=name.replace('\\','/').rsplit('/',1)[-1] or '圖片'
     try:
         with app.database_connection() as conn:
-            conn.execute('INSERT INTO upload_assets(channel_id,asset_id,name,company,owner) VALUES (current_channel(),?,?,?,?)',(asset_id,safe_name,company,user['email']))
+            conn.execute('INSERT INTO upload_assets(channel_id,asset_id,name,organization_id,owner) VALUES (current_channel(),?,?,?,?)',(asset_id,safe_name,organization_id,user['email']))
     except Exception:
         path.unlink(missing_ok=True);raise
-    return {'asset_id':asset_id,'name':safe_name,'company':company,'size':len(data),'width':clean.width,'height':clean.height,
+    return {'asset_id':asset_id,'name':safe_name,'organization_id':organization_id,'size':len(data),'width':clean.width,'height':clean.height,
             'preview':'data:image/png;base64,'+base64.b64encode(data).decode('ascii')}
 
 
@@ -78,7 +78,7 @@ def asset(asset_id,user):
     with app.database_connection() as conn:
         conn.row_factory=sqlite3.Row
         row=conn.execute('SELECT * FROM upload_assets WHERE upload_assets.channel_id=current_channel() AND asset_id=?',(asset_id,)).fetchone()
-    if not row or not reports.same_company(user,row['company']) or (user['role']=='sender' and row['owner']!=user['email']):
+    if not row or not reports.same_organization(user,row['organization_id']) or (user['role']=='operator' and row['owner']!=user['email']):
         raise ValueError('找不到可使用的圖片。')
     path=app.BASE_DIR/'data'/'uploads'/(asset_id+'.png')
     if not path.is_file():
@@ -112,7 +112,7 @@ def prepare(draft,user,selected):
         if not isinstance(item,dict):
             raise ValueError('卡片格式不正確。')
         picture=asset(item.get('asset_id'),user)
-        if picture['company'] and any(r['company']!=picture['company'] for r in selected):
+        if picture['organization_id'] and any(r['organization_id']!=picture['organization_id'] for r in selected):
             raise ValueError('圖片與發送對象必須屬於同一組織。')
         card={'asset':picture}
         if kind in {'card','carousel'}:
@@ -138,7 +138,7 @@ def prepare(draft,user,selected):
 
 def build(prepared,publish,verify):
     """Publish only after every card, action and recipient scope has validated."""
-    base=os.environ.get('PUBLIC_BASE_URL','https://reports.stack-base.com')
+    base=app.public_base_url()
     parsed=urlsplit(base)
     if parsed.scheme!='https' or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment or parsed.path not in ('','/'):
         raise ValueError('PUBLIC_BASE_URL 必須是 HTTPS 網站根網址。')

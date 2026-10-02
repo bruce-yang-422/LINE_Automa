@@ -7,6 +7,7 @@ from unittest.mock import patch, MagicMock
 from urllib.request import Request, urlopen
 
 import app
+from oa_fixture import CHANNEL, add_account, register_oa, use_oa
 import admin_server
 import chat
 
@@ -24,22 +25,28 @@ class ChatSystemTests(unittest.TestCase):
             p.start()
             self.addCleanup(p.stop)
 
-        p = patch.dict(os.environ, {"LINE_CHANNEL_ACCESS_TOKEN": "fake-test-token"}, clear=True)
+        p = patch.dict(os.environ, {"PUBLIC_BASE_URL": "https://reports.example.test"}, clear=True)
         p.start()
         self.addCleanup(p.stop)
 
         app.initialize_database()
+
+        register_oa()
+
+        use_oa(self)
+
+        add_account('boss@test.com', 'org_admin', 'A', 'Boss')
 
         self.user1 = "U11111111111111111111111111111111"
         self.group1 = "C11111111111111111111111111111111"
 
         with app.database_connection() as conn:
             conn.execute(
-                "INSERT INTO recipients (recipient_id, kind, display_name, alias, active) VALUES (?, 'user', 'Alice', '小愛', 1)",
+                "INSERT INTO recipients (channel_id, recipient_id, kind, display_name, custom_name, active) VALUES (current_channel(), ?, 'user', 'Alice', '小愛', 1)",
                 (self.user1,)
             )
             conn.execute(
-                "INSERT INTO recipients (recipient_id, kind, display_name, alias, active) VALUES (?, 'group', 'Sales Group', '', 1)",
+                "INSERT INTO recipients (channel_id, recipient_id, kind, display_name, custom_name, active) VALUES (current_channel(), ?, 'group', 'Sales Group', '', 1)",
                 (self.group1,)
             )
 
@@ -130,7 +137,7 @@ class ChatSystemTests(unittest.TestCase):
             def authorized(handler, require_token=True):
                 ok = super().authorized(require_token)
                 if ok:
-                    handler.user = {"email": "boss@test.com", "role": "company_admin", "company": "A", "display_name": "Boss"}
+                    handler.user = {"email": "boss@test.com", "role": "org_admin", "organization_id": "A", "display_name": "Boss"}
                     handler.identity = handler.user["email"]
                 return ok
         server = admin_server.AdminServer(0)
@@ -138,7 +145,7 @@ class ChatSystemTests(unittest.TestCase):
         server.start()
         self.addCleanup(server.close)
         base = f"http://127.0.0.1:{server.server_port}"
-        headers = {"Content-Type": "application/json", "Authorization": "Bearer " + server.token}
+        headers = {"Content-Type": "application/json", "Authorization": "Bearer " + server.token, "X-Line-Channel": CHANNEL}
 
         # 1. GET /api/chat/rooms
         req = Request(f"{base}/api/chat/rooms", headers=headers)

@@ -37,7 +37,7 @@ def list_chat_rooms(conn, status=None, query=None, limit=limits.ROOMS_PAGE_SIZE,
 
     # Fetch all recipients in current channel
     recipients_rows = conn.execute(
-        """SELECT recipient_id, kind, display_name, alias, notes, active, last_seen
+        """SELECT recipient_id, kind, display_name, custom_name, notes, active, last_seen
            FROM recipients
            WHERE channel_id=current_channel()"""
     ).fetchall()
@@ -108,12 +108,12 @@ def list_chat_rooms(conn, status=None, query=None, limit=limits.ROOMS_PAGE_SIZE,
         rid = r[0]
         kind = r[1]
         display_name = r[2]
-        alias = r[3]
+        custom_name = r[3]
         notes = r[4]
         active = bool(r[5])
         last_seen = r[6]
 
-        primary_name = alias or display_name or ("個人聊天室" if kind == "user" else "群組聊天室")
+        primary_name = custom_name or display_name or ("個人聊天室" if kind == "user" else "群組聊天室")
         st = state_rows.get(rid, {})
         c_status = st.get("status") or "open"
         unread_cnt = unread_counts.get(rid, 0)
@@ -146,7 +146,7 @@ def list_chat_rooms(conn, status=None, query=None, limit=limits.ROOMS_PAGE_SIZE,
             "recipient_id": rid,
             "name": primary_name,
             "display_name": display_name,
-            "alias": alias,
+            "custom_name": custom_name,
             "kind": kind,
             "active": active,
             "tags": tags_by_recipient.get(rid, []),
@@ -174,13 +174,13 @@ def list_messages(conn, chat_id, limit=limits.MESSAGES_PAGE_SIZE, before_id=None
 
     # Fetch recipient info
     rec_row = conn.execute(
-        "SELECT kind, display_name, alias, active FROM recipients WHERE channel_id=current_channel() AND recipient_id=?",
+        "SELECT kind, display_name, custom_name, active FROM recipients WHERE channel_id=current_channel() AND recipient_id=?",
         (chat_id,)
     ).fetchone()
     if not rec_row:
         return {"messages": [], "has_more": False}
 
-    kind, display_name, alias, active = rec_row
+    kind, display_name, custom_name, active = rec_row
 
     # Group members cache
     members_cache = {}
@@ -241,7 +241,7 @@ def list_messages(conn, chat_id, limit=limits.MESSAGES_PAGE_SIZE, before_id=None
         if direction == "outbound":
             sender_name = sent_by or "管理員"
         elif kind == "user":
-            sender_name = alias or display_name or "使用者"
+            sender_name = custom_name or display_name or "使用者"
         else:
             sender_name = members_cache.get(sender_uid, {}).get("name") or (f"成員 {sender_uid[:6]}" if sender_uid else "成員")
 
@@ -692,13 +692,13 @@ def search_messages(conn, chat_id: str, query: str, limit: int = 50) -> dict:
 
     # Fetch recipient info
     rec_row = conn.execute(
-        "SELECT kind, display_name, alias FROM recipients WHERE channel_id=current_channel() AND recipient_id=?",
+        "SELECT kind, display_name, custom_name FROM recipients WHERE channel_id=current_channel() AND recipient_id=?",
         (chat_id,)
     ).fetchone()
     if not rec_row:
         return {"messages": [], "count": 0}
 
-    kind, display_name, alias = rec_row
+    kind, display_name, custom_name = rec_row
 
     # Group members cache
     members_cache = {}
@@ -735,7 +735,7 @@ def search_messages(conn, chat_id: str, query: str, limit: int = 50) -> dict:
         if direction == "outbound":
             sender_name = sent_by or "管理員"
         elif kind == "user":
-            sender_name = alias or display_name or "使用者"
+            sender_name = custom_name or display_name or "使用者"
         else:
             sender_name = members_cache.get(sender_uid) or (f"成員 {sender_uid[:6]}" if sender_uid else "成員")
 
@@ -758,14 +758,14 @@ def search_messages(conn, chat_id: str, query: str, limit: int = 50) -> dict:
 def export_chat_history(conn, chat_id: str, format: str = "txt", actor: str = "管理員") -> tuple[bytes, str, str]:
     """Export conversation history of a chat room in TXT or CSV format."""
     rec_row = conn.execute(
-        "SELECT kind, display_name, alias, phone, email, contact_type FROM recipients WHERE channel_id=current_channel() AND recipient_id=?",
+        "SELECT kind, display_name, custom_name, phone, email, contact_type FROM recipients WHERE channel_id=current_channel() AND recipient_id=?",
         (chat_id,)
     ).fetchone()
     if not rec_row:
         raise ValueError("找不到指定的聊天室。")
 
-    kind, display_name, alias, phone, email, contact_type = rec_row
-    primary_name = alias or display_name or chat_id
+    kind, display_name, custom_name, phone, email, contact_type = rec_row
+    primary_name = custom_name or display_name or chat_id
     kind_label = "個人對話" if kind == "user" else "群組對話"
 
     # Fetch group member cache if group

@@ -29,14 +29,17 @@ function Get-LineHealth([string]$Url) {
     } catch { }
     return $null
 }
-function Get-LineConfiguration {
-    if (-not (Test-Path -LiteralPath $script:Python)) { return $false }
+function Get-LineCheck {
+    if (-not (Test-Path -LiteralPath $script:Python)) { return $null }
     try {
         $result = & $script:Python (Join-Path $script:AppRoot 'control_runtime.py') --check 2>$null
-        if ($LASTEXITCODE -ne 0) { return $false }
-        $check = $result | ConvertFrom-Json
-        return [bool]($check.configured -and $check.python_ok)
-    } catch { return $false }
+        if ($LASTEXITCODE -ne 0) { return $null }
+        return $result | ConvertFrom-Json
+    } catch { return $null }
+}
+function Get-LineConfiguration {
+    $check = Get-LineCheck
+    return [bool]($check -and $check.configured -and $check.python_ok)
 }
 function Get-LineStatus([switch]$Public) {
     $registry = Get-LineRegistry
@@ -50,8 +53,11 @@ function Get-LineStatus([switch]$Public) {
     }
     $remote = $null
     if ($Public -and $online) { $remote = Get-LineHealth $script:PublicUrl }
+    $check = Get-LineCheck
     [pscustomobject]@{
-        Configured = Get-LineConfiguration
+        Configured = [bool]($check -and $check.configured -and $check.python_ok)
+        OAConfigured = [bool]($check -and $check.oa_configured)
+        PublicBaseUrl = [bool]($check -and $check.public_base_url)
         Managed = $owned
         Local = [bool]$online
         Stopping = [bool]$stopping
@@ -120,7 +126,7 @@ function Invoke-LineAction {
             Write-LineLog 'LINE 服務已停止；Cloudflare Tunnel 保持原狀。'
         }
         if ($Action -in @('Start','Restart')) {
-            if (-not (Get-LineConfiguration)) { throw 'LINE：尚未完成設定，請確認 Python 環境及 .env 中的 Channel secret。' }
+            if (-not (Get-LineConfiguration)) { throw 'LINE：Python 環境未就緒，請重新執行 Install-ControlPanel.ps1。' }
             if (-not $registry.processes.Count) {
                 if ($script:AdminPort -gt 0 -and (Get-NetTCPConnection -LocalPort $script:AdminPort -State Listen -ErrorAction SilentlyContinue)) {
                     throw 'LINE：本機管理頁連接埠已被占用，請先確認其他程序。'

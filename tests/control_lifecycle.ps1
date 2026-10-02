@@ -4,10 +4,9 @@ $repo = Split-Path $PSScriptRoot -Parent
 $fixture = Join-Path ([IO.Path]::GetTempPath()) ('line-control-test-' + [guid]::NewGuid())
 $appRoot = Join-Path $fixture 'line-oa-archive'
 $null = New-Item -ItemType Directory -Path $appRoot -Force
-foreach ($name in @('app.py','schema.sql','control_runtime.py','recipients.py','admin_server.py','line_api.py','send_image.py','reports.py','composer.py')) {
-    Copy-Item -LiteralPath (Join-Path $repo "line-oa-archive\$name") -Destination $appRoot
-}
-Set-Content -LiteralPath (Join-Path $appRoot '.env') -Value "LINE_CHANNEL_SECRET=test-secret`nDATABASE_PATH=data/test.db" -Encoding UTF8
+Copy-Item -Path (Join-Path $repo 'line-oa-archive\*.py') -Destination $appRoot
+Copy-Item -LiteralPath (Join-Path $repo 'line-oa-archive\schema.sql') -Destination $appRoot
+Set-Content -LiteralPath (Join-Path $appRoot '.env') -Value "DATABASE_PATH=data/test.db" -Encoding UTF8
 $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)
 $listener.Start()
 $port = $listener.LocalEndpoint.Port
@@ -48,7 +47,7 @@ try {
     $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, $port)
     $listener.Start()
     try {
-        Set-Content -LiteralPath (Join-Path $appRoot '.env') -Value 'LINE_CHANNEL_SECRET=test-secret'
+        Set-Content -LiteralPath (Join-Path $appRoot '.env') -Value 'DATABASE_PATH=data/test.db'
         foreach ($action in @('Start','Stop')) {
             $refused = $false
             try { $null = Invoke-LineAction $action } catch { $refused = $true }

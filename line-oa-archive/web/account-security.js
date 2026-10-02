@@ -1,7 +1,7 @@
 "use strict";
 function passwordForm(){
   const own=principalSession?.auth;
-  if(own?.method==='local'){modal('設定網站登入',`<p class="callout">目前由本機控制台管理。請到「組織」頁的「管理員帳號」，在要啟用的 Email 旁按「設定登入」，產生一次性設定連結。</p>${button('前往組織管理員帳號','security-accounts','primary')}`);return;}
+  if(own?.method==='local'){modal('設定網站登入',`<p class="callout">目前由本機控制台管理。請到「組織」頁的「管理員帳號」，在要啟用的 Email 旁按「設定登入」，產生一次性設定連結。</p>${button('前往管理員帳號','security-accounts','primary')}`);return;}
   modal(own?.password_set?'修改登入密碼':'啟用網站登入',`<form id="password-form"><p class="callout">${esc(principalSession.principal)}<br>密碼使用 15～128 個字元。變更後，所有裝置的網站登入都會失效。</p>${own?.password_set?'<label class="field">目前密碼<input name="current_password" type="password" autocomplete="current-password" required maxlength="128"></label>':''}<label class="field">新密碼<input name="password" type="password" autocomplete="new-password" required minlength="15" maxlength="128"></label><label class="field">再次輸入新密碼<input name="confirm" type="password" autocomplete="new-password" required minlength="15" maxlength="128"></label><div class="form-actions"><button type="submit" class="btn primary">儲存密碼</button></div></form>`);
 }
 document.addEventListener('click',async event=>{

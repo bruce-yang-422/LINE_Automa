@@ -12,13 +12,18 @@ from uuid import uuid4
 from urllib.parse import quote
 
 from login_helper import session_headers
+from oa_fixture import register_oa, use_oa
 import app
 import admin_server
+import channels
 import reports
 
 PNG = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=')
 USER = 'U' + '1' * 32
 OTHER = 'U' + '2' * 32
+# 每個組織各有一個 OA；USER 屬於組織 A 的 OA，OTHER 屬於組織 B 的 OA。
+CHANNEL_A = 'a' * 32
+CHANNEL_B = 'b' * 32
 
 
 class WorkspaceTests(unittest.TestCase):
@@ -34,22 +39,31 @@ class WorkspaceTests(unittest.TestCase):
             p = patch.object(app, target, value)
             p.start()
             self.addCleanup(p.stop)
-        p = patch.dict(os.environ, {'LINE_CHANNEL_ACCESS_TOKEN': 'fake-token', 'WEATHER_IMAGE_PATH': str(self.image),
-                       'ADMIN_PUBLIC_HOST': 'admin.example.com'}, clear=True)
+        p = patch.dict(os.environ, {'PUBLIC_BASE_URL': 'https://reports.example.test', 'ADMIN_PUBLIC_HOST': 'admin.example.com'}, clear=True)
         p.start()
         self.addCleanup(p.stop)
         app.initialize_database()
         reports.bootstrap_users({'admin@example.com'})
+        register_oa('A', channel_id=CHANNEL_A, bot='U' + 'a' * 32, name='OA A')
+        register_oa('B', channel_id=CHANNEL_B, bot='U' + 'c' * 32, name='OA B')
+        use_oa(self, CHANNEL_A)
         with app.database_connection() as conn:
-            conn.executemany("INSERT INTO recipients(recipient_id,kind,company,department) VALUES (?,'user',?,?)",
-                             [(USER, 'A', 'Sales'), (OTHER, 'B', 'Sales')])
-        for email, company, department in [('alice@example.com', 'A', 'Sales'), ('bob@example.com', 'A', 'Finance'), ('eve@example.com', 'B', 'Sales')]:
-            reports.save_user({'email': email, 'role': 'sender', 'company': company, 'department': department, 'active': True,
-                               'recipient_id': USER if email.startswith('alice') else ''}, 'admin@example.com')
+            conn.executemany("INSERT INTO recipients(channel_id,recipient_id,kind,organization_id,department) VALUES (?,?,'user',?,?)",
+                             [(CHANNEL_A, USER, 'A', 'Sales'), (CHANNEL_B, OTHER, 'B', 'Sales')])
+        for email, organization_id, department in [('alice@example.com', 'A', 'Sales'), ('bob@example.com', 'A', 'Finance'), ('eve@example.com', 'B', 'Sales')]:
+            reports.save_user({'email': email, 'role': 'operator', 'organization_id': organization_id, 'department': department, 'active': True}, 'admin@example.com')
 
-    def add_report(self, scope='company', company='A', department='Sales', owner_email='alice@example.com'):
-        return reports.save({'title': 'Business report', 'category': 'company', 'source_path': str(self.image),
-                             'company': company, 'scope': scope, 'department': department, 'owner_email': owner_email}, 'admin@example.com')
+    def add_report(self, scope='company', organization_id='A', department='Sales'):
+        # 報告屬於該組織的 OA；個人報告指定組織 A 的 LINE 個人聯絡對象 USER。
+        with channels.use(CHANNEL_A if organization_id == 'A' else CHANNEL_B):
+            return reports.save({'title': 'Business report', 'category': 'company', 'source_path': str(self.image),
+                                 'organization_id': organization_id, 'scope': scope, 'department': department,
+                                 'owner_recipient_id': USER if scope == 'personal' else ''}, 'admin@example.com')
+
+    def enable_weather(self, org_id='A'):
+        """平台管理員為組織啟用天氣客製模組並設定圖片來源。"""
+        with app.database_connection() as conn:
+            conn.execute('UPDATE organizations SET weather_enabled=1,weather_image_path=? WHERE org_id=?', (str(self.image), org_id))
 
     def server(self):
         server = admin_server.AdminServer(0)
@@ -57,9 +71,11 @@ class WorkspaceTests(unittest.TestCase):
         self.addCleanup(server.close)
         return server
 
-    def request(self, server, path, email='alice@example.com', payload=None, view_as=None, organization=None, preview_org=None):
+    def request(self, server, path, email='alice@example.com', payload=None, view_as=None, organization=None, preview_org=None, channel=CHANNEL_A):
         conn = http.client.HTTPConnection('127.0.0.1', server.server_port, timeout=5)
         headers = {**session_headers(email, server.public_host), 'Content-Type': 'application/json'}
+        if channel:
+            headers['X-Line-Channel'] = channel
         if view_as is not None:
             headers['X-Workspace-View-As'] = view_as
         if organization is not None:
@@ -74,23 +90,24 @@ class WorkspaceTests(unittest.TestCase):
             conn.close()
 
     def test_report_visibility_by_company_and_direct_api(self):
-        company, department, personal, other = self.add_report(), self.add_report('department'), self.add_report('personal'), self.add_report(company='B')
-        self.company_admins()
+        organization_id, department, personal, other = self.add_report(), self.add_report('department'), self.add_report('personal'), self.add_report(organization_id='B')
+        self.org_admins()
         server = self.server()
-        for email, expected in [('a-admin@example.com', {company['report_id'], department['report_id'], personal['report_id']}),
-                                ('b-admin@example.com', {other['report_id']}),
-                                ('alice@example.com', {company['report_id'], department['report_id'], personal['report_id']})]:
-            status, data = self.request(server, '/api/reports', 'admin@example.com', view_as=email)
+        for email, expected, channel in [('a-admin@example.com', {organization_id['report_id'], department['report_id'], personal['report_id']}, CHANNEL_A),
+                                         ('b-admin@example.com', {other['report_id']}, CHANNEL_B),
+                                         ('alice@example.com', {organization_id['report_id'], department['report_id'], personal['report_id']}, CHANNEL_A)]:
+            status, data = self.request(server, '/api/reports', 'admin@example.com', view_as=email, channel=channel)
             self.assertEqual(status, 200)
             self.assertEqual({r['report_id'] for r in data['reports']}, expected)
-            for report in (company, department, personal, other):
-                status, data = self.request(server, '/api/reports/' + report['report_id'], 'admin@example.com', view_as=email)
+            for report in (organization_id, department, personal, other):
+                status, data = self.request(server, '/api/reports/' + report['report_id'], 'admin@example.com', view_as=email, channel=channel)
                 self.assertEqual(status, 200 if report['report_id'] in expected else 404)
                 self.assertNotIn('source_path', data)
                 if status == 200:
                     self.assertTrue(data['preview'].startswith('data:image/png;base64,'))
 
     def test_weather_removal_persists_and_restore_does_not_resume_jobs(self):
+        self.enable_weather()
         server = self.server()
         weather = reports.describe(reports.find('weather'))
         payload = self.scheduled_text()
@@ -121,7 +138,8 @@ class WorkspaceTests(unittest.TestCase):
         self.assertIn('report.restore', actions)
 
     def test_report_removal_and_restore_require_platform_admin(self):
-        reports.save_user({'email':'lead@example.com', 'company':'A', 'role':'company_admin', 'active':True}, 'admin@example.com')
+        self.enable_weather()
+        reports.save_user({'email':'lead@example.com', 'organization_id':'A', 'role':'org_admin', 'active':True}, 'admin@example.com')
         server = self.server()
         for route in ('/api/reports/remove', '/api/reports/restore-weather'):
             for email in ('alice@example.com', 'lead@example.com'):
@@ -133,9 +151,10 @@ class WorkspaceTests(unittest.TestCase):
         self.assertIsNone(reports.find(regular['report_id']))
         self.assertTrue(self.image.exists())
         reports.remove('weather', 'admin@example.com')
-        with patch.dict(os.environ, {'WEATHER_MODULE_ENABLED':'false'}):
-            self.assertEqual(self.request(server, '/api/reports/restore-weather', 'admin@example.com', {})[0], 400)
-            self.assertTrue(reports.weather_removed())
+        with app.database_connection() as conn:
+            conn.execute("UPDATE organizations SET weather_enabled=0 WHERE org_id='A'")
+        self.assertEqual(self.request(server, '/api/reports/restore-weather', 'admin@example.com', {})[0], 400)
+        self.assertTrue(reports.weather_removed())
 
     def test_contact_without_account_cannot_read_or_modify_administration(self):
         server = self.server()
@@ -145,11 +164,11 @@ class WorkspaceTests(unittest.TestCase):
             self.assertEqual(self.request(server, route, 'nobody@example.com', payload={})[0], 401)
         self.assertEqual(self.request(server, '/api/settings', 'admin@example.com')[0], 200)
         self.assertEqual(self.request(server, '/api/reports', 'unlisted@example.com')[0], 401)
-        reports.save_user({'email': 'alice@example.com', 'company': 'A', 'role': 'sender', 'active': False}, 'admin@example.com')
+        reports.save_user({'email': 'alice@example.com', 'organization_id': 'A', 'role': 'operator', 'active': False}, 'admin@example.com')
         self.assertEqual(self.request(server, '/api/reports')[0], 401)
 
     def test_admin_sender_preview_is_scoped_readonly_and_revalidated(self):
-        mine, other = self.add_report('personal'), self.add_report(company='B')
+        mine, other = self.add_report('personal'), self.add_report(organization_id='B')
         server = self.server()
         def preview(path, payload=None):
             return self.request(server, path, 'admin@example.com', payload, 'alice@example.com')
@@ -158,7 +177,7 @@ class WorkspaceTests(unittest.TestCase):
         self.assertTrue(session['preview'])
         self.assertEqual(session['principal'], 'admin@example.com')
         self.assertEqual(session['identity'], 'alice@example.com')
-        self.assertEqual(session['role'], 'sender')
+        self.assertEqual(session['role'], 'operator')
         # A sender sees org reports (mine is in org A, other is in org B).
         self.assertEqual({r['report_id'] for r in preview('/api/reports')[1]['reports']}, {mine['report_id']})
         self.assertEqual(preview('/api/reports/' + mine['report_id'])[0], 200)
@@ -173,81 +192,67 @@ class WorkspaceTests(unittest.TestCase):
         self.assertEqual(self.request(server, '/api/settings', 'admin@example.com')[0], 200)
         choices = self.request(server, '/api/view-options', 'admin@example.com')[1]['users']
         self.assertEqual({u['email'] for u in choices}, {'alice@example.com','bob@example.com','eve@example.com'})
-        reports.save_user({'email':'alice@example.com','role':'sender','company':'A','active':False},'admin@example.com')
+        reports.save_user({'email':'alice@example.com','role':'operator','organization_id':'A','active':False},'admin@example.com')
         self.assertEqual(preview('/api/reports')[0], 403)
-        reports.save_user({'email':'admin2@example.com','role':'administrator','active':True},'本機管理員')
-        reports.save_user({'email':'admin@example.com','role':'sender','company':'A','active':True},'本機管理員')
+        reports.save_user({'email':'admin2@example.com','role':'platform_admin','active':True},'本機管理員')
+        reports.save_user({'email':'admin@example.com','role':'operator','organization_id':'A','active':True},'本機管理員')
         self.assertEqual(self.request(server, '/api/session', 'admin@example.com', view_as='bob@example.com')[0], 403)
 
     def test_last_admin_and_bootstrap_do_not_restore_revoked_permissions(self):
         with self.assertRaises(ValueError):
-            reports.save_user({'email': 'admin@example.com', 'role': 'sender', 'company': 'A', 'active': True}, '本機管理員')
-        reports.save_user({'email': 'admin2@example.com', 'role': 'administrator', 'active': True}, '本機管理員')
-        reports.save_user({'email': 'admin@example.com', 'role': 'sender', 'company': 'A', 'active': False}, '本機管理員')
+            reports.save_user({'email': 'admin@example.com', 'role': 'operator', 'organization_id': 'A', 'active': True}, '本機管理員')
+        reports.save_user({'email': 'admin2@example.com', 'role': 'platform_admin', 'active': True}, '本機管理員')
+        reports.save_user({'email': 'admin@example.com', 'role': 'operator', 'organization_id': 'A', 'active': False}, '本機管理員')
         reports.bootstrap_users({'admin@example.com'})
         self.assertIsNone(reports.account('admin@example.com'))
         with self.assertRaises(ValueError):
-            reports.save_user({'email': 'invalid', 'role': 'sender', 'active': True}, 'admin2@example.com')
+            reports.save_user({'email': 'invalid', 'role': 'operator', 'active': True}, 'admin2@example.com')
 
-    def test_employee_role_is_rejected_and_legacy_rows_are_removed(self):
+    def test_unknown_role_is_rejected(self):
         with self.assertRaises(ValueError):
-            reports.save_user({'email': 'legacy@example.com', 'role': 'employee', 'company': 'A', 'active': True}, 'admin@example.com')
+            reports.save_user({'email': 'guest@example.com', 'role': 'guest', 'organization_id': 'A', 'active': True}, 'admin@example.com')
         with self.assertRaises(ValueError):
-            reports.save_membership({'email': 'alice@example.com', 'org_id': 'A', 'role': 'employee', 'active': True}, 'admin@example.com')
-        # Simulate a database created before the role was removed, whose CHECK constraints still allowed it.
-        with app.database_connection() as conn:
-            conn.execute('PRAGMA ignore_check_constraints=ON')
-            conn.execute("INSERT INTO workspace_users(email,role,company,active) VALUES ('legacy@example.com','employee','A',1)")
-            conn.execute("INSERT INTO site_credentials(email,password_hash,changed_at) VALUES ('legacy@example.com','x',0)")
-            conn.execute("INSERT INTO workspace_users(email,role,company,active) VALUES ('both@example.com','employee','A',1)")
-            conn.execute("INSERT INTO organization_members(email,org_id,role,active) VALUES ('both@example.com','A','employee',1),('both@example.com','B','sender',1)")
-        app.initialize_database()
-        with app.database_connection() as conn:
-            self.assertIsNone(conn.execute("SELECT 1 FROM workspace_users WHERE email='legacy@example.com'").fetchone())
-            self.assertIsNone(conn.execute("SELECT 1 FROM site_credentials WHERE email='legacy@example.com'").fetchone())
-            self.assertEqual(conn.execute("SELECT COUNT(*) FROM organization_members WHERE role='employee'").fetchone()[0], 0)
-            # An account that still operates in another organization keeps that membership.
-            self.assertEqual(conn.execute("SELECT org_id,role FROM organization_members WHERE email='both@example.com'").fetchall(), [('B', 'sender')])
+            reports.save_membership({'email': 'alice@example.com', 'org_id': 'A', 'role': 'guest', 'active': True}, 'admin@example.com')
 
     def scheduled_text(self, stamp=None):
         return {'job_id':str(uuid4()), 'audience':'selected', 'ids':[USER], 'message_text':'Meeting reminder',
                 'scheduled_at':(stamp or datetime.now(timezone.utc)+timedelta(hours=1)).isoformat()}
 
-    def company_admins(self):
-        for company in ('A', 'B'):
-            reports.save_user({'email':company.lower()+'-admin@example.com','role':'company_admin','company':company,'active':True}, 'admin@example.com')
+    def org_admins(self):
+        for organization_id in ('A', 'B'):
+            reports.save_user({'email':organization_id.lower()+'-admin@example.com','role':'org_admin','organization_id':organization_id,'active':True}, 'admin@example.com')
 
     def test_multiple_organization_roles_switch_and_revoke(self):
-        self.company_admins()
-        own,other=self.add_report(),self.add_report(company='B')
+        self.org_admins()
+        own,other=self.add_report(),self.add_report(organization_id='B')
         server=self.server()
         def get(path,org):
             return self.request(server,path,'a-admin@example.com',organization=org)
-        self.assertEqual(get('/api/session','A')[1]['role'],'company_admin')
+        self.assertEqual(get('/api/session','A')[1]['role'],'org_admin')
         self.assertEqual(get('/api/session','B')[0],403)
         self.assertEqual(get('/api/reports','B')[0],403)
         self.assertEqual(get('/api/reports/'+own['report_id'],'B')[0],403)
         self.assertEqual(get('/api/contacts','B')[0],403)
         self.assertEqual(get('/api/session','not-a-member')[0],403)
         self.assertEqual(self.request(server,'/api/organizations/save','a-admin@example.com',{},organization='A')[0],403)
-        reports.save_membership({'email':'a-admin@example.com','org_id':'B','role':'company_admin','active':True},'admin@example.com')
+        reports.save_membership({'email':'a-admin@example.com','org_id':'B','role':'org_admin','active':True},'admin@example.com')
         payload=self.scheduled_text();payload['ids']=[OTHER]
         with patch.object(admin_server,'load_settings'):
-            self.assertEqual(self.request(server,'/api/send','a-admin@example.com',payload,organization='B')[0],202)
-        reports.save_membership({'email':'a-admin@example.com','org_id':'B','role':'company_admin','active':False},'admin@example.com')
+            self.assertEqual(self.request(server,'/api/send','a-admin@example.com',payload,organization='B',channel=CHANNEL_B)[0],202)
+        reports.save_membership({'email':'a-admin@example.com','org_id':'B','role':'org_admin','active':False},'admin@example.com')
         self.assertEqual(get('/api/session','B')[0],403)
         with patch.object(server.dispatcher.pool,'submit'):
             server.dispatcher.tick(datetime.fromisoformat(payload['scheduled_at'])+timedelta(seconds=1))
-        with patch.object(admin_server,'send_push') as send:
+        with patch.object(admin_server,'send_push') as send, channels.use(CHANNEL_B):
             server.dispatcher.run(payload['job_id']);send.assert_not_called()
 
     def test_organization_rename_modules_and_deactivation(self):
-        self.company_admins()
+        self.org_admins()
         source=self.add_report()
-        config={'org_id':'A','name':'登山俱樂部','kind':'club','active':True,'reports_enabled':False,'messaging_enabled':False,'weather_enabled':False}
+        config={'org_id':'A','name':'登山俱樂部','kind':'club','active':True,'reports_enabled':False,'messaging_enabled':False,'weather_enabled':False,'weather_image_path':str(self.image)}
         reports.save_organization(config,'admin@example.com')
         user=reports.account('a-admin@example.com')
-        self.assertEqual(user['company'],'A')
+        self.assertEqual(user['organization_id'],'A')
         self.assertEqual(user['organization_name'],'登山俱樂部')
         self.assertFalse(reports.can_view(reports.find(source['report_id']),user))
         dispatcher=admin_server.Dispatcher();self.addCleanup(dispatcher.close)
@@ -271,9 +276,9 @@ class WorkspaceTests(unittest.TestCase):
         self.assertEqual(reports.memberships(), [])
         self.assertIsNone(reports.account('alice@example.com', 'A'))
 
-    def test_company_admin_api_isolation_and_privilege_escalation(self):
-        self.company_admins()
-        own, other = self.add_report('personal'), self.add_report(company='B')
+    def test_org_admin_api_isolation_and_privilege_escalation(self):
+        self.org_admins()
+        own, other = self.add_report('personal'), self.add_report(organization_id='B')
         server = self.server()
         def request(path, payload=None, view=None):
             return self.request(server, path, 'a-admin@example.com', payload, view)
@@ -284,29 +289,29 @@ class WorkspaceTests(unittest.TestCase):
         self.assertEqual([r['recipient_id'] for r in contacts], [USER])
         self.assertNotIn('weather_subscribed', contacts[0])
         settings = request('/api/settings')[1]
-        self.assertTrue(all(u['company']=='A' and u['role']!='administrator' for u in settings['users']))
+        self.assertTrue(all(u['organization_id']=='A' and u['role']!='platform_admin' for u in settings['users']))
         for path in ('/api/reports/save','/api/reports/remove'):
             self.assertEqual(request(path, {})[0],403)
         self.assertEqual(request('/api/accounts/save', {'email': 'invalid'})[0],400)
-        for change in ({'id':OTHER,'alias':'stolen'}, {'id':USER,'company':'B','alias':'moved'}, {'id':USER,'subscribed':True,'alias':'weather'}):
+        for change in ({'id':OTHER,'custom_name':'stolen'}, {'id':USER,'organization_id':'B','custom_name':'moved'}, {'id':USER,'subscribed':True,'custom_name':'weather'}):
             self.assertEqual(request('/api/contact',change)[0],400)
-        self.assertEqual(request('/api/contact',{'id':USER,'alias':'A contact','department':'Sales'})[0],200)
+        self.assertEqual(request('/api/contact',{'id':USER,'custom_name':'A contact','department':'Sales'})[0],200)
         self.assertEqual({u['email'] for u in request('/api/view-options')[1]['users']},{'alice@example.com','bob@example.com'})
         self.assertEqual(request('/api/session',view='eve@example.com')[0],403)
         self.assertEqual(request('/api/session',view='admin@example.com')[0],403)
-        self.assertEqual(request('/api/session',view='alice@example.com')[1]['role'],'sender')
+        self.assertEqual(request('/api/session',view='alice@example.com')[1]['role'],'operator')
         preview = self.request(server,'/api/session','admin@example.com',view_as='a-admin@example.com')
-        self.assertEqual(preview[1]['role'],'company_admin')
-        self.assertEqual(self.request(server,'/api/contact','admin@example.com',{'id':USER,'alias':'preview'},'a-admin@example.com')[0],403)
+        self.assertEqual(preview[1]['role'],'org_admin')
+        self.assertEqual(self.request(server,'/api/contact','admin@example.com',{'id':USER,'custom_name':'preview'},'a-admin@example.com')[0],403)
 
     def test_company_jobs_are_scoped_and_rechecked_on_execution(self):
-        self.company_admins()
+        self.org_admins()
         server = self.server()
         with patch.object(admin_server,'load_settings'), patch.object(admin_server,'publish_image') as publish:
             a = self.scheduled_text()
             self.assertEqual(self.request(server,'/api/send','a-admin@example.com',a)[0],202)
             b = self.scheduled_text();b['ids']=[OTHER]
-            self.assertEqual(self.request(server,'/api/send','b-admin@example.com',b)[0],202)
+            self.assertEqual(self.request(server,'/api/send','b-admin@example.com',b,channel=CHANNEL_B)[0],202)
             for payload in (b, dict(self.scheduled_text(), ids=[OTHER]), dict(self.scheduled_text(), image_path=str(self.image))):
                 self.assertEqual(self.request(server,'/api/send','a-admin@example.com',payload)[0],400)
             publish.assert_not_called()
@@ -317,9 +322,9 @@ class WorkspaceTests(unittest.TestCase):
         self.assertEqual(self.request(server,'/api/jobs/cancel','a-admin@example.com',{'job_id':b['job_id']})[0],400)
         events = self.request(server,'/api/activity','a-admin@example.com')[1]['events']
         self.assertTrue(events)
-        self.assertTrue(all(e['company']=='A' for e in events))
-        # Moving the creator to another company invalidates the queued delivery.
-        reports.save_user({'email':'a-admin@example.com','role':'company_admin','company':'B','active':True},'admin@example.com')
+        self.assertTrue(all(e['organization_id']=='A' for e in events))
+        # Moving the creator to another organization_id invalidates the queued delivery.
+        reports.save_user({'email':'a-admin@example.com','role':'org_admin','organization_id':'B','active':True},'admin@example.com')
         with patch.object(server.dispatcher.pool,'submit'):
             server.dispatcher.tick(datetime.fromisoformat(a['scheduled_at'])+timedelta(seconds=1))
         with patch.object(admin_server,'send_push') as send:
@@ -327,21 +332,23 @@ class WorkspaceTests(unittest.TestCase):
             send.assert_not_called()
         self.assertEqual(admin_server.job_status(a['job_id'])[0]['deliveries'][0]['status'],'cancelled')
 
-    def test_restart_preserves_accounts_and_supports_company_admin(self):
+    def test_restart_preserves_accounts_and_supports_org_admin(self):
         before = reports.users()
         app.initialize_database()
         app.initialize_database()
         self.assertEqual(reports.users(), before)
-        self.company_admins()
-        self.assertEqual(reports.account('a-admin@example.com')['role'], 'company_admin')
+        self.org_admins()
+        self.assertEqual(reports.account('a-admin@example.com')['role'], 'org_admin')
 
     def test_company_module_send_rejects_other_modules_and_private_paths(self):
-        self.company_admins()
-        own, other = self.add_report(), self.add_report(company='B')
+        self.org_admins()
+        own, other = self.add_report(), self.add_report(organization_id='B')
         dispatcher = admin_server.Dispatcher()
         self.addCleanup(dispatcher.close)
         with patch.object(admin_server,'load_settings'), patch.object(admin_server,'publish_image',return_value=('https://example.test/snapshot.png',PNG)) as publish, patch.object(admin_server,'verify_public_image'):
-            for report in (other, reports.describe(reports.find('weather'))):
+            # 天氣模組未為組織 A 啟用；其他組織的報告在本 OA 找不到。
+            self.assertIsNone(reports.find('weather'))
+            for report in (other,):
                 payload=self.scheduled_text();del payload['message_text']
                 payload.update(report_id=report['report_id'],report_version=report['version'])
                 with self.assertRaises(ValueError):
@@ -349,9 +356,9 @@ class WorkspaceTests(unittest.TestCase):
             publish.assert_not_called()
             payload=self.scheduled_text();del payload['message_text']
             payload.update(report_id=own['report_id'],report_version=own['version'])
-            self.assertEqual(dispatcher.submit(payload,'a-admin@example.com')['company'],'A')
+            self.assertEqual(dispatcher.submit(payload,'a-admin@example.com')['organization_id'],'A')
             manual=self.scheduled_text();del manual['message_text'];manual['image_path']=str(self.image)
-            self.assertEqual(dispatcher.submit(manual,'admin@example.com')['company'],'')
+            self.assertEqual(dispatcher.submit(manual,'admin@example.com')['organization_id'],'')
             self.assertEqual(admin_server.job_status(manual['job_id'],reports.account('a-admin@example.com')),[])
 
     def test_schedules_survive_restart_cancel_and_claim_once(self):
@@ -398,22 +405,32 @@ class WorkspaceTests(unittest.TestCase):
             dispatch.assert_not_called()
             revoked = self.scheduled_text()
             dispatcher.submit(revoked, 'admin@example.com')
-            reports.save_user({'email':'admin2@example.com','role':'administrator','active':True},'本機管理員')
-            reports.save_user({'email':'admin@example.com','role':'assistant','company':'A','active':True},'本機管理員')
+            reports.save_user({'email':'admin2@example.com','role':'platform_admin','active':True},'本機管理員')
+            reports.save_user({'email':'admin@example.com','role':'collaborator','organization_id':'A','active':True},'本機管理員')
             dispatcher.tick(datetime.fromisoformat(revoked['scheduled_at'])+timedelta(seconds=1))
             with patch.object(admin_server, 'send_push') as push:
                 dispatcher.run(revoked['job_id'])
                 push.assert_not_called()
             self.assertEqual(admin_server.job_status(revoked['job_id'])[0]['deliveries'][0]['status'], 'cancelled')
 
-    def test_personal_weather_module_not_shared_with_other_admins(self):
-        self.company_admins()
-        self.assertFalse(reports.can_view(reports.find('weather'), reports.account('a-admin@example.com')))
-        with patch.dict(os.environ, {'WEATHER_OWNER_EMAIL':'a-admin@example.com'}):
-            self.assertTrue(reports.can_view(reports.find('weather'), reports.account('a-admin@example.com')))
-            self.assertFalse(reports.can_view(reports.find('weather'), reports.account('b-admin@example.com')))
-        with patch.dict(os.environ, {'WEATHER_MODULE_ENABLED':'false'}):
+    def test_weather_module_follows_organization_settings(self):
+        self.org_admins()
+        # 未啟用：組織 A 的 OA 沒有天氣報告。
+        self.assertIsNone(reports.find('weather'))
+        # 啟用時必須填入圖片路徑；啟用後只出現在組織 A 的 OA。
+        config = {'org_id':'A','name':'A','kind':'company','active':True,'reports_enabled':True,'messaging_enabled':True,'weather_enabled':True}
+        with self.assertRaises(ValueError):
+            reports.save_organization(config, 'admin@example.com')
+        reports.save_organization({**config, 'weather_image_path': str(self.image)}, 'admin@example.com')
+        self.assertTrue(reports.can_view(reports.find('weather'), reports.account('a-admin@example.com')))
+        with channels.use(CHANNEL_B):
             self.assertIsNone(reports.find('weather'))
+        # 管理員只能改名稱與類型，不能自行開啟模組。
+        server = self.server()
+        self.assertEqual(self.request(server, '/api/org-settings/save', 'b-admin@example.com',
+                                      {'name':'B 新名','kind':'club','weather_enabled':True,'weather_image_path':str(self.image)}, channel=CHANNEL_B)[0], 200)
+        org_b = next(o for o in reports.organizations() if o['org_id'] == 'B')
+        self.assertEqual((org_b['name'], org_b['kind'], org_b['weather_enabled'], org_b['weather_image_path']), ('B 新名', 'club', 0, ''))
 
     def test_scheduled_image_uses_confirmed_snapshot(self):
         report = self.add_report()
@@ -432,6 +449,7 @@ class WorkspaceTests(unittest.TestCase):
             self.assertEqual(push.call_args.args[2], 'https://example.test/frozen.png')
 
     def test_report_changed_missing_oversized_and_stale(self):
+        self.enable_weather()
         report = reports.describe(reports.find('weather'), preview=True)
         self.assertEqual(report['status'], 'ready')
         self.image.write_bytes(PNG + b'changed')
@@ -449,9 +467,12 @@ class WorkspaceTests(unittest.TestCase):
 
     def test_scope_checked_before_publication_and_actor_audited(self):
         report = self.add_report('department')
+        finance = 'U' + '3' * 32
+        with app.database_connection() as conn:
+            conn.execute("INSERT INTO recipients(channel_id,recipient_id,kind,organization_id,department) VALUES (?,?,'user','A','Finance')", (CHANNEL_A, finance))
         dispatcher = admin_server.Dispatcher()
         self.addCleanup(dispatcher.close)
-        payload = {'job_id': str(uuid4()), 'report_id': report['report_id'], 'report_version': report['version'], 'ids': [OTHER], 'audience': 'selected'}
+        payload = {'job_id': str(uuid4()), 'report_id': report['report_id'], 'report_version': report['version'], 'ids': [finance], 'audience': 'selected'}
         with patch.object(admin_server, 'load_settings'), patch.object(admin_server, 'publish_image', return_value=('https://example.test/test.png', PNG)) as publish, \
                 patch.object(admin_server, 'verify_public_image'), patch.object(dispatcher.pool, 'submit'):
             with self.assertRaisesRegex(ValueError, '範圍'):
@@ -465,7 +486,7 @@ class WorkspaceTests(unittest.TestCase):
             self.assertTrue(any(e['action'] == 'send.create' for e in reports.activity()))
             # Changing recipient scope after submission must cancel, not send.
             with app.database_connection() as conn:
-                conn.execute("UPDATE recipients SET company='B' WHERE recipient_id=?", (USER,))
+                conn.execute("UPDATE recipients SET organization_id='B' WHERE recipient_id=?", (USER,))
             with patch.object(admin_server, 'send_push') as send:
                 dispatcher.run(job['job_id'])
                 send.assert_not_called()
@@ -473,29 +494,32 @@ class WorkspaceTests(unittest.TestCase):
 
     def test_migration_preserves_original_data_and_is_repeatable(self):
         with app.database_connection() as conn:
-            conn.execute("UPDATE recipients SET alias='Saved',weather_subscribed=1 WHERE recipient_id=?", (USER,))
+            conn.execute("UPDATE recipients SET custom_name='Saved',weather_subscribed=1 WHERE recipient_id=?", (USER,))
         app.initialize_database()
         app.initialize_database()
         with app.database_connection() as conn:
-            self.assertEqual(conn.execute('SELECT alias,weather_subscribed,company FROM recipients WHERE recipient_id=?', (USER,)).fetchone(), ('Saved', 1, 'A'))
+            self.assertEqual(conn.execute('SELECT custom_name,weather_subscribed,organization_id FROM recipients WHERE recipient_id=?', (USER,)).fetchone(), ('Saved', 1, 'A'))
 
     def test_report_scope_edit_takes_effect_without_restart(self):
         report = self.add_report()
-        target = [{'recipient_id': USER, 'company': 'A', 'department': 'Sales'}]
+        target = [{'recipient_id': USER, 'organization_id': 'A', 'department': 'Sales'}]
         reports.validate_targets(reports.find(report['report_id']), target)
         reports.save({'report_id': report['report_id'], 'title': 'Private', 'category': 'company', 'source_path': str(self.image),
-                      'company': 'A', 'scope': 'department', 'department': 'Finance'}, 'admin@example.com')
+                      'organization_id': 'A', 'scope': 'department', 'department': 'Finance'}, 'admin@example.com')
         with self.assertRaises(ValueError):
             reports.validate_targets(reports.find(report['report_id']), target)
-        self.assertEqual(len(reports.sources()), 2)
+        self.assertEqual(len(reports.sources()), 1)
         self.assertTrue(any(e['action'] == 'report.update' for e in reports.activity()))
 
     def test_subscriber_changes_and_image_race_block_publication_or_send(self):
+        self.enable_weather()
         dispatcher = admin_server.Dispatcher()
         self.addCleanup(dispatcher.close)
         report = reports.describe(reports.find('weather'))
         payload = {'job_id': str(uuid4()), 'report_id': 'weather', 'report_version': report['version'], 'ids': [USER], 'audience': 'subscribers'}
         with app.database_connection() as conn:
+            # 確認後新增一位訂閱者：名單已與確認時不同。
+            conn.execute("INSERT INTO recipients(channel_id,recipient_id,kind,organization_id) VALUES (?,?,'user','A')", (CHANNEL_A, 'U' + '4' * 32))
             conn.execute('UPDATE recipients SET weather_subscribed=1')
         with patch.object(admin_server, 'load_settings'), patch.object(admin_server, 'publish_image') as publish:
             with self.assertRaisesRegex(ValueError, '訂閱名單已變更'):

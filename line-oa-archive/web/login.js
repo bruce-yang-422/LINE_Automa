@@ -12,6 +12,8 @@ if(activation){
   el('login-remember-field').hidden=true;el('login-submit').textContent='設定密碼';
   el('login-help').hidden=true;el('login-back').hidden=false;
 }
+// 尚無平台管理員時不能登入；首次設定只能從本機控制台進行。
+if(!activation)fetch('/api/auth/setup-state',{credentials:'same-origin',cache:'no-store'}).then(r=>r.json()).then(d=>{if(!d.initialized){el('login-setup').hidden=false;el('login-form').hidden=true;}}).catch(()=>{});
 function show(message,error=true){el('login-notice').textContent=message;el('login-notice').className='notice'+(error?' error':'');el('login-notice').hidden=false;}
 el('password-visibility').addEventListener('click',()=>{const showPassword=el('login-password').type==='password';el('login-password').type=showPassword?'text':'password';el('password-visibility').textContent=showPassword?'隱藏':'顯示';el('password-visibility').setAttribute('aria-label',showPassword?'隱藏密碼':'顯示密碼');el('password-visibility').setAttribute('aria-pressed',String(showPassword));});
 el('login-form').addEventListener('submit',async event=>{

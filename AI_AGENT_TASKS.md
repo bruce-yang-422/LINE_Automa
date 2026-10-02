@@ -161,11 +161,11 @@
     - 已取消功能的殘留：個人工作區（`line_channels.owner_email`、`p:` 工作區）、`employee` 相關、舊帳號綁定（`workspace_users.recipient_id`、`report_sources.owner_email` 的舊相容讀取）、`line_channels.legacy_webhook`。
     - 命名與規格不一致：`recipients.company`（實為系統組織 ID，規格名 `organization_id`）、`recipients.alias`（規格名 `custom_name`）等；改名時程式、測試、前端一併修改。
     - 重複或用不到的表與索引。
-- [ ] **新 `schema.sql`**：依聯絡人、案件、聊天、權限規格重寫，作為唯一的資料結構來源。
+- [x] **新 `schema.sql`**：依聯絡人、案件、聊天、權限規格重寫，作為唯一的資料結構來源。 2026-10-02 完成：保留 39 張表（未合併資料表；盤點時提到的「約 18 核心表」提案不在專案中），刪除個人工作區、`legacy_webhook`、`owner_email`、帳號 LINE 綁定（`workspace_users`／`organization_members` 的 `recipient_id`）等欄位；營運資料表的 `channel_id` 改為 NOT NULL 無預設值；補上角色、狀態、類型、旗標的 CHECK 與 `contact_tags(channel_id,name)` 唯一限制；`recipients.alias` 改名 `custom_name`。
     - 一致的命名、外鍵、CHECK、唯一限制與必要索引；所有營運資料帶 OA（`channel_id`）範圍。
-    - 角色只有 `administrator`、`company_admin`、`sender`、`assistant`；不建立個人工作區相關欄位。
+    - 角色只有 `platform_admin`、`org_admin`、`operator`、`collaborator`；不建立個人工作區相關欄位。
     - 設定 `PRAGMA user_version = 1` 作為結構版本；之後若需變更，以編號的升級檔處理，不再把升級語法寫進 `initialize_database()`。
-- [ ] **產品設定改由網頁後台**：比照正式產品，LINE OA 與模組設定一律由甲級在網頁後台設定，不寫在 `.env`。
+- [x] **產品設定改由網頁後台**：比照正式產品，LINE OA 與模組設定一律由甲級在網頁後台設定，不寫在 `.env`。 2026-10-02 完成：`control_runtime.load_settings()` 只讀三項部署設定；Webhook 只接受 `/webhook/<OA>` 並以該 OA 的 secret 驗證；天氣模組改為組織設定（`organizations.weather_image_path`，平台管理員在「組織」頁填寫）；刪除「匯入既有 OA」、單一 OA 模式、`upgrade_multi_oa.py`、`Send-WeatherReport.ps1` 與 `send_image.py` 命令列（確認無排程或其他專案使用；保留供發送服務使用的函式）；控制台移除「編輯 LINE 設定」，改顯示 Python 環境、`PUBLIC_BASE_URL` 與是否已有啟用中的 OA；`PUBLIC_BASE_URL` 未設定時發送會明確報錯（不再預設網域）。README、`line-oa-archive/README.md`、`LINE_OA申請與設定.md` 已改寫。**待使用者**：`.env` 清理（見「資料處理」）。
     - **移出 `.env`、改由網頁設定**：`LINE_CHANNEL_SECRET`、`LINE_CHANNEL_ACCESS_TOKEN`（甲級在「LINE OA」頁輸入，加密存入資料庫）；`WEATHER_MODULE_ENABLED`、`WEATHER_OWNER_EMAIL`、`WEATHER_IMAGE_PATH`（甲級在「組織」頁為指定組織啟用與設定客製模組）；`ADMIN_ALLOWED_EMAILS`（改為首次設定，見下一項）；`LINE_PUSH_USER_ID`（隨 `send_image.py` 處理）。
     - **保留在 `.env`（部署基礎設定，網站啟動前就需要）**：只有 `DATABASE_PATH`、`PUBLIC_BASE_URL`、`ADMIN_PUBLIC_HOST`。
     - **移除舊路徑（全部刪除，不保留相容）**：「匯入既有 OA」（讀取 `.env` 憑證）、舊單一 OA 模式與 `legacy_webhook`、個人工作區、`employee` 清理、舊帳號綁定與 `owner_email` 相容讀取、`upgrade_multi_oa.py`，以及程式中所有讀取已移出變數的地方。
@@ -173,7 +173,7 @@
     - **`send_image.py` 命令列工具**：改為讀取資料庫中的 OA 與聯絡對象，或在確認無人使用後移除。
     - **`.env.example`**：已於 2026-10-01 先改為新版（只列三項部署設定）；現有 `.env` 待程式完成後再清理。
     - **README、安裝說明**：同步改寫，只列保留的部署設定。
-- [ ] **第一位甲級帳號的首次設定**：不使用 `.env` 建立帳號（見權限規格「9. 首次設定」）。
+- [x] **第一位甲級帳號的首次設定**：不使用 `.env` 建立帳號（見權限規格「9. 首次設定」）。 2026-10-02 完成：`POST /api/setup/first-admin`（僅本機控制台 token、且尚無啟用中的平台管理員）、`/api/session` 的 `needs_setup`、登入頁 `/api/auth/setup-state`、`create_admin.py`；測試 `tests/test_first_run.py`。
     - **網頁首次設定**：資料庫沒有任何甲級帳號時，經桌面控制台開啟的本機入口直接進入「建立第一位平台管理員」：輸入 Email、顯示名稱，產生一次性設定密碼連結；建立後此頁不再出現。外部網址只顯示「系統尚未完成初始設定」。
     - **無桌面主機**：提供一次性指令 `create_admin.py`，互動輸入 Email 後印出一次性設定連結；不接受命令列密碼參數、不寫入任何檔案；已有甲級帳號時可用於新增甲級或重設密碼（緊急復原）。
     - 驗收：全新資料庫經本機入口可完成首次設定，外部網址無法進入設定頁；已有甲級後設定頁不再出現；`create_admin.py` 在無桌面環境可完成相同流程；任何檔案與日誌中都沒有明文密碼。
@@ -184,21 +184,21 @@
     - 文件：`docs/功能規格/網站登入.md` 改寫為只描述站內登入（或改名為「網站登入」），刪除切換與回復 Access 的步驟；README、`line-oa-archive/README.md`、專案需求、SaaS 規劃、進度紀錄同步更新。
     - **保留 Cloudflare Tunnel**：Tunnel 是對外連線通道，與 Access 登入無關，不刪除。程式完成後，由使用者在 Cloudflare 後台刪除 `line-admin` 的 Access 應用程式（目前為 Bypass）。
 - [x] **管理選單依等級隱藏（修正）**：`index.html` 管理選單已有 `data-nav-role`，但 `admin.js` 未依此隱藏，所有人看到全部 5 項。依權限規格 8.3：甲級只顯示「組織、LINE OA」；乙級只顯示「LINE OA、人員與權限、組織設定」；丙、丁級不顯示管理選單。移除「平台設定」頁（甲級帳號改由本機管理員或 `create_admin.py` 處理，預設範本包內建於程式）。後端對應 API 也須依等級拒絕。驗收：四級各自登入，選單與規格一致；直接呼叫未顯示選單的 API 被拒絕。 2026-10-01 完成：甲級以 headless Chrome 實測只顯示「組織、LINE OA」；後端新增測試 `test_platform_admin_manages_only_org_admins_and_not_personnel`；瀏覽器測試已改寫但未執行（本機無 Playwright）。暫留「組織 › 平台管理員帳號」區塊供甲級設定登入，待第 9 節首次設定與 `create_admin.py` 完成後再評估。
-- [ ] **等級名稱與程式角色值**（規格「2. 等級總覽」「7. 實作注意」）：
+- [x] **等級名稱與程式角色值**（規格「2. 等級總覽」「7. 實作注意」）： 2026-10-02 完成：角色值、`organization_id` 欄位與 API 欄位、`same_organization()`／`enforce_organization()`／`channels.current_organization_id()` 改名；畫面名稱與一行權限說明更新；管理選單鍵改為 `platform`／`org`／`platform-org`。
     - 畫面一律顯示「平台管理員、管理員、操作人員、協作人員」並附一行權限說明，不顯示甲乙丙丁或 ABCD。
     - 程式角色值改名：`administrator`→`platform_admin`、`company_admin`→`org_admin`、`sender`→`operator`、`assistant`→`collaborator`；新 `schema.sql` 的 CHECK 直接使用新值。
     - 欄位與函式改名：存放組織 ID 的 `company` 欄位改為 `organization_id`；`same_company()`、`enforce_company()` 等一併改名。
     - 範圍：Python、前端 JS、測試、fixture、規格與 README 同步修改。
     - 驗收：`grep` 確認程式與測試中已無舊角色值（`company_admin`、`assistant`，以及作為角色的 `administrator`、`sender`）與 `company` 欄位名；全部測試在新資料庫通過。
-- [ ] **取消個人工作區**：不再提供個人工作區；現有個人 OA 移轉到組織類型「個人」的組織，原擁有者設為乙級（規格 6.3）。重建資料庫時新結構直接不建個人工作區，不需另寫移轉程式。
+- [x] **取消個人工作區**：不再提供個人工作區；現有個人 OA 移轉到組織類型「個人」的組織，原擁有者設為乙級（規格 6.3）。重建資料庫時新結構直接不建個人工作區，不需另寫移轉程式。 2026-10-02 完成：程式與介面已無個人工作區；不寫移轉程式，資料於重建時重新設定（見「資料處理」）。
     - 現況：個人工作區程式（`personal_owner`、`owner_email`、`p:` 工作區）仍在。
     - 驗收：移轉前備份；移轉後原 OA 的聯絡對象、報告、發送紀錄、案件、記事完整；原擁有者以乙級登入可操作；介面不再出現個人工作區。
-- [ ] **移除升級程式**：`initialize_database()` 只執行 `schema.sql`，刪除所有 `ALTER TABLE`、重建表、清理舊資料的程式；刪除 `upgrade_multi_oa.py` 及其測試，並更新提到它的文件（`line-oa-archive/README.md`、SaaS 規劃、進度紀錄）。
+- [x] **移除升級程式**： 2026-10-02 完成：`initialize_database()` 只執行 `schema.sql` 並寫入 `PRAGMA user_version = 1`；偵測到沒有結構版本的舊資料庫時拒絕啟動並提示備份重建。`initialize_database()` 只執行 `schema.sql`，刪除所有 `ALTER TABLE`、重建表、清理舊資料的程式；刪除 `upgrade_multi_oa.py` 及其測試，並更新提到它的文件（`line-oa-archive/README.md`、SaaS 規劃、進度紀錄）。
 - [ ] **資料處理**：不移轉舊資料，直接重建。
     - 執行前停止 LINE 服務，將 `data/line_archive.db`（含 `-wal`、`-shm`）備份到 `backups/`；保留 `line-credentials.key`。
     - 會遺失並需重新設定的項目：後台帳號與密碼、組織、OA 連線（由甲級在網頁「LINE OA」頁重新輸入 Channel access token 與 secret）、聯絡對象的自訂名稱與分類（之後對方傳訊息會重新建立聯絡對象）、9 筆訊息紀錄。
     - 重建後依權限規格 8.6 重新設定：甲級帳號、自己的組織（類型「個人」）與乙級帳號、OA 連線。
-- [ ] **驗收**：
+- [ ] **驗收**： 2026-10-02：131 個 Python 測試在全新資料庫通過（含 `tests/test_fresh_install.py`：只有三項部署設定，從首次設定、建立組織、網頁設定 OA、Webhook 收訊到發送；重複執行 `initialize_database()` 不改變結構）；`grep` 檢查通過；控制台 `tests/control_lifecycle.ps1` 通過。**未完成**：瀏覽器測試（本機無 Playwright，fixture 已改寫）、正式資料庫重建後實際走過一次。
     - 在全新資料庫上，全部 Python 測試與瀏覽器測試通過；測試 fixture 只依新 `schema.sql` 建立。
     - `grep` 確認程式中已無 `ALTER TABLE`、`RENAME TO`、`employee`、個人工作區、`import_existing`、`legacy_webhook`、`CF_ACCESS`、`ADMIN_AUTH_MODE`、`remote_auth`、`LINE_CHANNEL_SECRET`、`LINE_CHANNEL_ACCESS_TOKEN` 與已刪除欄位的引用。
     - 以只含 `DATABASE_PATH`、`PUBLIC_BASE_URL`、`ADMIN_PUBLIC_HOST` 的 `.env` 從零安裝，可完成：首次設定建立甲級帳號 → 建立組織 → 網頁設定 OA → Webhook 收訊 → 發送。

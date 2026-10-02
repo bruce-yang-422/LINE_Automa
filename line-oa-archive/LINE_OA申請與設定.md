@@ -1,6 +1,6 @@
 # 資訊小幫手：LINE OA 申請與設定資料
 
-更新日期：2026-09-24
+更新日期：2026-10-02
 
 本文件整理建立官方帳號、啟用 Messaging API 與設定 Bot 時會用到的資訊。用途涵蓋個人生活與公司內部資訊，不限於公司使用。下列文案可直接複製；實際必填欄位與選項以 LINE 後台為準。
 
@@ -45,7 +45,7 @@
 2. 在該帳號的設定中啟用 Messaging API。首次使用時，依畫面完成開發者資料登記。
 3. 選擇代表實際服務管理者的 Provider（服務提供者）。若已有需整合的 LINE Login 等頻道，先確認是否應使用相同 Provider；不要只為了名稱方便隨意選擇。
 4. 開啟 [LINE Developers Console](https://developers.line.biz/console/)，確認已產生對應的 Messaging API 頻道。
-5. 取得 Channel secret，設定本機程式後，再進行 Webhook 驗證。
+5. 取得 Channel secret 與 Channel access token，由平台管理員在管理後台「LINE OA」頁輸入後，再進行 Webhook 驗證。
 
 目前官方流程為「先建立 OA，再從 OA 後台啟用 Messaging API」。建立一般帳號與申請認證帳號是不同事項；本文件整理 Bot 啟用所需資訊，不代表已提出帳號認證申請。
 
@@ -59,7 +59,7 @@
 | 公開網域 | `reports.stack-base.com` |
 | 對外網址 | `https://reports.stack-base.com` |
 | Cloudflare Tunnel 本機服務 | `http://localhost:18474` |
-| LINE Webhook URL | `https://reports.stack-base.com/webhook` |
+| LINE Webhook URL | 管理後台「LINE OA」頁顯示，格式 `https://reports.stack-base.com/webhook/<OA 識別碼>` |
 | 本機健康檢查 | `http://localhost:18474/healthz` |
 | 程式監聽位址 | `127.0.0.1:18474` |
 | SQLite 資料庫 | `data/line_archive.db`（相對於專案資料夾） |
@@ -70,11 +70,12 @@
 
 1. 啟動本機 Bot，確認健康檢查回傳 `ok`。
 2. 確認 Cloudflare Tunnel 將上述網域導向本機服務。
-3. 在 LINE Developers 的 Messaging API 設定頁填入 Webhook URL，執行 Verify（驗證）。
-4. 啟用 Use webhook（使用 Webhook）與 Webhook redelivery（重新傳送）。
-5. 若需要記錄群組訊息，啟用 Allow bot to join group chats，並邀請 OA 加入目標群組。
-6. 若不需要 OA 後台的自動回應，可關閉該功能，避免測試時出現額外回覆；歡迎訊息可依需要保留。
-7. 傳送測試訊息，確認 SQLite 產生紀錄。群組使用前先告知成員紀錄用途。
+3. 在管理後台「LINE OA」新增此 OA（輸入 Channel secret 與 Channel access token），複製畫面上的 Webhook URL。
+4. 在 LINE Developers 的 Messaging API 設定頁填入 Webhook URL，執行 Verify（驗證）。
+5. 啟用 Use webhook（使用 Webhook）與 Webhook redelivery（重新傳送）。
+6. 若需要記錄群組訊息，啟用 Allow bot to join group chats，並邀請 OA 加入目標群組。
+7. 若不需要 OA 後台的自動回應，可關閉該功能，避免測試時出現額外回覆；歡迎訊息可依需要保留。
+8. 傳送測試訊息，確認管理後台「LINE OA」顯示 Webhook 最近到達、聯絡對象出現在名單。群組使用前先告知成員紀錄用途。
 
 參考：[Webhook 接收與重新傳送](https://developers.line.biz/en/docs/messaging-api/receiving-messages/)。
 
@@ -83,11 +84,11 @@
 | 資料 | 用途與設定方式 |
 | --- | --- |
 | Channel ID | 頻道識別碼，建立後取得；目前接收程式不需額外設定 |
-| Channel secret | 驗證 Webhook 簽章；設為環境變數 `LINE_CHANNEL_SECRET` |
-| Channel access token | 圖片推送使用；在本機 `.env` 設定 `LINE_CHANNEL_ACCESS_TOKEN` |
-| 接收對象 ID | 使用 Webhook 的 userId／groupId；可指定 `.env` 的 `LINE_PUSH_USER_ID`／`LINE_PUSH_GROUP_ID`，同類型只有一個紀錄時可自動選取 |
+| Channel secret | 驗證 Webhook 簽章；平台管理員在管理後台「LINE OA」頁輸入，加密存入資料庫 |
+| Channel access token | 發送訊息與查詢名稱使用；同上，於「LINE OA」頁輸入 |
+| 發送對象 | 對方傳訊息或加好友後，自動出現在「聯絡對象」；不需手動填 userId／groupId |
 
-實際密鑰與權杖請存於本機環境設定或密碼管理工具，不要填進這份 Markdown 或提交 Git。SQLite 不需要帳號密碼，但 LINE 頻道密鑰仍需設定。
+密鑰與權杖只在管理後台輸入，不寫入 `.env`、不填進這份 Markdown，也不提交 Git。
 
 主動通知上線前，另確認帳號的訊息額度、方案及可發送對象條件；不在本文件假定固定價格或額度。
 
@@ -99,9 +100,8 @@
 - [ ] 大頭照已上傳，名稱與狀態消息已設定。
 - [ ] 已取得帳號基本 ID、加好友連結與 QR Code。
 - [ ] Provider 歸屬與 Messaging API 頻道已確認。
-- [ ] 頻道密鑰已設定於本機，未寫入文件。
+- [ ] 頻道密鑰與權杖已在管理後台「LINE OA」頁設定，未寫入文件。
 - [ ] Webhook 驗證成功，測試訊息已寫入 SQLite。
 - [ ] 群組紀錄範圍、資料保留方式與刪除聯絡窗口已確認。
-- [ ] 通知功能完成後，再設定權杖、接收對象與排程。
 
-目前已實作接收訊息、SQLite 紀錄、PNG 圖片服務與手動推送；可傳送外部天氣專案產生的報表，每日排程仍待開發。先在 Windows 驗證，穩定後依需求文件部署至 Ubuntu。
+平台功能（聊天、聯絡對象、案件、發送與預約）見[根目錄 README](../README.md)。

@@ -9,6 +9,7 @@ from pathlib import Path
 os.environ['DATABASE_PATH'] = ':memory:'
 
 import app
+from oa_fixture import CHANNEL, add_account, register_oa, use_oa
 import cases
 import chat_notes
 import recipients
@@ -30,16 +31,22 @@ class CasesAndNotesTests(unittest.TestCase):
             p.start()
             self.addCleanup(p.stop)
 
-        p = patch.dict(os.environ, {"LINE_CHANNEL_ACCESS_TOKEN": "fake-test-token"}, clear=True)
+        p = patch.dict(os.environ, {"PUBLIC_BASE_URL": "https://reports.example.test"}, clear=True)
         p.start()
         self.addCleanup(p.stop)
 
         app.initialize_database()
 
+        register_oa()
+
+        use_oa(self)
+
+        add_account('boss@test.com', 'org_admin', 'A', 'Boss')
+
         # Setup test recipient
         with app.database_connection() as conn:
             conn.execute(
-                "INSERT INTO recipients (recipient_id, kind, display_name, alias, active) VALUES (?, 'user', 'Alice', '愛麗絲', 1)",
+                "INSERT INTO recipients (channel_id, recipient_id, kind, display_name, custom_name, active) VALUES (current_channel(), ?, 'user', 'Alice', '愛麗絲', 1)",
                 ("U_user_1",)
             )
 
@@ -57,7 +64,7 @@ class CasesAndNotesTests(unittest.TestCase):
             }, 'admin@test.com')
             self.assertEqual(c['status'], 'pending')
             self.assertEqual(c['priority'], 'high')
-            self.assertTrue(c['case_no'].startswith('CASE-'))
+            self.assertTrue(c['case_no'].startswith('TESTOA-'))
             self.assertEqual(len(c['activities']), 1)
             self.assertEqual(c['activities'][0]['activity_type'], 'create_case')
 
@@ -187,7 +194,7 @@ class CasesAndNotesTests(unittest.TestCase):
             def authorized(handler, require_token=True):
                 ok = super().authorized(require_token)
                 if ok:
-                    handler.user = {"email": "boss@test.com", "role": "company_admin", "company": "", "display_name": "Boss"}
+                    handler.user = {"email": "boss@test.com", "role": "org_admin", "organization_id": "A", "display_name": "Boss"}
                     handler.identity = handler.user["email"]
                 return ok
 
@@ -196,7 +203,7 @@ class CasesAndNotesTests(unittest.TestCase):
         server.start()
         self.addCleanup(server.close)
         base = f"http://127.0.0.1:{server.server_port}"
-        headers = {"Content-Type": "application/json", "Authorization": "Bearer " + server.token}
+        headers = {"Content-Type": "application/json", "Authorization": "Bearer " + server.token, "X-Line-Channel": CHANNEL}
 
         # 1. POST /api/cases (Create case)
         payload = {"title": "測試案件建立", "case_subject_id": "U_user_1", "priority": "normal", "description": "測試內容"}

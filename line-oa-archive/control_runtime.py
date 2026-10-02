@@ -1,9 +1,11 @@
 """Local desktop controller entry point; no network stop endpoint or extra packages."""
 
 import argparse
+from contextlib import closing
 import json
 import os
 from pathlib import Path
+import sqlite3
 import sys
 from uuid import UUID
 
@@ -20,9 +22,8 @@ def load_settings():
             if not line or line.startswith("#"):
                 continue
             key, separator, value = line.partition("=")
-            if separator and key.strip() in {"LINE_CHANNEL_SECRET", "DATABASE_PATH", "LINE_CHANNEL_ACCESS_TOKEN",
-                                             "LINE_PUSH_USER_ID", "LINE_PUSH_GROUP_ID", "PUBLIC_BASE_URL", "WEATHER_IMAGE_PATH",
-                                             "WEATHER_MODULE_ENABLED", "WEATHER_OWNER_EMAIL", "ADMIN_PUBLIC_HOST"}:
+            # 只讀部署基礎設定；LINE OA 憑證與模組設定一律存在資料庫，由網頁後台設定。
+            if separator and key.strip() in {"DATABASE_PATH", "PUBLIC_BASE_URL", "ADMIN_PUBLIC_HOST"}:
                 value = value.strip()
                 if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
                     value = value[1:-1]
@@ -30,6 +31,20 @@ def load_settings():
     os.environ.update(settings)
     # 站內登入不需 .env 設定即可使用；OA 由網頁後台新增。
     return True
+
+
+def oa_configured():
+    """資料庫中是否已有啟用中的 LINE OA（唯讀檢查，資料庫不存在時回傳 False）。"""
+    path = Path(os.environ.get("DATABASE_PATH", "data/line_archive.db"))
+    if not path.is_absolute():
+        path = ROOT / path
+    if not path.exists():
+        return False
+    try:
+        with closing(sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)) as conn:
+            return bool(conn.execute("SELECT 1 FROM line_channels WHERE active=1 LIMIT 1").fetchone())
+    except sqlite3.Error:
+        return False
 
 
 def main():
@@ -41,7 +56,9 @@ def main():
     args = parser.parse_args()
     configured = load_settings()
     if args.check:
-        print(json.dumps({"configured": configured, "python_ok": sys.version_info >= (3, 11)}))
+        print(json.dumps({"configured": configured, "python_ok": sys.version_info >= (3, 11),
+                          "public_base_url": bool(os.environ.get("PUBLIC_BASE_URL", "").strip()),
+                          "oa_configured": oa_configured()}))
         return 0
     if not configured or not args.instance:
         print("Setup required: start with an instance id.", file=sys.stderr)

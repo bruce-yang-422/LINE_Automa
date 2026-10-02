@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import patch
 
 import app
+from oa_fixture import CHANNEL, add_account, register_oa, use_oa
 import admin_server
 import recipients
 
@@ -24,22 +25,25 @@ class ContactTagTests(unittest.TestCase):
             p = patch.object(app, target, value)
             p.start()
             self.addCleanup(p.stop)
-        p = patch.dict(os.environ, {"LINE_CHANNEL_ACCESS_TOKEN": "fake-test-token"}, clear=True)
+        p = patch.dict(os.environ, {"PUBLIC_BASE_URL": "https://reports.example.test"}, clear=True)
         p.start()
         self.addCleanup(p.stop)
         app.initialize_database()
+        register_oa()
+        use_oa(self)
+        add_account('boss@test.com', 'org_admin', 'A', 'Boss')
 
         with app.database_connection() as conn:
             conn.execute(
-                "INSERT INTO recipients (recipient_id, kind, display_name, active, company) VALUES (?, 'user', 'Alice', 1, 'A')",
+                "INSERT INTO recipients (channel_id, recipient_id, kind, display_name, active, organization_id) VALUES (current_channel(), ?, 'user', 'Alice', 1, 'A')",
                 (USER1,)
             )
             conn.execute(
-                "INSERT INTO recipients (recipient_id, kind, display_name, active, company) VALUES (?, 'user', 'Bob', 1, 'A')",
+                "INSERT INTO recipients (channel_id, recipient_id, kind, display_name, active, organization_id) VALUES (current_channel(), ?, 'user', 'Bob', 1, 'A')",
                 (USER2,)
             )
             conn.execute(
-                "INSERT INTO recipients (recipient_id, kind, display_name, active, company) VALUES (?, 'group', 'Sales Team', 1, 'A')",
+                "INSERT INTO recipients (channel_id, recipient_id, kind, display_name, active, organization_id) VALUES (current_channel(), ?, 'group', 'Sales Team', 1, 'A')",
                 (GROUP1,)
             )
 
@@ -71,12 +75,12 @@ class ContactTagTests(unittest.TestCase):
     def test_contact_notes_and_custom_name(self):
         with app.database_connection() as conn:
             recipients.update_contact(
-                conn, USER1, alias="小艾 (Alice)", subscribed=False,
+                conn, USER1, custom_name="小艾 (Alice)", subscribed=False,
                 notes="每週二需確認報表"
             )
             contacts = recipients.list_contacts(conn)
             c1 = next(c for c in contacts if c["recipient_id"] == USER1)
-            self.assertEqual(c1["alias"], "小艾 (Alice)")
+            self.assertEqual(c1["custom_name"], "小艾 (Alice)")
             self.assertEqual(c1["custom_name"], "小艾 (Alice)")
             self.assertEqual(c1["notes"], "每週二需確認報表")
 
@@ -154,7 +158,7 @@ class ContactTagTests(unittest.TestCase):
             def authorized(handler, require_token=True):
                 ok = super().authorized(require_token)
                 if ok:
-                    handler.user = {"email": "boss@test.com", "role": "company_admin", "company": "A", "display_name": "Boss"}
+                    handler.user = {"email": "boss@test.com", "role": "org_admin", "organization_id": "A", "display_name": "Boss"}
                     handler.identity = handler.user["email"]
                 return ok
         server = admin_server.AdminServer(0)
@@ -162,7 +166,7 @@ class ContactTagTests(unittest.TestCase):
         server.start()
         self.addCleanup(server.close)
         base = f"http://127.0.0.1:{server.server_port}"
-        headers = {"Content-Type": "application/json", "Authorization": "Bearer " + server.token}
+        headers = {"Content-Type": "application/json", "Authorization": "Bearer " + server.token, "X-Line-Channel": CHANNEL}
 
         # 1. Create tag via POST /api/tags/save
         req = Request(f"{base}/api/tags/save", data=json.dumps({"name": "VIP特約", "color": "#FF9500"}).encode(), headers=headers)
@@ -180,7 +184,7 @@ class ContactTagTests(unittest.TestCase):
             self.assertEqual(data["tags"][0]["id"], tag_id)
 
         # 3. Update contact with notes and tag via POST /api/contact
-        payload = {"id": USER1, "alias": "Alice VIP", "notes": "VIP 專屬客服", "tag_ids": [tag_id]}
+        payload = {"id": USER1, "custom_name": "Alice VIP", "notes": "VIP 專屬客服", "tag_ids": [tag_id]}
         req = Request(f"{base}/api/contact", data=json.dumps(payload).encode(), headers=headers)
         with urlopen(req) as resp:
             data = json.load(resp)
@@ -193,7 +197,7 @@ class ContactTagTests(unittest.TestCase):
             self.assertIn("tags", data)
             self.assertEqual(len(data["tags"]), 1)
             c1 = next(c for c in data["contacts"] if c["recipient_id"] == USER1)
-            self.assertEqual(c1["alias"], "Alice VIP")
+            self.assertEqual(c1["custom_name"], "Alice VIP")
             self.assertEqual(c1["notes"], "VIP 專屬客服")
             self.assertEqual(len(c1["tags"]), 1)
             self.assertEqual(c1["tags"][0]["name"], "VIP特約")
@@ -224,7 +228,7 @@ class ContactTagTests(unittest.TestCase):
     def test_contact_type_and_info_fields_persistence(self):
         with app.database_connection() as conn:
             recipients.update_contact(
-                conn, USER1, alias="王經理", subscribed=False,
+                conn, USER1, custom_name="王經理", subscribed=False,
                 contact_type="person_business",
                 phone="+886 912-345-678",
                 email="wang@private.com",
@@ -255,7 +259,7 @@ class ContactTagTests(unittest.TestCase):
         with app.database_connection() as conn:
             # 1. Set as person_business
             recipients.update_contact(
-                conn, USER1, alias="王經理", subscribed=False,
+                conn, USER1, custom_name="王經理", subscribed=False,
                 contact_type="person_business",
                 phone="0912345678",
                 email="wang@private.com",
@@ -270,7 +274,7 @@ class ContactTagTests(unittest.TestCase):
 
             # 2. Switch to organization: job_title and work_* fields should be cleared
             recipients.update_contact(
-                conn, USER1, alias="ABC 廣告公司", subscribed=False,
+                conn, USER1, custom_name="ABC 廣告公司", subscribed=False,
                 contact_type="organization",
                 phone="02-23456789",
                 email="contact@abc.com",
@@ -293,7 +297,7 @@ class ContactTagTests(unittest.TestCase):
 
             # 3. Switch to person_private: organization_name and work_* fields should be cleared
             recipients.update_contact(
-                conn, USER1, alias="王小明", subscribed=False,
+                conn, USER1, custom_name="王小明", subscribed=False,
                 contact_type="person_private",
                 phone="0912345678",
                 email="wang@private.com",
@@ -314,7 +318,7 @@ class ContactTagTests(unittest.TestCase):
             def authorized(handler, require_token=True):
                 ok = super().authorized(require_token)
                 if ok:
-                    handler.user = {"email": "boss@test.com", "role": "company_admin", "company": "A", "display_name": "Boss"}
+                    handler.user = {"email": "boss@test.com", "role": "org_admin", "organization_id": "A", "display_name": "Boss"}
                     handler.identity = handler.user["email"]
                 return ok
         server = admin_server.AdminServer(0)
@@ -322,11 +326,11 @@ class ContactTagTests(unittest.TestCase):
         server.start()
         self.addCleanup(server.close)
         base = f"http://127.0.0.1:{server.server_port}"
-        headers = {"Content-Type": "application/json", "Authorization": "Bearer " + server.token}
+        headers = {"Content-Type": "application/json", "Authorization": "Bearer " + server.token, "X-Line-Channel": CHANNEL}
 
         payload = {
             "id": USER1,
-            "alias": "陳副理",
+            "custom_name": "陳副理",
             "contact_type": "person_business",
             "phone": "0988-111-222",
             "email": "chen@private.com",
@@ -348,7 +352,7 @@ class ContactTagTests(unittest.TestCase):
         with urlopen(req) as resp:
             data = json.load(resp)
             c1 = next(c for c in data["contacts"] if c["recipient_id"] == USER1)
-            self.assertEqual(c1["alias"], "陳副理")
+            self.assertEqual(c1["custom_name"], "陳副理")
             self.assertEqual(c1["contact_type"], "person_business")
             self.assertEqual(c1["organization_name"], "南區經銷商")
             self.assertEqual(c1["job_title"], "副理")

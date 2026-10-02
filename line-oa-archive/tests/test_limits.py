@@ -10,6 +10,7 @@ from unittest.mock import patch
 os.environ['DATABASE_PATH'] = ':memory:'
 
 import app
+from oa_fixture import CHANNEL, register_oa, use_oa
 import channels
 import chat
 import chat_notes
@@ -28,8 +29,10 @@ class LimitsTests(unittest.TestCase):
             p.start()
             self.addCleanup(p.stop)
         app.initialize_database()
+        register_oa()
+        use_oa(self)
         with app.database_connection() as conn:
-            conn.execute("INSERT INTO recipients (channel_id, recipient_id, kind, display_name, active) VALUES ('', 'U_limit', 'user', 'Amy', 1)")
+            conn.execute("INSERT INTO recipients (channel_id, recipient_id, kind, display_name, active) VALUES (current_channel(), 'U_limit', 'user', 'Amy', 1)")
 
     def tearDown(self):
         channels._current.set("")

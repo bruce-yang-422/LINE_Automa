@@ -452,6 +452,8 @@ Vue 官方支援漸進採用，`create-vue` 採 Vite；React 也提供既有專�
 - [LINE訊息格式與編輯器設計.md](../功能規格/LINE訊息格式與編輯器設計.md)：訊息內容格式與編輯器需求。
 - [進度紀錄與UIUX重規劃.md](進度紀錄與UIUX重規劃.md)：已完成事項及待接續工作。
 
+> 2026-10-02：第七階段已移除「匯入既有 OA」、單一 OA 模式、個人工作區與 `upgrade_multi_oa.py`，OA 一律在網頁「LINE OA」頁新增；本節以下為當時紀錄。
+
 全站 Tailwind、站內登入與多 OA 已完成。下次先由平台管理員匯入既有 OA（第 13 節），再依第 10.6 節規劃草稿／審核與循環排程。框架更換或部署重構不能僅因讀到這份筆記就自動開始。
 
 ## 12. 保留 Cloudflare Tunnel，改用網站帳號密碼登入
@@ -540,7 +542,7 @@ Cloudflare Tunnel 提供對外連線；Cloudflare Access 提供存取驗證。�
 
 此階段不包含額度／方案計費、公開註冊、草稿協作、審核、循環排程、檔案變更觸發或媒體下載；Telegram 繼續暫緩。
 
-**正式環境現況（2026-09-30）**：既有 OA 尚未匯入工作區（`line_channels` 為 0 筆），服務以 `.env` 憑證的單一 OA 模式運作，收發正常。平台管理員於「LINE OA 管理」按「匯入既有 OA」並選定工作區後，即切換為多 OA 模式。
+**正式環境現況（2026-09-30，已由第七階段取代）**：既有 OA 尚未匯入工作區（`line_channels` 為 0 筆），服務以 `.env` 憑證的單一 OA 模式運作，收發正常。平台管理員於「LINE OA 管理」按「匯入既有 OA」並選定工作區後，即切換為多 OA 模式。
 
 依據 LINE 官方文件：[Bot information / Messaging API](https://developers.line.biz/en/reference/messaging-api/#get-bot-info)、[Webhook 簽章驗證](https://developers.line.biz/en/docs/messaging-api/verify-webhook-signature/)、[接收訊息與 destination](https://developers.line.biz/en/docs/messaging-api/receiving-messages/)。
 

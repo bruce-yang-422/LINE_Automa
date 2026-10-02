@@ -159,7 +159,7 @@ function renderConversationView(room) {
         <button data-action="toggle-chat-status" data-id="${esc(room.recipient_id)}" data-status="done" class="${chatUI.chatStatus === 'done' ? 'active' : ''}">處理完畢</button>
       </div>
       <button class="icon-button ${chatUI.searchOpen ? 'active' : ''}" data-action="toggle-chat-search" title="在對話中搜尋" aria-label="在對話中搜尋">${icon("search")}</button>
-      ${state.session?.role !== 'administrator' ? `<button class="btn small text" data-action="open-chat-export-modal" data-id="${esc(room.recipient_id)}" title="匯出對話紀錄">${icon("download")} 匯出</button>` : ''}
+      ${state.session?.role !== 'platform_admin' ? `<button class="btn small text" data-action="open-chat-export-modal" data-id="${esc(room.recipient_id)}" title="匯出對話紀錄">${icon("download")} 匯出</button>` : ''}
       <button class="btn small" data-action="open-case-modal-from-chat" data-id="${esc(room.recipient_id)}">${icon("folder")}+ 建立案件</button>
       <button class="icon-button" data-action="toggle-chat-info" aria-label="切換資訊面板">${icon("users")}</button>
     </div>
@@ -181,11 +181,11 @@ function renderConversationView(room) {
   </div>
 
   <div class="chat-input-wrapper">
-    ${state.session?.role === 'assistant' ? `
+    ${state.session?.role === 'collaborator' ? `
       <div class="callout muted text-center" style="padding:14px;background:var(--card-subtle,#f8fafc);border-radius:10px;margin:8px;">
-        <p style="margin:0;font-size:13px;">ℹ️ <strong>協助人員無法傳送訊息</strong>（具備對話閱讀、記事本與案件管理權限）</p>
+        <p style="margin:0;font-size:13px;">ℹ️ <strong>協作人員無法傳送訊息</strong>（具備對話閱讀、記事本與案件管理權限）</p>
       </div>
-    ` : state.session?.role === 'administrator' ? `
+    ` : state.session?.role === 'platform_admin' ? `
       <div class="callout muted text-center" style="padding:14px;background:var(--card-subtle,#f8fafc);border-radius:10px;margin:8px;">
         <p style="margin:0;font-size:13px;">👁️ <strong>平台管理員僅能檢視對話紀錄</strong>（唯讀模式）</p>
       </div>

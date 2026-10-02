@@ -11,6 +11,7 @@ from unittest.mock import patch
 os.environ['DATABASE_PATH'] = ':memory:'
 
 import app
+from oa_fixture import CHANNEL, register_oa, use_oa
 import cases
 import chat_notes
 import channels
@@ -31,15 +32,19 @@ class AuditFollowupTests(unittest.TestCase):
             p.start()
             self.addCleanup(p.stop)
 
-        p = patch.dict(os.environ, {"LINE_CHANNEL_ACCESS_TOKEN": "fake-test-token"}, clear=True)
+        p = patch.dict(os.environ, {"PUBLIC_BASE_URL": "https://reports.example.test"}, clear=True)
         p.start()
         self.addCleanup(p.stop)
 
         app.initialize_database()
 
+        register_oa()
+
+        use_oa(self)
+
         with app.database_connection() as conn:
             conn.execute(
-                "INSERT INTO recipients (channel_id, recipient_id, kind, display_name, alias, active) VALUES ('', 'U_test_1', 'user', 'Bob', '鮑伯', 1)"
+                "INSERT INTO recipients (channel_id, recipient_id, kind, display_name, custom_name, active) VALUES (current_channel(), 'U_test_1', 'user', 'Bob', '鮑伯', 1)"
             )
 
     def tearDown(self):
@@ -132,7 +137,7 @@ class AuditFollowupTests(unittest.TestCase):
     def test_single_category_management(self):
         with app.database_connection() as conn:
             # 1. Add single category
-            cats = template_packs.save_single_category(conn, '', 'case', 'VIP 諮詢', actor='admin@test.com')
+            cats = template_packs.save_single_category(conn, CHANNEL, 'case', 'VIP 諮詢', actor='admin@test.com')
             names = [c['name'] for c in cats['case_categories']]
             self.assertIn('VIP 諮詢', names)
 
@@ -145,20 +150,20 @@ class AuditFollowupTests(unittest.TestCase):
             }, 'admin@test.com')
             self.assertEqual(c['category'], 'VIP 諮詢')
 
-            cats = template_packs.save_single_category(conn, '', 'case', '頂級 VIP 諮詢', old_name='VIP 諮詢', actor='admin@test.com')
+            cats = template_packs.save_single_category(conn, CHANNEL, 'case', '頂級 VIP 諮詢', old_name='VIP 諮詢', actor='admin@test.com')
             c_updated = cases.get_case(conn, c['case_id'])
             self.assertEqual(c_updated['category'], '頂級 VIP 諮詢')
 
             # 3. Delete category -> defaults to '一般'
-            cats = template_packs.delete_single_category(conn, '', 'case', '頂級 VIP 諮詢', actor='admin@test.com')
+            cats = template_packs.delete_single_category(conn, CHANNEL, 'case', '頂級 VIP 諮詢', actor='admin@test.com')
             c_after_delete = cases.get_case(conn, c['case_id'])
             self.assertEqual(c_after_delete['category'], '一般')
 
             # 4. '一般' cannot be deleted or renamed
             with self.assertRaises(ValueError):
-                template_packs.delete_single_category(conn, '', 'case', '一般', actor='admin@test.com')
+                template_packs.delete_single_category(conn, CHANNEL, 'case', '一般', actor='admin@test.com')
             with self.assertRaises(ValueError):
-                template_packs.save_single_category(conn, '', 'case', '修改一般', old_name='一般', actor='admin@test.com')
+                template_packs.save_single_category(conn, CHANNEL, 'case', '修改一般', old_name='一般', actor='admin@test.com')
 
     def test_note_tags_and_completion_and_conflict(self):
         with app.database_connection() as conn:

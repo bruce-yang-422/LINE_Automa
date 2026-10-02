@@ -25,6 +25,8 @@
 
 ## 目前狀態與下次接續（2026-09-30 傍晚）
 
+> 2026-10-02 第七階段後，下表與「下次接續」提到的匯入既有 OA、單一 OA 模式、`upgrade_multi_oa.py` 均已移除；正式資料庫需備份後重建，見 [AI_AGENT_TASKS](../../AI_AGENT_TASKS.md) 第七階段。
+
 | 項目 | 狀態 |
 | --- | --- |
 | LINE 服務 | 執行中；本機與公開連線健康檢查正常。16:46 為套用多 OA 升級停止，17:00 重新啟動；期間約 14 分鐘沒有接收 Webhook 事件 |
@@ -213,7 +215,7 @@
 | 網站登入驗證 | [site_auth.py](line-oa-archive/site_auth.py) |
 | 聯絡對象／訂閱 | [recipients.py](line-oa-archive/recipients.py) |
 | Webhook／資料結構 | [app.py](line-oa-archive/app.py)、[schema.sql](line-oa-archive/schema.sql) |
-| 圖片推送 | [send_image.py](line-oa-archive/send_image.py)、[Send-WeatherReport.ps1](Send-WeatherReport.ps1) |
+| 圖片推送 | [send_image.py](line-oa-archive/send_image.py)（2026-10-02 起只保留發送服務使用的函式；`Send-WeatherReport.ps1` 已刪除） |
 | 本機控制與啟動 | [ControlPanel.ps1](ControlPanel.ps1)、[ServiceControl.psm1](ServiceControl.psm1)、[control_runtime.py](line-oa-archive/control_runtime.py) |
 | 操作說明 | [README.md](../../README.md) |
 

@@ -21,7 +21,6 @@ import composer
 import admin_server
 import reports
 import recipients
-from upgrade_multi_oa import upgrade
 
 USER = 'U' + '1' * 32
 ADMIN = 'admin@example.test'
@@ -38,20 +37,22 @@ class ChannelTests(unittest.TestCase):
         (self.root/'instance').mkdir()
         for target, value in [('BASE_DIR', self.root), ('DATABASE_PATH', self.root/'test.db')]:
             p = patch.object(app, target, value);p.start();self.addCleanup(p.stop)
-        env = patch.dict(os.environ, {'WEATHER_MODULE_ENABLED': 'false', 'PUBLIC_BASE_URL': 'https://reports.example.test'}, clear=True)
+        env = patch.dict(os.environ, {'PUBLIC_BASE_URL': 'https://reports.example.test'}, clear=True)
         env.start();self.addCleanup(env.stop)
         app.initialize_database()
         reports.bootstrap_users({ADMIN})
         self.admin = reports.account(ADMIN)
-        for email, org, role in [('boss@example.test', 'A', 'company_admin'), ('other@example.test', 'B', 'company_admin'), ('sender@example.test', 'A', 'sender')]:
-            reports.save_user({'email': email, 'role': role, 'company': org, 'active': True}, ADMIN)
+        for email, org, role in [('boss@example.test', 'A', 'org_admin'), ('other@example.test', 'B', 'org_admin'), ('sender@example.test', 'A', 'operator')]:
+            reports.save_user({'email': email, 'role': role, 'organization_id': org, 'active': True}, ADMIN)
         api = patch('line_api.request', side_effect=lambda path, payload=None, token=None: {
             'userId': 'U' + hashlib.md5(token.encode()).hexdigest(), 'displayName': 'OA ' + token, 'basicId': '@test'})
         api.start();self.addCleanup(api.stop)
         self.a = self.add('a', 'o:A')
         self.b = self.add('b', 'o:A')
         self.c = self.add('c', 'o:B')
-        self.personal = self.add('personal', 'p:' + ADMIN)
+        # 第三個組織，作為移轉目標。
+        with app.database_connection() as conn:
+            conn.execute("INSERT INTO organizations(org_id,name,kind) VALUES ('C','C','personal')")
 
     def add(self, token, workspace):
         return channels.save({'workspace_id': workspace, 'secret': 'a'*32, 'access_token': token}, self.admin)['channel_id']
@@ -92,7 +93,7 @@ class ChannelTests(unittest.TestCase):
             with channels.use(channel), app.database_connection() as conn:
                 rows = recipients.list_contacts(conn)
                 self.assertEqual(len(rows), 1)
-                self.assertEqual(rows[0]['company'], 'A')
+                self.assertEqual(rows[0]['organization_id'], 'A')
                 self.assertEqual(rows[0]['weather_subscribed'], subscribed)
                 self.assertEqual(conn.execute('SELECT text_content FROM line_messages WHERE channel_id=current_channel()').fetchone()[0], text)
         with channels.use(self.a):
@@ -129,17 +130,17 @@ class ChannelTests(unittest.TestCase):
     def test_private_assets_reports_grants_and_cancellation_do_not_cross_oa(self):
         self.event(self.a);self.event(self.b)
         with channels.use(self.a):
-            asset = composer.upload({'data':base64.b64encode(PNG).decode(), 'name':'report.png','company':'A'},self.admin)
-            report = reports.save({'asset_id':asset['asset_id'],'title':'A report','company':'A','scope':'company','category':'company'},ADMIN)
-            scope = reports.save_dispatch_scope({'company':'A','name':'Team','kind':'department','department':'Sales','active':True,'recipient_ids':[]},ADMIN)
-            reports.save_grant({'email':'sender@example.test','company':'A','scope_ids':[scope['scope_id']], 'report_ids':[report['report_id']], 'messaging':True,'reports':True,'weather':False},ADMIN)
+            asset = composer.upload({'data':base64.b64encode(PNG).decode(), 'name':'report.png','organization_id':'A'},self.admin)
+            report = reports.save({'asset_id':asset['asset_id'],'title':'A report','organization_id':'A','scope':'company','category':'company'},ADMIN)
+            scope = reports.save_dispatch_scope({'organization_id':'A','name':'Team','kind':'department','department':'Sales','active':True,'recipient_ids':[]},ADMIN)
+            reports.save_grant({'email':'sender@example.test','organization_id':'A','scope_ids':[scope['scope_id']], 'report_ids':[report['report_id']], 'messaging':True,'reports':True,'weather':False},ADMIN)
         with channels.use(self.b):
             self.assertEqual(reports.sources(), [])
             with self.assertRaises(ValueError):composer.asset(asset['asset_id'],self.admin)
             with self.assertRaises(ValueError):reports.remove(report['report_id'],ADMIN)
             self.assertFalse(reports.grant(reports.account('sender@example.test'))['messaging'])
             with self.assertRaises(ValueError):
-                composer.upload({'data':base64.b64encode(PNG).decode(),'company':'B'},self.admin)
+                composer.upload({'data':base64.b64encode(PNG).decode(),'organization_id':'B'},self.admin)
 
     def test_jobs_keep_oa_token_and_cross_oa_lookup_and_cancel_are_rejected(self):
         for channel in (self.a,self.b):self.event(channel)
@@ -209,27 +210,6 @@ class ChannelTests(unittest.TestCase):
         self.assertEqual(post(path,channels.get(self.b)['bot_user_id'],'a'*32),401)
         self.assertEqual(post('/webhook',bot,'a'*32),404)
 
-    def test_personal_workspace_supports_multiple_oa_and_excludes_other_people(self):
-        second=self.add('personal2','p:'+ADMIN)
-        self.event(self.personal);self.event(second)
-        self.assertEqual(len([c for c in channels.catalogue(self.admin)['channels'] if c['workspace_id']=='p:'+ADMIN]),2)
-        with self.assertRaises(ValueError):channels.authorize(self.personal,reports.account('boss@example.test'))
-        with channels.use(self.personal),app.database_connection() as conn:
-            self.assertEqual(recipients.list_contacts(conn)[0]['company'],'')
-
-    def test_import_keeps_legacy_webhook_and_existing_account_and_contact(self):
-        with app.database_connection() as conn:
-            conn.execute('DELETE FROM line_channels')
-            conn.execute("INSERT INTO site_credentials VALUES (?,'existing-hash',123)", (ADMIN,))
-        self.event('', 'existing message')
-        with patch.dict(os.environ, {'LINE_CHANNEL_ACCESS_TOKEN':'existing-token','LINE_CHANNEL_SECRET':'a'*32}):
-            imported=channels.save({'workspace_id':'p:'+ADMIN,'import_existing':True},self.admin)
-        self.assertEqual(channels.webhook_channel('/webhook')['channel_id'],imported['channel_id'])
-        with channels.use(imported['channel_id']),app.database_connection() as conn:
-            self.assertEqual(recipients.list_contacts(conn)[0]['recipient_id'],USER)
-            self.assertEqual(conn.execute('SELECT password_hash FROM site_credentials WHERE email=?',(ADMIN,)).fetchone()[0],'existing-hash')
-            self.assertEqual(channels.access_token(),'existing-token')
-
     def test_profiles_use_their_own_oa_token_and_empty_secret_is_rejected(self):
         self.event(self.a);self.event(self.b)
         seen=[]
@@ -268,7 +248,7 @@ class ChannelTests(unittest.TestCase):
         server=self.server()
         code,result=self.request(server,'/api/contacts',share,email='other@example.test')
         self.assertEqual(code,200)
-        self.assertEqual([(c['recipient_id'],c['company']) for c in result['contacts']],[(USER,'B')])
+        self.assertEqual([(c['recipient_id'],c['organization_id']) for c in result['contacts']],[(USER,'B')])
         self.assertEqual(self.request(server,'/api/contacts',share,email='boss@example.test')[0],403)
         self.assertEqual(self.request(server,'/api/channels/shares/'+share,email='other@example.test')[0],403)
         _,detail=self.request(server,'/api/channels/shares/'+share,email='boss@example.test')
@@ -288,7 +268,7 @@ class ChannelTests(unittest.TestCase):
         share=self.shared_to_b()
         channels.assign({'share_id':share,'recipient_ids':[USER]},self.admin)
         with channels.use(share),app.database_connection() as conn:
-            conn.execute("UPDATE recipients SET alias='B note' WHERE channel_id=current_channel()")
+            conn.execute("UPDATE recipients SET custom_name='B note' WHERE channel_id=current_channel()")
         with channels.use(self.a):
             app.save_events([{'type':'unfollow','timestamp':1790750009999,'source':{'type':'user','userId':USER}}])
             with patch('line_api.request',return_value={'displayName':'Owner lookup'}):
@@ -297,7 +277,7 @@ class ChannelTests(unittest.TestCase):
                 recipients.refresh_profile(USER,force=True)
         with channels.use(share),app.database_connection() as conn:
             row=recipients.list_contacts(conn)[0]
-        self.assertEqual((row['active'],row['display_name'],row['alias']),(0,'Owner lookup','B note'))
+        self.assertEqual((row['active'],row['display_name'],row['custom_name']),(0,'Owner lookup','B note'))
         channels.share({'channel_id':self.a,'workspace_id':'o:B','active':False},self.admin)
         with self.assertRaises(ValueError):channels.authorize(share,reports.account('other@example.test'))
         self.assertNotIn(share,{c['channel_id'] for c in channels.catalogue(self.admin)['channels']})
@@ -314,19 +294,19 @@ class ChannelTests(unittest.TestCase):
         with self.assertRaises(ValueError):channels.transfer({'channel_id':self.a,'workspace_id':'o:B','confirm':True},boss)
         with self.assertRaises(ValueError):channels.share({'channel_id':self.a,'workspace_id':'o:A'},self.admin)
         share=channels.share({'channel_id':self.a,'workspace_id':'o:B'},self.admin)['share_id']
-        with self.assertRaises(ValueError):channels.share({'channel_id':share,'workspace_id':'p:'+ADMIN},self.admin)
+        with self.assertRaises(ValueError):channels.share({'channel_id':share,'workspace_id':'o:C'},self.admin)
         with self.assertRaises(ValueError):channels.transfer({'channel_id':self.a,'workspace_id':'o:B','confirm':True},self.admin)
 
     def test_transfer_previews_blocks_pending_jobs_and_moves_owner_data(self):
         self.event(self.a)
         with channels.use(self.a):
-            scope=reports.save_dispatch_scope({'company':'A','name':'Team','kind':'department','department':'Sales','active':True,'recipient_ids':[]},ADMIN)
-            reports.save_grant({'email':'sender@example.test','company':'A','scope_ids':[scope['scope_id']],'report_ids':[],'messaging':True,'reports':False,'weather':False},ADMIN)
+            scope=reports.save_dispatch_scope({'organization_id':'A','name':'Team','kind':'department','department':'Sales','active':True,'recipient_ids':[]},ADMIN)
+            reports.save_grant({'email':'sender@example.test','organization_id':'A','scope_ids':[scope['scope_id']],'report_ids':[],'messaging':True,'reports':False,'weather':False},ADMIN)
             with app.database_connection() as conn:conn.execute("UPDATE recipients SET department='Sales' WHERE channel_id=current_channel()")
             dispatcher=admin_server.Dispatcher();self.addCleanup(dispatcher.close)
             job=dispatcher.submit({'job_id':str(uuid4()),'message_text':'later','audience':'selected','ids':[USER],
                                    'scheduled_at':(datetime.now(timezone.utc)+timedelta(minutes=5)).isoformat()},actor=ADMIN)
-        target={'channel_id':self.a,'workspace_id':'p:'+ADMIN}
+        target={'channel_id':self.a,'workspace_id':'o:C'}
         preview=channels.transfer(target,self.admin)
         self.assertEqual((preview['transferred'],preview['recipients'],preview['pending_jobs'],preview['sender_grants']),(False,1,1,1))
         self.assertEqual(channels.get(self.a)['org_id'],'A')
@@ -334,40 +314,14 @@ class ChannelTests(unittest.TestCase):
         with channels.use(self.a):dispatcher.cancel(job['job_id'],ADMIN)
         self.assertTrue(channels.transfer({**target,'confirm':True},self.admin)['transferred'])
         row=channels.get(self.a)
-        self.assertEqual((row['org_id'],row['owner_email']),('',ADMIN))
+        self.assertEqual(row['org_id'],'C')
         with self.assertRaises(ValueError):channels.authorize(self.a,reports.account('boss@example.test'))
         with channels.use(self.a),app.database_connection() as conn:
-            self.assertEqual(conn.execute('SELECT company,department FROM recipients WHERE channel_id=current_channel()').fetchone(),('',''))
+            self.assertEqual(conn.execute('SELECT organization_id,department FROM recipients WHERE channel_id=current_channel()').fetchone(),('C',''))
             self.assertEqual(conn.execute('SELECT count(*) FROM dispatch_scopes WHERE channel_id=current_channel()').fetchone()[0],0)
             self.assertEqual(conn.execute('SELECT count(*) FROM sender_grants WHERE channel_id=current_channel()').fetchone()[0],0)
         with app.database_connection() as conn:
             self.assertTrue(conn.execute("SELECT 1 FROM audit_events WHERE action='oa.transfer'").fetchone())
-
-    def test_offline_upgrade_preserves_credentials_and_rolls_back_on_failure(self):
-        # Recreate precisely the previous schema by removing only the new scoped columns/keys.
-        import re
-        old=self.schema[:self.schema.index('-- OA 歸屬於')]
-        old=re.sub(r"\s*channel_id TEXT NOT NULL DEFAULT '',?",'',old)
-        old=re.sub(r',\s*PRIMARY KEY\(channel_id,(message_id|recipient_id|report_id)\)',lambda m:', PRIMARY KEY('+m[1]+')',old)
-        old=old.replace('PRIMARY KEY(channel_id,email,company)','PRIMARY KEY(email,company)')
-        old=re.sub(r',\s*\);','\n);',old)
-        database=self.root/'old.db'
-        with closing(sqlite3.connect(database)) as conn, conn:
-            conn.executescript(old)
-            conn.execute("INSERT INTO workspace_users(email,role) VALUES (?,'administrator')",(ADMIN,))
-            conn.execute("INSERT INTO site_credentials VALUES (?,'preserved-password-hash',123)",(ADMIN,))
-            conn.execute("INSERT INTO recipients(recipient_id,kind) VALUES (?,'user')",(USER,))
-            conn.execute("INSERT INTO send_jobs(job_id,audience,image_path) VALUES ('old-job','selected','')")
-            conn.execute("INSERT INTO send_deliveries(job_id,recipient_id,label,retry_key) VALUES ('old-job',?,'A','retry')",(USER,))
-        with self.assertRaises(sqlite3.Error):upgrade(database,self.schema+'\nBROKEN SQL;\n',True)
-        with closing(sqlite3.connect(database)) as conn, conn:
-            self.assertNotIn('channel_id',[r[1] for r in conn.execute('PRAGMA table_info(recipients)')])
-        self.assertEqual(upgrade(database,self.schema,True)['status'],'upgraded')
-        with closing(sqlite3.connect(database)) as conn, conn:
-            self.assertEqual(conn.execute('SELECT password_hash FROM site_credentials').fetchone()[0],'preserved-password-hash')
-            self.assertEqual(conn.execute('SELECT count(*) FROM recipients').fetchone()[0],1)
-            self.assertEqual(conn.execute('PRAGMA foreign_key_check').fetchall(),[])
-        self.assertEqual(upgrade(database,self.schema,True)['status'],'already_current')
 
 
 if __name__=='__main__':unittest.main()
