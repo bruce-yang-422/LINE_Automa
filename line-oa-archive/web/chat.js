@@ -67,12 +67,11 @@ function chatPage() {
     <!-- 1. Left Sidebar: Chat List -->
     <aside class="chat-sidebar-col">
       <div class="chat-sidebar-header">
-        <div data-s="se3f6104">
-          <label class="search-field" data-s="s7623f05">
+        <div class="chat-sidebar-search-row">
+          <label class="search-field chat-search-label">
             ${icon("search")}
             <input id="chat-list-search" type="search" value="${esc(chatUI.query)}" placeholder="搜尋聯絡對象或訊息…" aria-label="搜尋聊天">
           </label>
-          <button type="button" class="icon-button" data-action="refresh-chat-profiles" title="同步最新 LINE 大頭貼與名稱" aria-label="重新整理名單">${icon("refresh")}</button>
           <button type="button" class="icon-button" data-action="open-chat-settings" title="聊天設定與容量管理" aria-label="聊天設定">${icon("settings")}</button>
         </div>
         <div class="chat-filter-tabs segmented section-space">
@@ -144,6 +143,15 @@ function formatChatPreviewHtml(msg) {
   return `<span class="preview-media-chip">${icon("message")} 多媒體訊息</span>`;
 }
 
+function renderAvatarHtml(pictureUrl, name, isGroup, extraClass = "") {
+  const initial = (name || (isGroup ? "群" : "個")).slice(0, 1).toUpperCase();
+  const cls = `chat-room-avatar ${isGroup ? 'group' : ''} ${extraClass}`.trim();
+  if (pictureUrl) {
+    return `<div class="${cls}"><img src="${esc(pictureUrl)}" class="avatar-img" alt="${esc(name)}" referrerpolicy="no-referrer" onerror="this.outerHTML='<span class=\\'avatar-text\\'>${esc(initial)}</span>'"></div>`;
+  }
+  return `<div class="${cls}"><span class="avatar-text">${esc(initial)}</span></div>`;
+}
+
 function renderChatRoomItems() {
   const filtered = chatUI.rooms.filter(r => {
     if (chatUI.filter === "unread" && r.unread_count === 0) return false;
@@ -165,17 +173,16 @@ function renderChatRoomItems() {
 
   return filtered.map(r => {
     const isSelected = r.recipient_id === chatUI.selectedId;
-    const initial = (r.name || r.display_name || "L").slice(0, 1).toUpperCase();
     const timeStr = formatChatTime(r.last_message?.sent_at || r.last_activity_at);
     const unread = r.unread_count > 0;
     const isGroup = r.kind !== 'user';
-    const imgHtml = r.picture_url ? `<img src="${esc(r.picture_url)}" class="avatar-img" alt="${esc(r.name || r.display_name)}" referrerpolicy="no-referrer" onerror="this.style.display='none'">` : '';
+    const name = r.name || r.display_name;
 
     return `<div class="chat-room-item ${isSelected ? 'active' : ''} ${unread ? 'has-unread' : ''}" data-action="select-chat-room" data-id="${esc(r.recipient_id)}">
-      <div class="chat-room-avatar ${isGroup ? 'group' : ''}">${imgHtml}<span class="avatar-text">${esc(initial)}</span></div>
+      ${renderAvatarHtml(r.picture_url, name, isGroup)}
       <div class="chat-room-body">
         <div class="chat-room-top">
-          <strong class="chat-room-name">${esc(r.name || r.display_name)}</strong>
+          <strong class="chat-room-name">${esc(name)}</strong>
           <span class="chat-room-time">${esc(timeStr)}</span>
         </div>
         <div class="chat-room-bottom">
@@ -204,13 +211,11 @@ function renderChatEmptyState() {
 function renderConversationView(room) {
   const isGroup = room.kind !== "user";
   const title = room.name || room.display_name || "聊天室";
-  const initial = title.slice(0, 1).toUpperCase();
-  const imgHtml = room.picture_url ? `<img src="${esc(room.picture_url)}" class="avatar-img" alt="${esc(title)}" referrerpolicy="no-referrer" onerror="this.style.display='none'">` : '';
 
   return `<div class="conversation-header">
     <div class="conversation-header-left">
       <button type="button" class="chat-mobile-back-btn icon-button" data-action="chat-back-to-list" aria-label="返回聊天清單">${icon("arrow")}</button>
-      <div class="avatar ${isGroup ? 'group' : ''}">${imgHtml}<span class="avatar-text">${esc(initial)}</span></div>
+      ${renderAvatarHtml(room.picture_url, title, isGroup, "avatar")}
       <div>
         <h2 class="conversation-title">${esc(title)}</h2>
         <small class="muted">${isGroup ? 'LINE 群組' : '個人對話'} · ${room.active ? '可接收' : '已封鎖／已停用'}</small>
@@ -702,15 +707,6 @@ function chatAction(action, id, target) {
   }
   if (action === "open-chat-settings") {
     openChatSettingsModal();
-    return true;
-  }
-  if (action === "refresh-chat-profiles") {
-    notice("正在向 LINE 同步最新名稱與大頭貼…");
-    api("/api/profiles", {}).then(async res => {
-      await loadChatRooms();
-      if ($("chat-room-list")) $("chat-room-list").innerHTML = renderChatRoomItems();
-      notice(`已同步完成：更新 ${res.updated} 個對象，${res.failed} 個未完成。`);
-    }).catch(e => notice(e.message, true));
     return true;
   }
   if (action === "cleanup-expired-media") {

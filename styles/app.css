@@ -593,6 +593,33 @@ dialog { border-radius:18px; }
   padding: 14px;
   border-bottom: 1px solid var(--line);
 }
+.chat-sidebar-search-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.chat-sidebar-search-row .chat-search-label {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.chat-sidebar-search-row .chat-search-label input {
+  padding-left: 36px;
+  width: 100%;
+  box-sizing: border-box;
+}
+.chat-sidebar-search-row .chat-search-label svg {
+  position: absolute;
+  left: 11px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  color: var(--muted);
+  pointer-events: none;
+}
 .chat-filter-tabs {
   display: flex;
   margin-top: 8px;
