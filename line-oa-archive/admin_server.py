@@ -747,6 +747,18 @@ class AdminHandler(BaseHTTPRequestHandler):
                         self.respond(200, data, content_type=content_type, headers=headers)
             except ValueError as exc:
                 self.respond(404, {"error": str(exc)})
+        elif re.fullmatch(r"/api/chat/avatar/[0-9a-zA-Z_]+", self.path) or self.path == "/api/chat/avatar":
+            rid = self.path.rsplit('/', 1)[1] if '/' in self.path and self.path != "/api/chat/avatar" else (query.get('recipient_id') or '')
+            try:
+                with app.database_connection() as conn:
+                    result = chat.get_recipient_avatar(conn, rid)
+                    if not result:
+                        self.respond(404, {"error": "找不到頭像。"})
+                        return
+                    data, content_type = result
+                    self.respond(200, data, content_type=content_type, headers={'Cache-Control': 'public, max-age=86400'})
+            except Exception as exc:
+                self.respond(404, {"error": str(exc)})
         elif self.path == "/api/jobs":
             self.respond(200, {"jobs": job_status(user=self.user)})
         elif re.fullmatch(r"/api/jobs/[0-9a-f-]{36}", self.path):

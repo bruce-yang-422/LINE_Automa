@@ -143,11 +143,12 @@ function formatChatPreviewHtml(msg) {
   return `<span class="preview-media-chip">${icon("message")} 多媒體訊息</span>`;
 }
 
-function renderAvatarHtml(pictureUrl, name, isGroup, extraClass = "") {
+function renderAvatarHtml(pictureUrl, name, isGroup, recipientId = "", extraClass = "") {
   const initial = (name || (isGroup ? "群" : "個")).slice(0, 1).toUpperCase();
   const cls = `chat-room-avatar ${isGroup ? 'group' : ''} ${extraClass}`.trim();
-  if (pictureUrl) {
-    return `<div class="${cls}"><img src="${esc(pictureUrl)}" class="avatar-img" alt="${esc(name)}" referrerpolicy="no-referrer" onerror="this.outerHTML='<span class=\\'avatar-text\\'>${esc(initial)}</span>'"></div>`;
+  if (pictureUrl && recipientId) {
+    const avatarSrc = `/api/chat/avatar/${encodeURIComponent(recipientId)}`;
+    return `<div class="${cls}"><img src="${avatarSrc}" class="avatar-img" alt="${esc(name)}" onerror="this.outerHTML='<span class=\\'avatar-text\\'>${esc(initial)}</span>'"></div>`;
   }
   return `<div class="${cls}"><span class="avatar-text">${esc(initial)}</span></div>`;
 }
@@ -179,7 +180,7 @@ function renderChatRoomItems() {
     const name = r.name || r.display_name;
 
     return `<div class="chat-room-item ${isSelected ? 'active' : ''} ${unread ? 'has-unread' : ''}" data-action="select-chat-room" data-id="${esc(r.recipient_id)}">
-      ${renderAvatarHtml(r.picture_url, name, isGroup)}
+      ${renderAvatarHtml(r.picture_url, name, isGroup, r.recipient_id)}
       <div class="chat-room-body">
         <div class="chat-room-top">
           <strong class="chat-room-name">${esc(name)}</strong>
@@ -215,7 +216,7 @@ function renderConversationView(room) {
   return `<div class="conversation-header">
     <div class="conversation-header-left">
       <button type="button" class="chat-mobile-back-btn icon-button" data-action="chat-back-to-list" aria-label="返回聊天清單">${icon("arrow")}</button>
-      ${renderAvatarHtml(room.picture_url, title, isGroup, "avatar")}
+      ${renderAvatarHtml(room.picture_url, title, isGroup, room.recipient_id, "avatar")}
       <div>
         <h2 class="conversation-title">${esc(title)}</h2>
         <small class="muted">${isGroup ? 'LINE 群組' : '個人對話'} · ${room.active ? '可接收' : '已封鎖／已停用'}</small>

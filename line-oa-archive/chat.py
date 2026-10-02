@@ -653,6 +653,47 @@ def cleanup_expired_media(max_age_days=limits.MEDIA_RETENTION_DAYS) -> dict:
     }
 
 
+def get_recipient_avatar(conn, recipient_id: str) -> tuple[bytes, str] | None:
+    """Fetch and locally cache LINE recipient profile avatar."""
+    channel_id = channels.current_id()
+    row = conn.execute(
+        "SELECT picture_url FROM recipients WHERE channel_id=current_channel() AND recipient_id=?",
+        (recipient_id,)
+    ).fetchone()
+    if not row or not row[0]:
+        return None
+    picture_url = str(row[0]).strip()
+    if not picture_url:
+        return None
+
+    MEDIA_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    cache_file = MEDIA_CACHE_DIR / f"avatar_{channel_id}_{recipient_id}.bin"
+    meta_file = MEDIA_CACHE_DIR / f"avatar_{channel_id}_{recipient_id}.json"
+
+    if cache_file.exists() and meta_file.exists():
+        try:
+            mtime = cache_file.stat().st_mtime
+            if time.time() - mtime < 86400 * 7:
+                meta = json.loads(meta_file.read_text(encoding="utf-8"))
+                return cache_file.read_bytes(), meta.get("content_type", "image/jpeg")
+        except Exception:
+            pass
+
+    import urllib.request
+    try:
+        req = urllib.request.Request(picture_url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = resp.read()
+            content_type = resp.headers.get_content_type() or "image/jpeg"
+            cache_file.write_bytes(data)
+            meta_file.write_text(json.dumps({"content_type": content_type, "cached_at": time.time()}), encoding="utf-8")
+            return data, content_type
+    except Exception:
+        if cache_file.exists():
+            return cache_file.read_bytes(), "image/jpeg"
+        return None
+
+
 def get_chat_media(conn, message_id: str) -> tuple[bytes, str]:
     """Get binary media data and mime type for a message (enforces 20MB single limit & 10GB total limit)."""
     channel_id = channels.current_id()
