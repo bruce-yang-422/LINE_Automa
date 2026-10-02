@@ -900,8 +900,39 @@ dialog { border-radius:18px; }
   width: 44px;
   height: 44px;
   border-radius: 10px;
-  font-size: 22px;
   flex-shrink: 0;
+}
+.chat-file-icon svg {
+  width: 24px;
+  height: 24px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.chat-file-action svg, .chat-img-overlay svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.chat-audio-icon svg {
+  width: 20px;
+  height: 20px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2;
+}
+.floating-toast .toast-icon svg {
+  width: 20px;
+  height: 20px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2.2;
 }
 .chat-file-info {
   display: flex;

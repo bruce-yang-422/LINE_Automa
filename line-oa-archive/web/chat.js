@@ -236,23 +236,23 @@ function getFileMeta(fileName) {
     ext = 'pdf';
   }
   if (ext === 'pdf') {
-    return { icon: '📕', label: 'PDF 文件', color: '#ef4444', bg: '#fef2f2', border: '#fca5a5' };
+    return { iconName: 'pdf', label: 'PDF 文件', color: '#ef4444', bg: '#fef2f2', border: '#fca5a5' };
   } else if (['doc', 'docx'].includes(ext)) {
-    return { icon: '📘', label: 'Word 文件', color: '#2563eb', bg: '#eff6ff', border: '#bfdbfe' };
+    return { iconName: 'doc', label: 'Word 文件', color: '#2563eb', bg: '#eff6ff', border: '#bfdbfe' };
   } else if (['xls', 'xlsx', 'csv'].includes(ext)) {
-    return { icon: '📊', label: 'Excel 試算表', color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0' };
+    return { iconName: 'sheet', label: 'Excel 試算表', color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0' };
   } else if (['ppt', 'pptx'].includes(ext)) {
-    return { icon: '📙', label: '簡報 PPT', color: '#ea580c', bg: '#fff7ed', border: '#fed7aa' };
+    return { iconName: 'slide', label: '簡報 PPT', color: '#ea580c', bg: '#fff7ed', border: '#fed7aa' };
   } else if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) {
-    return { icon: '📦', label: '壓縮檔 ZIP', color: '#d97706', bg: '#fffbeb', border: '#fde68a' };
+    return { iconName: 'zip', label: '壓縮檔 ZIP', color: '#d97706', bg: '#fffbeb', border: '#fde68a' };
   } else if (['txt', 'md', 'json', 'log', 'sql'].includes(ext)) {
-    return { icon: '📄', label: '文字檔', color: '#475569', bg: '#f8fafc', border: '#e2e8f0' };
+    return { iconName: 'file', label: '文字檔', color: '#475569', bg: '#f8fafc', border: '#e2e8f0' };
   } else if (['mp3', 'wav', 'm4a', 'aac', 'ogg'].includes(ext)) {
-    return { icon: '🎵', label: '語音／音訊', color: '#8b5cf6', bg: '#f5f3ff', border: '#ddd6fe' };
+    return { iconName: 'audio', label: '音訊檔案', color: '#8b5cf6', bg: '#f5f3ff', border: '#ddd6fe' };
   } else if (['mp4', 'mov', 'avi', 'mkv', 'webm'].includes(ext)) {
-    return { icon: '🎬', label: '影片', color: '#06b6d4', bg: '#ecfeff', border: '#a5f3fc' };
+    return { iconName: 'video', label: '影片', color: '#06b6d4', bg: '#ecfeff', border: '#a5f3fc' };
   }
-  return { icon: '📎', label: ext ? ext.toUpperCase() + ' 檔案' : '檔案', color: '#64748b', bg: '#f1f5f9', border: '#e2e8f0' };
+  return { iconName: 'file', label: ext ? ext.toUpperCase() + ' 檔案' : '檔案', color: '#64748b', bg: '#f1f5f9', border: '#e2e8f0' };
 }
 
 function renderMessageBubbles() {
@@ -289,8 +289,8 @@ function renderMessageBubbles() {
       const src = mediaUrl(m.message_id);
       bubbleContent = `<div class="chat-media-image-wrapper">
         <a href="${src}" target="_blank" title="點擊在新分頁放大檢視原圖" class="chat-media-image-link">
-          <img src="${src}" alt="LINE 圖片" class="chat-img-thumb" loading="lazy" onerror="this.onerror=null;this.parentElement.innerHTML='<span class=\\'muted\\' style=\\'font-size:12px;padding:12px;display:block;\\'>🖼️ [圖片已過期或無法載入]</span>';">
-          <span class="chat-img-overlay">🔍 點擊放大</span>
+          <img src="${src}" alt="LINE 圖片" class="chat-img-thumb" loading="lazy" onerror="this.onerror=null;this.parentElement.innerHTML='<span class=\\'muted\\' style=\\'font-size:12px;padding:12px;display:flex;align-items:center;gap:6px;\\'>${icon('image')} [圖片已過期或無法載入]</span>';">
+          <span class="chat-img-overlay">${icon('search')} 放大檢視</span>
         </a>
       </div>`;
     } else if (m.message_type === "video") {
@@ -299,14 +299,14 @@ function renderMessageBubbles() {
       bubbleContent = `<div class="chat-media-video-card">
         <video src="${src}" controls preload="metadata" class="chat-video-player"></video>
         <div class="chat-video-footer">
-          <a href="${src}" download="video_${esc(m.message_id)}.mp4" class="btn small text" style="font-size:11.5px;padding:3px 8px;">⬇️ 下載原始影片</a>
+          <a href="${src}" download="video_${esc(m.message_id)}.mp4" class="btn small text" style="font-size:11.5px;padding:3px 8px;display:inline-flex;align-items:center;gap:4px;">${icon('download')} 下載原始影片</a>
         </div>
       </div>`;
     } else if (m.message_type === "audio") {
       isMediaBubble = true;
       const src = mediaUrl(m.message_id);
       bubbleContent = `<div class="chat-media-audio-card">
-        <span class="chat-audio-icon">🎙️</span>
+        <span class="chat-audio-icon" style="color:var(--brand);display:inline-flex;">${icon('mic')}</span>
         <audio src="${src}" controls class="chat-audio-player"></audio>
       </div>`;
     } else if (m.message_type === "file") {
@@ -317,19 +317,19 @@ function renderMessageBubbles() {
       bubbleContent = `<div class="chat-media-file-card">
         <a href="${src}" download="${esc(fileName)}" class="chat-file-link" title="點擊下載 ${esc(fileName)}">
           <div class="chat-file-icon" style="background:${meta.bg};border:1px solid ${meta.border};color:${meta.color};">
-            <span>${meta.icon}</span>
+            ${icon(meta.iconName)}
           </div>
           <div class="chat-file-info">
             <div class="chat-file-name" title="${esc(fileName)}">${esc(fileName)}</div>
             <div class="chat-file-meta">
               <span class="chat-file-badge" style="color:${meta.color};background:${meta.bg};border:1px solid ${meta.border};">${esc(meta.label)}</span>
-              <span class="chat-file-action">⬇️ 下載檔案</span>
+              <span class="chat-file-action" style="display:inline-flex;align-items:center;gap:3px;">${icon('download')} 下載檔案</span>
             </div>
           </div>
         </a>
       </div>`;
     } else if (m.message_type === "sticker") {
-      bubbleContent = `<div class="chat-media-sticker"><span class="badge" data-s="se71ae94">🌟 [貼圖]</span></div>`;
+      bubbleContent = `<div class="chat-media-sticker"><span class="badge" data-s="se71ae94" style="display:inline-flex;align-items:center;gap:4px;">${icon('star')} 貼圖訊息</span></div>`;
     } else {
       const text = m.text_content || `[${m.message_type}]`;
       bubbleContent = `<div class="chat-bubble-text">${highlightSearchText(text, chatUI.searchQuery)}</div>`;
