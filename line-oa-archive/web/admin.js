@@ -25,8 +25,8 @@ const orgKinds={company:"公司",unit:"單位",association:"社團",club:"俱樂
 const label=r=>r.custom_name||r.display_name||(r.kind==="user"?"未命名個人":"未命名群組");
 const caseStatusNames={pending:"待處理",processing:"處理中",waiting:"等待中",ready_to_close:"待結案",closed:"已結案"};
 const caseStatusTones={pending:"warn",processing:"primary",waiting:"secondary",ready_to_close:"info",closed:"good"};
-const casePriorityNames={low:"低",normal:"一般",high:"高",urgent:"緊急"};
-const casePriorityTones={low:"",normal:"good",high:"warn",urgent:"bad"};
+const casePriorityNames={low:"低",medium:"一般",high:"高",urgent:"緊急"};
+const casePriorityTones={low:"",medium:"good",high:"warn",urgent:"bad"};
 const waitingPartyNames={internal:"內部團隊",case_subject:"案件主體（聯絡對象）",third_party:"第三方廠商／單位"};
 const APPLE_TAG_COLORS=[
   {name:"經典藍",hex:"#007AFF"},
@@ -56,7 +56,7 @@ const person=r=>{
   const showLineName=hasCustom&&r.display_name&&r.display_name!==primary;
   const truncatedId=r.recipient_id?(r.recipient_id.length>12?r.recipient_id.slice(0,4)+'...'+r.recipient_id.slice(-4):r.recipient_id):'';
   const tags=r.tags||[];
-  return `<div class="person"><span class="avatar ${r.kind!=="user"?"group":""}">${esc(primary.slice(0,1))}</span><div><div class="person-title"><strong>${esc(primary)}</strong>${showLineName?`<span class="line-name muted" style="font-size:12px;margin-left:6px;">（LINE: ${esc(r.display_name)}）</span>`:''}</div><div class="person-sub"><small class="muted">${r.kind==="user"?"個人聊天室":"群組聊天室"}${!r.active?" · 已停用":""}${truncatedId?` · <span class="line-id-chip">${esc(truncatedId)}</span>`:""}</small></div>${tags.length?`<div class="contact-tags">${tags.map(t=>tagBadge(t)).join("")}</div>`:""}</div></div>`;
+  return `<div class="person"><span class="avatar ${r.kind!=="user"?"group":""}">${esc(primary.slice(0,1))}</span><div><div class="person-title"><strong>${esc(primary)}</strong>${showLineName?`<span class="line-name muted" data-s="s102ad5b">（LINE: ${esc(r.display_name)}）</span>`:''}</div><div class="person-sub"><small class="muted">${r.kind==="user"?"個人聊天室":"群組聊天室"}${!r.active?" · 已停用":""}${truncatedId?` · <span class="line-id-chip">${esc(truncatedId)}</span>`:""}</small></div>${tags.length?`<div class="contact-tags">${tags.map(t=>tagBadge(t)).join("")}</div>`:""}</div></div>`;
 };
 const scope=r=>r.category==="composition"?(r.organization_id?orgName(r.organization_id):"平台個人素材"):r.scope==="module"?"天氣模組（依帳號／組織授權）":r.category==="text"?"自訂文字訊息":r.scope==="all"?"所有登入使用者":r.scope==="personal"?`${orgName(r.organization_id)} · 個人專屬`:r.scope==="department"?`${orgName(r.organization_id)} / ${r.department}`:`${orgName(r.organization_id)} · 全組織`;
 const reportBadge=r=>r.status!=="ready"?badge(r.status==="missing"?"等待報告":"無法使用","bad"):r.stale?badge("非今日更新","warn"):badge(admin()?"可發送":"可查看","good");
@@ -104,8 +104,9 @@ async function load(){
   $("account-role").textContent=(state.session.preview?"預覽 · ":"")+roleName(state.session.role)+(state.session.user?.organization_id?" · "+orgName(state.session.user.organization_id):"");
   $("avatar").textContent=($("account-name").textContent||"L").slice(0,1).toUpperCase();
   document.querySelectorAll("[data-admin]").forEach(el=>{el.hidden=!admin();});document.querySelectorAll("[data-platform]").forEach(el=>{el.hidden=!superAdmin();});
-  const reportResult=lineDataReady()?await api("/api/reports"):{reports:[]};state.reports=reportResult.reports;
-  if(admin()&&lineDataReady()){
+  const reportResult=lineDataReady()&&!superAdmin()?await api("/api/reports"):{reports:[]};state.reports=reportResult.reports;
+  // 平台管理員不進入 OA 營運畫面（權限規格 8.1），也不預先讀取客戶資料，避免在客戶操作紀錄留下查看紀錄。
+  if(admin()&&lineDataReady()&&!superAdmin()){
     const results=await Promise.all([api("/api/contacts"),api("/api/jobs"),(manager()?api("/api/settings"):Promise.resolve({users:[]})),api("/api/activity"),api("/api/cases"),api("/api/saved-filters")]);
     state.contacts=results[0].contacts;state.tags=results[0].tags||[];state.jobs=results[1].jobs;state.settings=results[2];state.events=results[3].events;state.cases=results[4].cases||[];state.savedFilters=results[5].saved_filters||[];
     state.selected=new Set([...state.selected].filter(id=>state.contacts.some(r=>r.recipient_id===id&&r.active)));
@@ -119,11 +120,14 @@ async function load(){
   const managementItems=[...document.querySelectorAll("#management-nav [data-nav-role]")];
   managementItems.forEach(el=>{el.hidden=!navAllowed[el.dataset.navRole];});
   $("management-nav-label").hidden=!managementItems.some(el=>!el.hidden);
+  // 平台管理員只有管理選單（組織、LINE OA）；工作空間的營運頁面屬於各組織。
+  $("workspace-nav-label").hidden=superAdmin();$("workspace-nav").hidden=superAdmin();$("command-open").hidden=superAdmin();
   if(state.view==="settings")state.view=superAdmin()?"organizations":"overview";
   if(state.view==="organizations"&&!superAdmin())state.view="reports";
   if(["personnel","org-settings"].includes(state.view)&&!orgAdmin)state.view="overview";
   if(state.view==="channels"&&!navAllowed["platform-org"])state.view="overview";
   if(!lineDataReady()&&!["organizations","channels","oa-list"].includes(state.view))state.view=superAdmin()?"organizations":"channels";
+  if(superAdmin()&&!["organizations","channels"].includes(state.view))state.view="organizations";
   workspaceHeader();
   state.loaded=true;state.authLost=false;$("connection").innerHTML='<span class="status-dot"></span>已連線';
   $("sync-time").textContent="最後更新 "+new Date().toLocaleTimeString("zh-TW",{hour12:false});
@@ -150,32 +154,19 @@ function renderOnboardingCard(){
   let dismissed = false;
   try{ dismissed = Boolean(localStorage.getItem("lineOnboardingDismissed_" + orgId)); }catch(_){}
   if(dismissed) return "";
-  
-  const hasConnectedOA = (state.channels||[]).some(c => c.org_id === orgId && c.active);
+  // 權限規格 8.6：完成一項自動打勾；全部完成或按「略過」後不再顯示。
+  const hasConnectedOA = lineUI.channels.some(c => c.workspace_id === "o:" + orgId && c.active && !c.shared);
   const hasTemplate = true;
-  const hasColleagues = (state.memberships||[]).filter(m => m.org_id === orgId && m.active).length > 1;
-  
+  const hasColleagues = (state.settings?.users||[]).filter(u => u.active && u.organization_id === orgId).length > 1;
   if(hasConnectedOA && hasTemplate && hasColleagues) return "";
-  
-  return `<section class="panel onboarding-panel" style="background:linear-gradient(135deg, #f0fdf4, #e6f4ea);border:1px solid #86efac;border-radius:16px;padding:16px 20px;margin-bottom:20px;">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-      <h3 style="margin:0;font-size:15px;font-weight:700;color:#166534;display:flex;align-items:center;gap:6px;">🚀 開始使用</h3>
-      <button type="button" class="btn text small" data-action="dismiss-onboarding" style="color:#166534;padding:2px 8px;">略過</button>
-    </div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;">
-      <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#fff;border-radius:8px;border:1px solid ${hasConnectedOA?'#86efac':'#e2e8f0'};">
-        <span style="font-size:16px;color:${hasConnectedOA?'#16a34a':'#94a3b8'};">${hasConnectedOA?'☑':'☐'}</span>
-        <div><strong style="font-size:13px;display:block;">1. 確認 LINE OA 連線</strong><small style="color:#64748b;font-size:11px;">${hasConnectedOA?'已連結 OA':'請至 LINE OA 管理完成連線'}</small></div>
-      </div>
-      <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#fff;border-radius:8px;border:1px solid ${hasTemplate?'#86efac':'#e2e8f0'};">
-        <span style="font-size:16px;color:${hasTemplate?'#16a34a':'#94a3b8'};">${hasTemplate?'☑':'☐'}</span>
-        <div><strong style="font-size:13px;display:block;">2. 選擇範本包</strong><small style="color:#64748b;font-size:11px;">已預設啟用通用範本包</small></div>
-      </div>
-      <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#fff;border-radius:8px;border:1px solid ${hasColleagues?'#86efac':'#e2e8f0'};">
-        <span style="font-size:16px;color:${hasColleagues?'#16a34a':'#94a3b8'};">${hasColleagues?'☑':'☐'}</span>
-        <div><strong style="font-size:13px;display:block;">3. 新增同事</strong><small style="color:#64748b;font-size:11px;">${hasColleagues?'已建立同事帳號':'至人員與權限新增營運/協作人員'}</small></div>
-      </div>
-    </div>
+  const step = (done, title, detail) => `<li class="onboarding-step ${done?"done":""}"><span class="onboarding-check" aria-hidden="true">${done?"✓":""}</span><div><strong>${title}</strong><small>${detail}</small></div><span class="sr-only">${done?"已完成":"未完成"}</span></li>`;
+  return `<section class="panel onboarding-panel" aria-labelledby="onboarding-title">
+    <div class="onboarding-head"><h2 id="onboarding-title">開始使用</h2><button type="button" class="btn text small" data-action="dismiss-onboarding">略過</button></div>
+    <ol class="onboarding-steps">
+      ${step(hasConnectedOA, "確認 LINE OA 連線", hasConnectedOA ? "已連結 OA" : "請平台管理員在「LINE OA」完成連線")}
+      ${step(hasTemplate, "選擇範本包", "已預設啟用通用範本包，可在「LINE OA」調整")}
+      ${step(hasColleagues, "新增同事", hasColleagues ? "已建立同事帳號" : "到「人員與權限」新增操作人員或協作人員")}
+    </ol>
   </section>`;
 }
 
@@ -229,23 +220,23 @@ function renderAudienceTagsSelector(){
   const selectedTagIds=Array.from(state.selectedAudienceTags||[]);
   const matched=contactsMatchingTags(selectedTagIds,state.tagAudienceMode||"any");
   
-  return `<div class="audience-filter-panel" style="padding:16px 20px;">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+  return `<div class="audience-filter-panel" data-s="sa4e96ca">
+    <div data-s="sea15b2f">
       <div>
-        <h3 style="margin:0;font-size:15px;font-weight:700;">依標籤篩選發送對象</h3>
-        <p class="muted" style="font-size:13px;margin:2px 0 0 0;">勾選一或多個標籤，自動計算符合條件的聯絡對象</p>
+        <h3 data-s="s49d7aa6">依標籤篩選發送對象</h3>
+        <p class="muted" data-s="s38f2a08">勾選一或多個標籤，自動計算符合條件的聯絡對象</p>
       </div>
       <div class="segmented" role="group" aria-label="標籤比對方式">
         <button type="button" class="${state.tagAudienceMode==='any'?'active':''}" data-action="tag-audience-mode" data-id="any">符合任一標籤（OR）</button>
         <button type="button" class="${state.tagAudienceMode==='all'?'active':''}" data-action="tag-audience-mode" data-id="all">符合全部標籤（AND）</button>
       </div>
     </div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(200px, 1fr));gap:10px;margin-bottom:18px;">
+    <div data-s="se6302cf">
       ${(state.tags||[]).map(t=>{
         const count=state.contacts.filter(r=>r.active&&eligible(r)&&(r.tags||[]).some(x=>String(x.id)===String(t.id))).length;
         const isChecked=state.selectedAudienceTags.has(String(t.id));
         return `<label class="check-label" style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--soft,#f8fafc);border:1px solid ${isChecked?'var(--primary,#00B900)':'var(--line,#e2e8f0)'};border-radius:10px;cursor:pointer;">
-          <div style="display:flex;align-items:center;gap:8px;">
+          <div data-s="se3f6104">
             <input type="checkbox" name="audience-tag" value="${esc(t.id)}" ${isChecked?'checked':''}>
             ${tagBadge(t)}
           </div>
@@ -253,13 +244,13 @@ function renderAudienceTagsSelector(){
         </label>`;
       }).join("")||'<p class="muted">目前尚未建立任何標籤。</p>'}
     </div>
-    <div style="background:var(--card,#fff);border:1px solid var(--line,#e2e8f0);border-radius:12px;padding:12px 16px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+    <div data-s="sc673a02">
+      <div data-s="s5a9738f">
         <strong>符合對象預覽（共 ${matched.length} 個聊天室）</strong>
         <small class="muted">${selectedTagIds.length?`已選 ${selectedTagIds.length} 個標籤`:'請先勾選上方標籤'}</small>
       </div>
-      <div style="max-height:160px;overflow-y:auto;display:flex;flex-wrap:wrap;gap:6px;">
-        ${matched.map(r=>`<span class="badge good" style="font-size:12px;">${esc(label(r))}</span>`).join("")||'<small class="muted">尚無符合對象</small>'}
+      <div data-s="s5a530b0">
+        ${matched.map(r=>`<span class="badge good" data-s="se71ae94">${esc(label(r))}</span>`).join("")||'<small class="muted">尚無符合對象</small>'}
       </div>
     </div>
   </div>`;
@@ -269,18 +260,18 @@ function renderAudienceSavedFiltersSelector(){
   const chosenFilter=(state.savedFilters||[]).find(f=>f.filter_id===state.selectedFilterId);
   const matched=chosenFilter?contactsMatchingFilter(chosenFilter.criteria):[];
   
-  return `<div class="audience-filter-panel" style="padding:16px 20px;">
-    <div style="margin-bottom:16px;">
-      <h3 style="margin:0;font-size:15px;font-weight:700;">依自訂篩選條件傳訊</h3>
-      <p class="muted" style="font-size:13px;margin:2px 0 0 0;">選擇已儲存的篩選組合，帶入目前符合的對象</p>
+  return `<div class="audience-filter-panel" data-s="sa4e96ca">
+    <div data-s="s79a1c5a">
+      <h3 data-s="s49d7aa6">依自訂篩選條件傳訊</h3>
+      <p class="muted" data-s="s38f2a08">選擇已儲存的篩選組合，帶入目前符合的對象</p>
     </div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(240px, 1fr));gap:12px;margin-bottom:18px;">
+    <div data-s="se02dbda">
       ${(state.savedFilters||[]).map(f=>{
         const count=contactsMatchingFilter(f.criteria).length;
         const isSelected=state.selectedFilterId===f.filter_id;
         return `<label class="check-label" style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:var(--soft,#f8fafc);border:1px solid ${isSelected?'var(--primary,#00B900)':'var(--line,#e2e8f0)'};border-radius:12px;cursor:pointer;">
           <div>
-            <div style="display:flex;align-items:center;gap:8px;">
+            <div data-s="se3f6104">
               <input type="radio" name="audience-saved-filter" value="${esc(f.filter_id)}" ${isSelected?'checked':''}>
               <strong>${esc(f.name)}</strong>
             </div>
@@ -289,13 +280,13 @@ function renderAudienceSavedFiltersSelector(){
         </label>`;
       }).join("")||'<p class="muted">目前尚未建立自訂篩選條件。可在「聯絡對象」搜尋篩選後儲存。</p>'}
     </div>
-    <div style="background:var(--card,#fff);border:1px solid var(--line,#e2e8f0);border-radius:12px;padding:12px 16px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+    <div data-s="sc673a02">
+      <div data-s="s5a9738f">
         <strong>符合對象預覽（共 ${matched.length} 個聊天室）</strong>
         <small class="muted">${chosenFilter?`條件：「${esc(chosenFilter.name)}」`:'請先選擇上方篩選條件'}</small>
       </div>
-      <div style="max-height:160px;overflow-y:auto;display:flex;flex-wrap:wrap;gap:6px;">
-        ${matched.map(r=>`<span class="badge good" style="font-size:12px;">${esc(label(r))}</span>`).join("")||'<small class="muted">尚無符合對象</small>'}
+      <div data-s="s5a530b0">
+        ${matched.map(r=>`<span class="badge good" data-s="se71ae94">${esc(label(r))}</span>`).join("")||'<small class="muted">尚無符合對象</small>'}
       </div>
     </div>
   </div>`;
@@ -340,7 +331,7 @@ function sendPage(){
 function confirmation(){
   const r=state.report,rows=selectedRows();
   const audienceText=state.audience==="subscribers"?"天氣訂閱名單":state.audience==="by-tags"?"依標籤傳訊":state.audience==="by-filter"?"依自訂篩選條件":"手動選擇";
-  return `<section class="panel"><div class="panel-head"><h2>確認這次的發送內容</h2>${reportBadge(r)}</div><div class="panel-body confirm-grid"><div>${["text","composition"].includes(r.category)?tile(r):`<img class="confirm-preview" src="${r.preview}" alt="${esc(r.title)} 完整預覽"><p class="subtitle">內容更新時間：${when(r.modified_at)}</p>`}</div><div><p class="eyebrow">DELIVERY SUMMARY</p><h2>${esc(r.title)}</h2><div class="detail-row"><span>發送方式</span><strong>${audienceText}</strong></div><div class="detail-row"><span>發送 OA</span><strong>${esc(selectedOA()?.name||"既有 OA")}</strong></div><div class="detail-row"><span>工作區</span><strong>${esc(selectedWorkspace()?.name||"目前工作區")}</strong></div><div class="detail-row"><span>收件聊天室</span><strong>${rows.length} 個（${rows.filter(x=>x.kind==="user").length} 個人／${rows.filter(x=>x.kind!=="user").length} 群組）</strong></div><div class="detail-row"><span>操作人</span><strong>${esc(state.session.identity)}</strong></div><div class="summary-list">${rows.map(x=>`<span>${esc(label(x))}</span>`).join("")}</div><p class="callout warn" style="background:#fef2f2;border-color:#fca5a5;color:#991b1b;">⚠️ 此類訊息一律計入當月訊息額度（預估使用 <strong>${rows.length} 則</strong>額度，群組聊天室依實際人數計扣）。</p><p class="callout">送出前會再次檢查報告版本與收件範圍。LINE 已接受代表 API 受理，不代表對方已讀。</p>${scheduleFields()}${r.stale?'<p class="callout warn">這份報告不是今天更新。請確認日期與內容適用於這次發送。</p><label class="check-label"><input id="allow-stale" type="checkbox">我已確認，可以發送這份較早的報告</label>':""}<div class="form-actions">${button("上一步","back-recipients")}${button(icon("send")+`確認發送給 ${rows.length} 個聊天室`,"submit-send","primary",`id="submit-send" ${state.busy||!rows.length?"disabled":""}`)}</div></div></div></section>`;
+  return `<section class="panel"><div class="panel-head"><h2>確認這次的發送內容</h2>${reportBadge(r)}</div><div class="panel-body confirm-grid"><div>${["text","composition"].includes(r.category)?tile(r):`<img class="confirm-preview" src="${r.preview}" alt="${esc(r.title)} 完整預覽"><p class="subtitle">內容更新時間：${when(r.modified_at)}</p>`}</div><div><p class="eyebrow">DELIVERY SUMMARY</p><h2>${esc(r.title)}</h2><div class="detail-row"><span>發送方式</span><strong>${audienceText}</strong></div><div class="detail-row"><span>發送 OA</span><strong>${esc(selectedOA()?.name||"既有 OA")}</strong></div><div class="detail-row"><span>工作區</span><strong>${esc(selectedWorkspace()?.name||"目前工作區")}</strong></div><div class="detail-row"><span>收件聊天室</span><strong>${rows.length} 個（${rows.filter(x=>x.kind==="user").length} 個人／${rows.filter(x=>x.kind!=="user").length} 群組）</strong></div><div class="detail-row"><span>操作人</span><strong>${esc(state.session.identity)}</strong></div><div class="summary-list">${rows.map(x=>`<span>${esc(label(x))}</span>`).join("")}</div><p class="callout warn" data-s="se9d9bb6">⚠️ 此類訊息一律計入當月訊息額度（預估使用 <strong>${rows.length} 則</strong>額度，群組聊天室依實際人數計扣）。</p><p class="callout">送出前會再次檢查報告版本與收件範圍。LINE 已接受代表 API 受理，不代表對方已讀。</p>${scheduleFields()}${r.stale?'<p class="callout warn">這份報告不是今天更新。請確認日期與內容適用於這次發送。</p><label class="check-label"><input id="allow-stale" type="checkbox">我已確認，可以發送這份較早的報告</label>':""}<div class="form-actions">${button("上一步","back-recipients")}${button(icon("send")+`確認發送給 ${rows.length} 個聊天室`,"submit-send","primary",`id="submit-send" ${state.busy||!rows.length?"disabled":""}`)}</div></div></div></section>`;
 }
 const statusNames={scheduled:"已預約",missed:"預約逾期／未發送",queued:"排隊中",running:"發送中",finished:"工作完成",interrupted:"工作中斷",pending:"等待發送",sending:"正在發送",accepted:"LINE 已接受",failed:"發送失敗",unknown:"狀態不明",cancelled:"未發送／已取消"};
 function jobTone(job){return job.deliveries.some(d=>["failed","unknown"].includes(d.status))?"bad":job.status==="finished"?"good":"warn";}
@@ -407,13 +398,13 @@ function casesPage(){
   const closedCount=state.cases.filter(c=>c.status==="closed").length;
 
   const exportButtons = manager() ? `
-    <div style="display:flex;gap:6px;">
+    <div data-s="s1d8943f">
       <button class="btn small" data-action="export-cases-csv">${icon("download")} 匯出 CSV</button>
       <button class="btn small" data-action="export-cases-xlsx">${icon("download")} 匯出 XLSX</button>
     </div>
   ` : '';
 
-  return heading("案件管理","追蹤從對話與聯絡對象建立的案件，掌握各階段進度。",`<div style="display:flex;gap:8px;">${exportButtons}${button(icon("plus")+"建立案件","new-case-modal","primary")}</div>`,"CASE MANAGEMENT")+
+  return heading("案件管理","追蹤從對話與聯絡對象建立的案件，掌握各階段進度。",`<div data-s="sb9bbe54">${exportButtons}${button(icon("plus")+"建立案件","new-case-modal","primary")}</div>`,"CASE MANAGEMENT")+
     `<div class="stats">
       ${stat("待處理",pendingCount,"件","尚未開始處理的案件","clock")}
       ${stat("處理中",processingCount,"件","進行中需主動跟進","send")}
@@ -424,7 +415,7 @@ function casesPage(){
       <div class="toolbar">
         <label class="search-field">${icon("search")}<input id="case-search" value="${esc(state.caseQuery)}" placeholder="搜尋案件編號、標題、描述、參考號或聯絡對象" aria-label="搜尋案件"></label>
         <select id="case-priority-filter" aria-label="優先度篩選">
-          ${options([["all","所有優先度"],["urgent","緊急"],["high","高"],["normal","一般"],["low","低"]],state.casePriority)}
+          ${options([["all","所有優先度"],["urgent","緊急"],["high","高"],["medium","一般"],["low","低"]],state.casePriority)}
         </select>
       </div>
       <div class="toolbar segmented">
@@ -444,16 +435,16 @@ function createCaseModal(subject_id="", prefill={}){
   const continuedFrom = prefill.continued_from_id || "";
 
   modal(continuedFrom ? "建立延續案件" : "建立新案件", `<form id="case-create-form">
-    ${continuedFrom ? `<input type="hidden" name="continued_from_id" value="${esc(continuedFrom)}"><div class="callout" style="margin-bottom:12px;">🔗 此案件將作為延續案件關聯至前案歷程。</div>` : ''}
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-      <span class="muted" style="font-size:13px;">填寫案件需求或從範本包帶入</span>
+    ${continuedFrom ? `<input type="hidden" name="continued_from_id" value="${esc(continuedFrom)}"><div class="callout" data-s="s3ef1fa1">🔗 此案件將作為延續案件關聯至前案歷程。</div>` : ''}
+    <div data-s="s40eee6f">
+      <span class="muted" data-s="s9e6595f">填寫案件需求或從範本包帶入</span>
       <button type="button" class="btn text small" data-action="open-template-picker" data-subject="${esc(subject_id)}">📋 從範本帶入</button>
     </div>
     <div class="form-grid">
       <div class="full">${field("案件標題","title",title,'required maxlength="100" placeholder="例如：詢問 10 月發票開立方式、報表格式問題"')}</div>
       ${selectField("案件主體（聯絡對象）","case_subject_id",contactOpts,subject_id)}
       ${field("案件類別","category",cat,'maxlength="50" placeholder="例如：一般、諮詢、維修、訂單"')}
-      ${selectField("優先度","priority",[["normal","一般"],["low","低"],["high","高"],["urgent","緊急"]],prefill.priority||"normal")}
+      ${selectField("優先度","priority",[["medium","一般"],["low","低"],["high","高"],["urgent","緊急"]],prefill.priority||"medium")}
       ${field("參考編號（選填）","ref_no",prefill.ref_no||"",'maxlength="50" placeholder="例如：訂單號 #202610-A01、發票號"')}
       ${field("預計完成期限（選填）","due_date",prefill.due_date||"",'type="date"')}
       <div class="full"><label class="field">問題或需求描述（選填）<textarea name="description" rows="4" maxlength="2000" placeholder="詳細說明對方需求、對話重點、目前已知資訊...">${esc(desc)}</textarea></label></div>
@@ -520,7 +511,7 @@ async function caseDetailModal(case_id){
           <h2>${esc(c.title)}</h2>
           ${c.is_locked?'<span title="防誤觸鎖定中">🔒 已鎖定</span>':''}
         </div>
-        <div style="display:flex;gap:6px;align-items:center;">
+        <div data-s="sbabd711">
           ${c.category?`<span class="badge">${esc(c.category)}</span>`:""}
           ${badge(casePriorityNames[c.priority]||c.priority,casePriorityTones[c.priority]||"")}
           ${badge(caseStatusNames[c.status]||c.status,caseStatusTones[c.status]||"")}
@@ -537,7 +528,7 @@ async function caseDetailModal(case_id){
       </dl>
       ${c.description?`<div class="section-space"><h4>需求描述</h4><p class="case-desc-box">${esc(c.description)}</p></div>`:""}
       
-      <div class="section-space" style="display:flex;gap:8px;align-items:center;">
+      <div class="section-space" data-s="s78cead6">
         ${canSend() && c.status !== "closed" ? `<button class="btn primary small" data-action="open-case-notify-modal" data-id="${esc(c.case_id)}">💬 通知案件對象</button>` : ''}
         <button class="btn small" data-action="save-case-as-template" data-id="${esc(c.case_id)}">📋 存為案件範本</button>
       </div>
@@ -582,8 +573,8 @@ function chatNoteModal(recipient_id,note_id="",prefill={}){
 
   modal(existing ? "編輯對話記事" : "新增對話記事", `<form id="chat-note-form" data-recipient="${esc(recipient_id)}" data-note-id="${esc(note_id)}">
     ${updated_at ? `<input type="hidden" name="expected_updated_at" value="${esc(updated_at)}">` : ''}
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-      <span class="muted" style="font-size:13px;">填寫對話重要記事或從範本包帶入</span>
+    <div data-s="s40eee6f">
+      <span class="muted" data-s="s9e6595f">填寫對話重要記事或從範本包帶入</span>
       <button type="button" class="btn text small" data-action="open-note-template-picker" data-recipient="${esc(recipient_id)}">📋 從範本帶入</button>
     </div>
     <div class="form-grid">
@@ -608,39 +599,39 @@ async function templatePickerModal(subject_id="", target_type="case"){
     groups.forEach(g => { totalCount += (g.templates || []).length; });
 
     if(!totalCount){
-      modal("選擇範本", '<p class="muted" style="padding:1rem;">尚未啟用含有此類型範本的範本包。</p>');
+      modal("選擇範本", '<p class="muted" data-s="sc951e35">尚未啟用含有此類型範本的範本包。</p>');
       return;
     }
 
-    const html = `<div class="template-picker-container" style="max-height:60vh;overflow-y:auto;padding-right:4px;">
+    const html = `<div class="template-picker-container" data-s="s2940a45">
       ${groups.map(g => `
-        <div class="template-pack-group" style="margin-bottom:16px;">
-          <h4 style="font-size:13px;font-weight:700;color:var(--text-subtle,#64748b);margin-bottom:8px;border-bottom:1px solid var(--line,#e2e8f0);padding-bottom:4px;">📦 範本包：${esc(g.pack_name)}</h4>
-          <div style="display:grid;gap:8px;">
+        <div class="template-pack-group" data-s="s79a1c5a">
+          <h4 data-s="s86a940d">📦 範本包：${esc(g.pack_name)}</h4>
+          <div data-s="sed54c91">
             ${(g.templates || []).map(t => {
               const title = t.rendered_title || t.title || "";
               const body = t.rendered_body || t.body || "";
               const cat = t.category_name || "一般";
-              const pri = t.defaults?.priority || "normal";
+              const pri = t.defaults?.priority || "medium";
               const tags = (t.defaults?.tags || []).join(", ");
 
               if (target_type === "note") {
-                return `<div class="template-card" style="border:1px solid var(--line, #e2e8f0);border-radius:8px;padding:10px;background:var(--card-bg,#fff);">
-                  <div style="display:flex;justify-content:space-between;align-items:center;">
+                return `<div class="template-card" data-s="s1f15671">
+                  <div data-s="s8129723">
                     <strong>${esc(t.name || t.title)}</strong>
                     <button type="button" class="btn small primary" data-action="apply-note-template" data-recipient="${esc(subject_id)}" data-title="${esc(title)}" data-body="${esc(body)}" data-cat="${esc(cat)}" data-tags="${esc(tags)}">套用此記事範本</button>
                   </div>
-                  <div style="margin:4px 0;"><span class="badge" style="font-size:11px;">${esc(cat)}</span></div>
-                  <p style="font-size:12px;color:var(--text-subtle,#64748b);margin:4px 0 0;white-space:pre-wrap;">${esc(body)}</p>
+                  <div data-s="s60946a2"><span class="badge" data-s="se48b058">${esc(cat)}</span></div>
+                  <p data-s="s0bcd782">${esc(body)}</p>
                 </div>`;
               } else {
-                return `<div class="template-card" style="border:1px solid var(--line, #e2e8f0);border-radius:8px;padding:10px;background:var(--card-bg,#fff);">
-                  <div style="display:flex;justify-content:space-between;align-items:center;">
+                return `<div class="template-card" data-s="s1f15671">
+                  <div data-s="s8129723">
                     <strong>${esc(t.name || t.title)}</strong>
                     <button type="button" class="btn small primary" data-action="apply-case-template" data-subject="${esc(subject_id)}" data-title="${esc(title)}" data-desc="${esc(body)}" data-cat="${esc(cat)}" data-pri="${esc(pri)}">套用此案件範本</button>
                   </div>
-                  <div style="margin:4px 0;"><span class="badge" style="font-size:11px;">${esc(cat)}</span></div>
-                  <p style="font-size:12px;color:var(--text-subtle,#64748b);margin:4px 0 0;white-space:pre-wrap;">${esc(body)}</p>
+                  <div data-s="s60946a2"><span class="badge" data-s="se48b058">${esc(cat)}</span></div>
+                  <p data-s="s0bcd782">${esc(body)}</p>
                 </div>`;
               }
             }).join("")}
@@ -695,7 +686,7 @@ function caseNotifyModal(case_id){
         </label>
       </div>
     </div>
-    <div class="callout warn" style="margin-top:10px;">
+    <div class="callout warn" data-s="sd8a81ea">
       📢 <strong>額度提醒：</strong>此訊息將透過 LINE 官方帳號以推播 (Push) 發送給 ${esc(subjectName)}，並計入本月發送額度。送出後將自動寫入案件處理紀錄。
     </div>
     <div class="form-actions">
@@ -741,7 +732,7 @@ let selectedPackKey = "universal";
 
 async function templatesAndCategoriesPage(){
   const container = `<div class="templates-management-container">
-    ${heading("範本與分類管理", "管理此 OA 啟用的範本包、自訂案件/記事範本與分類項目。", manager() ? `<div style="display:flex;gap:8px;"><button class="btn primary small" data-action="new-custom-pack">+ 新增自訂範本包</button></div>` : "", "TEMPLATES & CATEGORIES")}
+    ${heading("範本與分類管理", "管理此 OA 啟用的範本包、自訂案件/記事範本與分類項目。", manager() ? `<div data-s="sb9bbe54"><button class="btn primary small" data-action="new-custom-pack">+ 新增自訂範本包</button></div>` : "", "TEMPLATES & CATEGORIES")}
     <div class="segmented toolbar section-space">
       <button data-action="templates-tab" data-id="packs" class="${templatesTab==='packs'?'active':''}">📦 範本包與範本</button>
       <button data-action="templates-tab" data-id="note_types" class="${templatesTab==='note_types'?'active':''}">📝 記事類型清單</button>
@@ -765,21 +756,21 @@ async function loadTemplatesTabContent(){
       const currentPack = packs.find(p=>p.pack_id===selectedPackKey || p.key===selectedPackKey) || packs[0];
       if(currentPack) selectedPackKey = currentPack.pack_id || currentPack.key;
 
-      wrap.innerHTML = `<div class="packs-layout" style="display:grid;grid-template-columns:300px 1fr;gap:20px;margin-top:12px;">
+      wrap.innerHTML = `<div class="packs-layout" data-s="sddda873">
         <!-- Left: Packs list -->
-        <div class="panel packs-sidebar" style="padding:16px;">
-          <h4 style="margin:0 0 12px;font-size:14px;">範本包清單</h4>
-          <div class="packs-nav-list" style="display:flex;flex-direction:column;gap:6px;">
+        <div class="panel packs-sidebar" data-s="scf37034">
+          <h4 data-s="s81cee80">範本包清單</h4>
+          <div class="packs-nav-list" data-s="s9d3009e">
             ${packs.map(p=>{
               const isSelected = (p.pack_id === selectedPackKey || p.key === selectedPackKey);
               return `<div class="pack-nav-card ${isSelected?'selected':''}" style="border:1px solid ${isSelected?'#00B900':'var(--line,#e2e8f0)'};border-radius:8px;padding:10px;background:${isSelected?'rgba(0,185,0,0.05)':'var(--card-bg,#fff)'};display:flex;justify-content:space-between;align-items:center;">
-                <div style="cursor:pointer;flex:1;" data-action="select-template-pack" data-id="${esc(p.pack_id||p.key)}">
+                <div data-s="s692a5e9" data-action="select-template-pack" data-id="${esc(p.pack_id||p.key)}">
                   <strong>${esc(p.name)}</strong>
-                  ${p.is_preset ? '<span class="badge" style="font-size:10px;margin-left:4px;">預設</span>' : '<span class="badge primary" style="font-size:10px;margin-left:4px;">自訂</span>'}
+                  ${p.is_preset ? '<span class="badge" data-s="s2de18ee">預設</span>' : '<span class="badge primary" data-s="s2de18ee">自訂</span>'}
                   ${p.is_locked ? ' 🔒' : ''}
-                  <div style="font-size:11px;color:var(--text-subtle,#64748b);margin-top:2px;">${esc(p.description||"無說明")}</div>
+                  <div data-s="s0fc87c1">${esc(p.description||"無說明")}</div>
                 </div>
-                <label style="margin-left:8px;font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer;">
+                <label data-s="sf086b8f">
                   <input type="checkbox" data-action="toggle-pack-enable" data-id="${esc(p.pack_id||p.key)}" ${p.is_enabled?'checked':''}>
                   啟用
                 </label>
@@ -789,7 +780,7 @@ async function loadTemplatesTabContent(){
         </div>
 
         <!-- Right: Pack detail & templates -->
-        <div class="panel pack-detail-content" style="padding:20px;">
+        <div class="panel pack-detail-content" data-s="s8cddc29">
           ${currentPack ? renderPackDetailSection(currentPack) : '<p class="muted">請選擇範本包</p>'}
         </div>
       </div>`;
@@ -799,25 +790,25 @@ async function loadTemplatesTabContent(){
       const list = isCase ? catRes.case_categories : catRes.note_categories;
       const typeKey = isCase ? "case" : "note";
 
-      wrap.innerHTML = `<div class="panel" style="padding:20px;max-width:720px;margin-top:12px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+      wrap.innerHTML = `<div class="panel" data-s="s57342d1">
+        <div data-s="sbcbb844">
           <div>
-            <h3 style="margin:0 0 4px;">${isCase?'案件類別':'記事類型'}清單（${list.length}/20 項）</h3>
-            <p class="subtitle" style="margin:0;">自訂目前 OA 的分類項目。「一般」為系統保留項目不可刪除或改名。</p>
+            <h3 data-s="sa8be156">${isCase?'案件類別':'記事類型'}清單（${list.length}/20 項）</h3>
+            <p class="subtitle" data-s="s1da9fac">自訂目前 OA 的分類項目。「一般」為系統保留項目不可刪除或改名。</p>
           </div>
           ${manager() && list.length < 20 ? `<button class="btn primary small" data-action="new-single-category" data-type="${typeKey}">+ 新增${isCase?'類別':'類型'}</button>` : ''}
         </div>
-        <div class="categories-list" style="display:flex;flex-direction:column;gap:8px;">
+        <div class="categories-list" data-s="sf67b86e">
           ${list.map((c, idx)=>`
-            <div class="category-item-row" style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border:1px solid var(--line,#e2e8f0);border-radius:8px;background:var(--card-bg,#fff);">
-              <div style="display:flex;align-items:center;gap:8px;">
-                <span class="muted" style="font-size:12px;width:20px;">#${idx+1}</span>
+            <div class="category-item-row" data-s="s96a60f9">
+              <div data-s="se3f6104">
+                <span class="muted" data-s="s2044f28">#${idx+1}</span>
                 <strong>${esc(c.name)}</strong>
-                ${c.name === '一般' ? '<span class="badge" style="font-size:10px;">系統保留</span>' : ''}
-                <span class="muted" style="font-size:12px;">（使用中：${c.usage_count||0} 筆）</span>
+                ${c.name === '一般' ? '<span class="badge" data-s="s0c8a27e">系統保留</span>' : ''}
+                <span class="muted" data-s="se71ae94">（使用中：${c.usage_count||0} 筆）</span>
               </div>
               ${manager() && c.name !== '一般' ? `
-                <div style="display:flex;gap:6px;">
+                <div data-s="s1d8943f">
                   <button class="btn text small" data-action="edit-single-category" data-type="${typeKey}" data-name="${esc(c.name)}">改名</button>
                   <button class="btn text small danger" data-action="delete-single-category" data-type="${typeKey}" data-name="${esc(c.name)}">刪除</button>
                 </div>
@@ -839,12 +830,12 @@ function renderPackDetailSection(p){
   const noteTemplates = p.note_templates || [];
 
   return `<div>
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:1px solid var(--line,#e2e8f0);padding-bottom:14px;margin-bottom:16px;">
+    <div data-s="s60ad40f">
       <div>
-        <h2 style="margin:0 0 6px;">${esc(p.name)} ${isLocked?'🔒':''}</h2>
-        <p class="subtitle" style="margin:0;">${esc(p.description||"無說明")}</p>
+        <h2 data-s="sa353e69">${esc(p.name)} ${isLocked?'🔒':''}</h2>
+        <p class="subtitle" data-s="s1da9fac">${esc(p.description||"無說明")}</p>
       </div>
-      <div style="display:flex;gap:6px;">
+      <div data-s="s1d8943f">
         <button class="btn small" data-action="preview-apply-categories" data-id="${esc(p.pack_id||p.key)}">套用此分類組合至 OA</button>
         <button class="btn small" data-action="copy-pack-modal" data-id="${esc(p.pack_id||p.key)}">複製為新範本包</button>
         ${!isPreset && manager() ? `
@@ -856,51 +847,51 @@ function renderPackDetailSection(p){
 
     <!-- Case templates -->
     <div class="section-space">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-        <h3 style="margin:0;font-size:15px;">📁 案件範本 (${caseTemplates.length}/20)</h3>
+      <div data-s="s40eee6f">
+        <h3 data-s="s5a9a6de">📁 案件範本 (${caseTemplates.length}/20)</h3>
         ${!isPreset && !isLocked && manager() && caseTemplates.length < 20 ? `<button class="btn small" data-action="new-template-modal" data-pack="${esc(p.pack_id)}" data-type="case">+ 新增案件範本</button>` : ''}
       </div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px;">
+      <div data-s="s53ab7d6">
         ${caseTemplates.map(t=>`
-          <div class="template-card" style="border:1px solid var(--line,#e2e8f0);border-radius:8px;padding:12px;background:var(--card-bg,#fff);">
-            <div style="display:flex;justify-content:space-between;align-items:center;">
+          <div class="template-card" data-s="s9bd711d">
+            <div data-s="s8129723">
               <strong>${esc(t.name)}</strong>
               ${!isPreset && !isLocked && manager() ? `
-                <div style="display:flex;gap:4px;">
+                <div data-s="s597636a">
                   <button class="btn text small" data-action="edit-template-modal" data-id="${esc(t.template_id)}" data-pack="${esc(p.pack_id)}" data-type="case">編輯</button>
                   <button class="btn text small danger" data-action="delete-template-btn" data-id="${esc(t.template_id)}" data-type="case">刪除</button>
                 </div>
               ` : ''}
             </div>
-            <div style="margin:4px 0;"><span class="badge" style="font-size:11px;">${esc(t.category_name||"一般")}</span></div>
-            <p style="font-size:12px;color:var(--text-subtle,#64748b);margin:6px 0 0;white-space:pre-wrap;max-height:80px;overflow:hidden;text-overflow:ellipsis;">${esc(t.body)}</p>
+            <div data-s="s60946a2"><span class="badge" data-s="se48b058">${esc(t.category_name||"一般")}</span></div>
+            <p data-s="s1a2e8fd">${esc(t.body)}</p>
           </div>
-        `).join("")||'<p class="muted" style="font-size:13px;">尚未建立案件範本</p>'}
+        `).join("")||'<p class="muted" data-s="s9e6595f">尚未建立案件範本</p>'}
       </div>
     </div>
 
     <!-- Note templates -->
-    <div class="section-space" style="margin-top:20px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-        <h3 style="margin:0;font-size:15px;">📝 記事範本 (${noteTemplates.length}/20)</h3>
+    <div class="section-space" data-s="s9eb125f">
+      <div data-s="s40eee6f">
+        <h3 data-s="s5a9a6de">📝 記事範本 (${noteTemplates.length}/20)</h3>
         ${!isPreset && !isLocked && manager() && noteTemplates.length < 20 ? `<button class="btn small" data-action="new-template-modal" data-pack="${esc(p.pack_id)}" data-type="note">+ 新增記事範本</button>` : ''}
       </div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px;">
+      <div data-s="s53ab7d6">
         ${noteTemplates.map(t=>`
-          <div class="template-card" style="border:1px solid var(--line,#e2e8f0);border-radius:8px;padding:12px;background:var(--card-bg,#fff);">
-            <div style="display:flex;justify-content:space-between;align-items:center;">
+          <div class="template-card" data-s="s9bd711d">
+            <div data-s="s8129723">
               <strong>${esc(t.name)}</strong>
               ${!isPreset && !isLocked && manager() ? `
-                <div style="display:flex;gap:4px;">
+                <div data-s="s597636a">
                   <button class="btn text small" data-action="edit-template-modal" data-id="${esc(t.template_id)}" data-pack="${esc(p.pack_id)}" data-type="note">編輯</button>
                   <button class="btn text small danger" data-action="delete-template-btn" data-id="${esc(t.template_id)}" data-type="note">刪除</button>
                 </div>
               ` : ''}
             </div>
-            <div style="margin:4px 0;"><span class="badge" style="font-size:11px;">${esc(t.category_name||"一般")}</span></div>
-            <p style="font-size:12px;color:var(--text-subtle,#64748b);margin:6px 0 0;white-space:pre-wrap;max-height:80px;overflow:hidden;text-overflow:ellipsis;">${esc(t.body)}</p>
+            <div data-s="s60946a2"><span class="badge" data-s="se48b058">${esc(t.category_name||"一般")}</span></div>
+            <p data-s="s1a2e8fd">${esc(t.body)}</p>
           </div>
-        `).join("")||'<p class="muted" style="font-size:13px;">尚未建立記事範本</p>'}
+        `).join("")||'<p class="muted" data-s="s9e6595f">尚未建立記事範本</p>'}
       </div>
     </div>
   </div>`;
@@ -930,6 +921,7 @@ document.addEventListener("submit",async event=>{
 function render(){
   if(state.session?.needs_setup){$("crumb").textContent="首次設定";document.title="首次設定 · LINE 自動化";$("page").innerHTML=firstAdminPage();return;}
   if(!lineDataReady()&&!["organizations","channels","oa-list"].includes(state.view))state.view=superAdmin()?"organizations":"channels";
+  if(superAdmin()&&!["organizations","channels"].includes(state.view))state.view="organizations";
   if(!titles[state.view])state.view="overview";
   $("crumb").textContent=titles[state.view]||"工作空間";document.title=(titles[state.view]||"工作台")+" · LINE 自動化";
   document.querySelectorAll("nav [data-view]").forEach(el=>{const current=el.dataset.view===state.view;el.classList.toggle("active",current);if(current)el.setAttribute("aria-current","page");else el.removeAttribute("aria-current");});
@@ -962,28 +954,28 @@ function oaListPage(){
   const filtered = channelsList.filter(c => !q || c.name.toLowerCase().includes(q) || (orgName(c.org_id)||"").toLowerCase().includes(q) || (c.basic_id||"").toLowerCase().includes(q));
   const currentId = channels.current_id();
 
-  return heading("LINE OA 一覽", "查看並快速進入您獲授權存取的 LINE 官方帳號", `<div class="mg-tools" style="margin:0;"><input type="search" id="oa-list-search" value="${esc(state.oaSearch||"")}" placeholder="搜尋 OA 名稱或組織…" style="padding:6px 14px;border-radius:20px;border:1px solid var(--line,#e2e8f0);background:var(--card-bg,#fff);min-width:240px;"></div>`)+`
-  <div class="dashboard-grid" style="grid-template-columns:1fr;">
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px;margin-top:8px;">
+  return heading("LINE OA 一覽", "查看並快速進入您獲授權存取的 LINE 官方帳號", `<div class="mg-tools" data-s="s1da9fac"><input type="search" id="oa-list-search" value="${esc(state.oaSearch||"")}" placeholder="搜尋 OA 名稱或組織…" data-s="s3d82166"></div>`)+`
+  <div class="dashboard-grid" data-s="s3f2d80e">
+    <div data-s="s4ac80f0">
       ${filtered.map(c => `
         <div class="oa-card panel" style="display:flex;flex-direction:column;justify-content:space-between;padding:20px;border-radius:18px;background:var(--card-bg,#fff);border:1px solid ${c.channel_id===currentId?'#00B900':'var(--line,#e2e8f0)'};box-shadow:0 2px 10px rgba(0,0,0,0.03);position:relative;">
-          ${c.channel_id===currentId ? '<span class="badge good" style="position:absolute;top:16px;right:16px;">目前使用中</span>' : ''}
+          ${c.channel_id===currentId ? '<span class="badge good" data-s="sbfc9d19">目前使用中</span>' : ''}
           <div>
-            <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">
-              <div class="avatar" style="width:46px;height:46px;font-size:18px;background:#00B900;color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;">${esc(c.name.slice(0,1))}</div>
+            <div data-s="sa5dc62c">
+              <div class="avatar" data-s="s035b760">${esc(c.name.slice(0,1))}</div>
               <div>
-                <strong style="font-size:16px;display:block;">${esc(c.name)}</strong>
-                <small style="color:var(--text-subtle,#64748b);font-size:12px;">${esc(c.basic_id || c.bot_user_id || "")} · ${esc(orgName(c.org_id))}</small>
+                <strong data-s="s8304de5">${esc(c.name)}</strong>
+                <small data-s="sa639cb1">${esc(c.basic_id || c.bot_user_id || "")} · ${esc(orgName(c.org_id))}</small>
               </div>
             </div>
-            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:12px;background:var(--soft,#f8fafc);border-radius:12px;margin-bottom:16px;text-align:center;">
-              <div><small style="color:var(--text-subtle,#64748b);font-size:11px;display:block;">有效好友</small><strong style="font-size:14px;">${state.contacts.filter(r=>r.channel_id===c.channel_id&&r.active).length || '—'}</strong></div>
-              <div><small style="color:var(--text-subtle,#64748b);font-size:11px;display:block;">未讀訊息</small><strong style="font-size:14px;">${state.chatNotes.get(c.channel_id)?.length || 0}</strong></div>
-              <div><small style="color:var(--text-subtle,#64748b);font-size:11px;display:block;">進行中案件</small><strong style="font-size:14px;">${state.cases.filter(cs=>cs.channel_id===c.channel_id&&cs.status!=='closed').length || 0}</strong></div>
+            <div data-s="s9f30d58">
+              <div><small data-s="s5cad321">有效好友</small><strong data-s="sba62946">${state.contacts.filter(r=>r.channel_id===c.channel_id&&r.active).length || '—'}</strong></div>
+              <div><small data-s="s5cad321">未讀訊息</small><strong data-s="sba62946">${state.chatNotes.get(c.channel_id)?.length || 0}</strong></div>
+              <div><small data-s="s5cad321">進行中案件</small><strong data-s="sba62946">${state.cases.filter(cs=>cs.channel_id===c.channel_id&&cs.status!=='closed').length || 0}</strong></div>
             </div>
           </div>
           <div>
-            <button class="btn ${c.channel_id===currentId?'dark':'primary'}" style="width:100%;justify-content:center;" data-action="switch-oa-direct" data-channel="${esc(c.channel_id)}" data-org="${esc(c.org_id)}">${c.channel_id===currentId?'進入工作總覽':'切換至此 OA'}</button>
+            <button class="btn ${c.channel_id===currentId?'dark':'primary'}" data-s="s2976360" data-action="switch-oa-direct" data-channel="${esc(c.channel_id)}" data-org="${esc(c.org_id)}">${c.channel_id===currentId?'進入工作總覽':'切換至此 OA'}</button>
           </div>
         </div>
       `).join("") || empty("查無符合的 LINE OA", "請確認是否已新增 LINE OA 或調整搜尋條件。")}
@@ -1062,12 +1054,12 @@ function orgSettingsPage(){
       </div>
       <div class="mg-body">
         ${state.events.map(e => `
-          <div class="activity-row" style="padding:10px 0;border-bottom:1px solid var(--line,#e2e8f0);">
-            <div style="display:flex;justify-content:space-between;">
+          <div class="activity-row" data-s="sc907557">
+            <div data-s="sda5a491">
               <strong>${esc(e.detail || e.action)}</strong>
               <small class="muted">${when(e.created_at)}</small>
             </div>
-            <small style="color:var(--text-subtle,#64748b);">${esc(e.actor)} · ${esc(e.action)}</small>
+            <small data-s="sbcc8653">${esc(e.actor)} · ${esc(e.action)}</small>
           </div>
         `).join("") || '<p class="muted">尚無操作紀錄。</p>'}
       </div>
@@ -1084,9 +1076,9 @@ function personnelForm(id){
   const existingChannelIds = m?.channel_ids || orgChannels.map(c => c.channel_id);
   
   const oaCheckboxes = orgChannels.map(c => `
-    <label class="check-label" style="display:flex;align-items:center;gap:8px;padding:6px 0;">
+    <label class="check-label" data-s="s15b9169">
       <input type="checkbox" name="channel_ids" value="${esc(c.channel_id)}" ${existingChannelIds.includes(c.channel_id) ? "checked" : ""}>
-      <span><strong>${esc(c.name)}</strong> <small style="color:var(--text-subtle,#64748b);">${esc(c.basic_id||"")}</small></span>
+      <span><strong>${esc(c.name)}</strong> <small data-s="sbcc8653">${esc(c.basic_id||"")}</small></span>
     </label>
   `).join("") || '<p class="muted">此組織尚未連結任何 LINE OA。</p>';
   
@@ -1100,14 +1092,14 @@ function personnelForm(id){
       <div class="full">
         <label class="field">
           <span>可使用的 LINE OA</span>
-          <div class="permission-choices" style="margin-top:6px;max-height:160px;overflow-y:auto;border:1px solid var(--line,#e2e8f0);border-radius:10px;padding:8px 12px;background:var(--soft,#f8fafc);">
+          <div class="permission-choices" data-s="s3f0710d">
             ${oaCheckboxes}
           </div>
           <small class="muted">勾選該人員可操作的 LINE OA。未勾選的 OA 該人員登入後無法檢視或操作。</small>
         </label>
       </div>
       <div class="full">
-        <label class="check-label" style="display:flex;align-items:center;gap:8px;">
+        <label class="check-label" data-s="se3f6104">
           <input type="checkbox" name="active" ${m?.active !== 0 ? "checked" : ""}>
           <span>啟用此人員帳號</span>
         </label>
@@ -1124,31 +1116,31 @@ function myAccountModal(){
   const email = state.session?.identity || "";
   const role = state.session?.role || "";
   
-  modal("我的帳號", `<div style="padding:4px 0;">
-    <div style="display:flex;align-items:center;gap:14px;margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid var(--line,#e2e8f0);">
-      <div class="avatar" style="width:50px;height:50px;font-size:22px;">${esc((user.display_name||email).slice(0,1).toUpperCase())}</div>
+  modal("我的帳號", `<div data-s="s16b1638">
+    <div data-s="sbcad3e4">
+      <div class="avatar" data-s="s6341041">${esc((user.display_name||email).slice(0,1).toUpperCase())}</div>
       <div>
-        <h3 style="margin:0 0 4px;font-size:17px;">${esc(user.display_name || email)}</h3>
-        <p style="margin:0;color:var(--text-subtle,#64748b);font-size:13px;">${esc(email)} · ${badge(roleName(role))}</p>
+        <h3 data-s="sb5b046a">${esc(user.display_name || email)}</h3>
+        <p data-s="sc14eaad">${esc(email)} · ${badge(roleName(role))}</p>
       </div>
     </div>
-    <div style="display:grid;gap:12px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 14px;background:var(--soft,#f8fafc);border-radius:12px;">
+    <div data-s="sfe3fb0d">
+      <div data-s="s8761676">
         <div>
-          <strong style="font-size:14px;display:block;">登入密碼</strong>
-          <small style="color:var(--text-subtle,#64748b);font-size:12px;">定期更新密碼以維護帳號安全</small>
+          <strong data-s="s29fe999">登入密碼</strong>
+          <small data-s="sa639cb1">定期更新密碼以維護帳號安全</small>
         </div>
         <button type="button" class="btn small" data-security="password">修改密碼</button>
       </div>
-      <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 14px;background:var(--soft,#f8fafc);border-radius:12px;">
+      <div data-s="s8761676">
         <div>
-          <strong style="font-size:14px;display:block;">登入裝置與階段</strong>
-          <small style="color:var(--text-subtle,#64748b);font-size:12px;">查看目前已登入的瀏覽器與裝置</small>
+          <strong data-s="s29fe999">登入裝置與階段</strong>
+          <small data-s="sa639cb1">查看目前已登入的瀏覽器與裝置</small>
         </div>
         <button type="button" class="btn small" data-security="devices">裝置清單</button>
       </div>
     </div>
-    <div class="form-actions" style="margin-top:24px;border-top:1px solid var(--line,#e2e8f0);padding-top:16px;display:flex;justify-content:space-between;">
+    <div class="form-actions" data-s="s56ea235">
       <button type="button" class="btn text" onclick="$('modal').close()">關閉</button>
       <button type="button" class="btn danger small" data-action="confirm-logout">登出帳號</button>
     </div>
@@ -1159,21 +1151,21 @@ function openOaSwitcherModal(){
   const allOas = state.channels || [];
   const currentId = channels.current_id();
   modal("切換 LINE OA", `<div class="oa-switcher-modal">
-    <div style="margin-bottom:12px;display:flex;gap:8px;">
-      <input type="search" id="oa-switcher-filter" placeholder="搜尋 LINE OA 名稱或組織…" style="flex:1;padding:8px 12px;border-radius:8px;border:1px solid var(--line,#e2e8f0);">
+    <div data-s="s7142fa2">
+      <input type="search" id="oa-switcher-filter" placeholder="搜尋 LINE OA 名稱或組織…" data-s="sb48bce0">
       <button type="button" class="btn" data-action="go-oa-list-from-switcher">📋 OA 一覽</button>
     </div>
-    <div id="oa-switcher-items" style="max-height:55vh;overflow-y:auto;display:grid;gap:8px;">
+    <div id="oa-switcher-items" data-s="s1666731">
       ${allOas.map(c => `
         <button type="button" class="oa-switcher-item" data-action="switch-oa-direct" data-channel="${esc(c.channel_id)}" data-org="${esc(c.org_id)}" style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-radius:10px;border:1px solid ${c.channel_id===currentId?'#00B900':'var(--line,#e2e8f0)'};background:${c.channel_id===currentId?'#f0fdf4':'var(--card-bg,#fff)'};cursor:pointer;text-align:left;width:100%;">
-          <div style="display:flex;align-items:center;gap:10px;">
-            <div class="avatar" style="width:32px;height:32px;font-size:14px;background:#00B900;color:#fff;">${esc(c.name.slice(0,1))}</div>
+          <div data-s="s7e30d28">
+            <div class="avatar" data-s="sf02b47b">${esc(c.name.slice(0,1))}</div>
             <div>
-              <strong style="font-size:14px;display:block;">${esc(c.name)} ${c.channel_id===currentId?'(目前)':''}</strong>
-              <small style="color:var(--text-subtle,#64748b);font-size:11px;">${esc(orgName(c.org_id))}</small>
+              <strong data-s="s29fe999">${esc(c.name)} ${c.channel_id===currentId?'(目前)':''}</strong>
+              <small data-s="sd6859f9">${esc(orgName(c.org_id))}</small>
             </div>
           </div>
-          ${c.channel_id===currentId ? '<span style="color:#16a34a;font-weight:700;">✓</span>' : ''}
+          ${c.channel_id===currentId ? '<span data-s="se6630c1">✓</span>' : ''}
         </button>
       `).join("") || '<p class="muted">尚無可切換的 LINE OA。</p>'}
     </div>
@@ -1237,7 +1229,7 @@ function tagManagerModal(){
   const tags=state.tags||[];
   const tagListHtml=tags.map(t=>{
     const count=state.contacts.filter(c=>(c.tags||[]).some(ct=>ct.id===t.id)).length;
-    return `<div class="tag-row"><div class="tag-row-info">${tagBadge(t)}<span class="muted" style="font-size:12px;">${count} 個聯絡對象</span></div><div class="draft-actions">${button("編輯","edit-tag-modal","small",`data-id="${esc(t.id)}"`)}${button("刪除","delete-tag-btn","text small danger",`data-id="${esc(t.id)}"`)}</div></div>`;
+    return `<div class="tag-row"><div class="tag-row-info">${tagBadge(t)}<span class="muted" data-s="se71ae94">${count} 個聯絡對象</span></div><div class="draft-actions">${button("編輯","edit-tag-modal","small",`data-id="${esc(t.id)}"`)}${button("刪除","delete-tag-btn","text small danger",`data-id="${esc(t.id)}"`)}</div></div>`;
   }).join("")||'<p class="muted">目前尚未建立任何標籤。</p>';
   const colorSwatches=APPLE_TAG_COLORS.map((c,i)=>`<label class="color-swatch-card ${i===0?'selected':''}" data-color="${c.hex}"><input type="radio" name="color" value="${c.hex}" ${i===0?"checked":""} class="color-radio-input"><span class="color-circle" data-color="${c.hex}"></span><span class="color-name">${c.name}</span></label>`).join("");
   modal("標籤管理",`<div><p class="subtitle">標籤可用於彈性分群聯絡對象，支援多對多關聯。</p><h3>現有標籤</h3><div class="tag-manager-list">${tagListHtml}</div><h3 class="section-space">新增標籤</h3><form id="tag-create-form"><div class="form-grid"><div class="full">${field("標籤名稱","name","",'required maxlength="30" placeholder="例如：VIP客戶、已簽約、北區廠商"')}</div><div class="full"><div class="field"><span>標籤顏色（Apple 色票）</span><div class="color-picker-grid">${colorSwatches}</div></div></div></div><div class="form-actions">${button("建立標籤","","primary",'type="submit"')}</div></form></div>`);
@@ -1342,7 +1334,7 @@ document.addEventListener("click",async event=>{
         description: `[延續前案 ${c.case_no}]\n`,
         continued_from_id: c.case_id,
         category: c.category || "一般",
-        priority: c.priority || "normal"
+        priority: c.priority || "medium"
       });
     }
     else if(action==="open-template-picker")await templatePickerModal(target.dataset.subject||"","case");
@@ -1352,7 +1344,7 @@ document.addEventListener("click",async event=>{
         title: target.dataset.title||"",
         description: target.dataset.desc||"",
         category: target.dataset.cat||"一般",
-        priority: target.dataset.pri||"normal"
+        priority: target.dataset.pri||"medium"
       });
     }
     else if(action==="apply-note-template"){
@@ -1565,26 +1557,26 @@ document.addEventListener("click",async event=>{
       modal("套用分類組合", '<div class="loading-panel"><span class="spinner"></span><p>計算分類差異…</p></div>');
       const prev = await api('/api/categories/preview', {pack_key: id, mode: "replace"});
       modal(`套用「${esc(prev.pack_name)}」分類組合至 OA`, `<div class="categories-preview-dialog">
-        <div style="margin-bottom:12px;">
-          <label style="font-weight:600;margin-right:12px;">套用方式：</label>
-          <label style="margin-right:12px;"><input type="radio" name="apply_mode" value="replace" checked> 取代（未使用的舊項目移除）</label>
+        <div data-s="s3ef1fa1">
+          <label data-s="s3066f84">套用方式：</label>
+          <label data-s="s84eff7f"><input type="radio" name="apply_mode" value="replace" checked> 取代（未使用的舊項目移除）</label>
           <label><input type="radio" name="apply_mode" value="merge"> 合併（保留所有既有項目）</label>
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;max-height:40vh;overflow-y:auto;">
+        <div data-s="s41de6d2">
           <div>
             <h4>記事類型 (${prev.note_types.length} 項)</h4>
-            <ul style="padding-left:16px;font-size:12px;">
+            <ul data-s="sa8b3c59">
               ${prev.note_types.map(it=>`<li style="color:${it.action==='remove'?'#ef4444':it.action==='add'?'#10b981':'inherit'}">${esc(it.name)} (${it.action==='keep'?'保留':it.action==='add'?'新增':'移除'})</li>`).join("")}
             </ul>
           </div>
           <div>
             <h4>案件類別 (${prev.case_categories.length} 項)</h4>
-            <ul style="padding-left:16px;font-size:12px;">
+            <ul data-s="sa8b3c59">
               ${prev.case_categories.map(it=>`<li style="color:${it.action==='remove'?'#ef4444':it.action==='add'?'#10b981':'inherit'}">${esc(it.name)} (${it.action==='keep'?'保留':it.action==='add'?'新增':'移除'})</li>`).join("")}
             </ul>
           </div>
         </div>
-        <div class="callout" style="margin-top:12px;">套用後若超過 ${cap("CATEGORIES_PER_OA")} 項上限，超出的項目將不予加入。被移除的項目中已有的案件/記事將自動轉為「一般」。</div>
+        <div class="callout" data-s="s9374e84">套用後若超過 ${cap("CATEGORIES_PER_OA")} 項上限，超出的項目將不予加入。被移除的項目中已有的案件/記事將自動轉為「一般」。</div>
         <div class="form-actions"><button class="btn primary" data-action="confirm-apply-categories" data-id="${esc(id)}">確認套用分類組合</button></div>
       </div>`);
     }
@@ -1912,7 +1904,7 @@ setInterval(async()=>{if(!state.loaded||!lineUI.ready||!lineDataReady()||!admin(
 document.addEventListener("error",event=>{if(event.target instanceof HTMLImageElement){const replacement=document.createElement("p");replacement.className="callout warn";replacement.textContent="圖片無法顯示，請確認來源檔案格式並重新產生報告。";event.target.replaceWith(replacement);}},true);
 
 function scheduleLabel(value){return new Date(value).toLocaleString("zh-TW",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false});}
-function scheduleFields(){return `<div class="schedule-fields"><label class="field">傳送時間<select id="send-timing"><option value="now">立即傳送</option><option value="scheduled">指定日期與時間</option></select></label><div id="scheduled-time-wrapper" hidden><label class="field">台北時間 UTC+08:00<input type="datetime-local" id="scheduled-time" hidden></label><div class="schedule-presets section-space"><span class="muted" style="font-size:11px;margin-right:6px;">快速預約：</span><button type="button" class="btn small" data-action="schedule-preset" data-id="15m">+15 分鐘</button><button type="button" class="btn small" data-action="schedule-preset" data-id="1h">+1 小時</button><button type="button" class="btn small" data-action="schedule-preset" data-id="tmr9">明天 09:00</button><button type="button" class="btn small" data-action="schedule-preset" data-id="tmr14">明天 14:00</button><button type="button" class="btn small" data-action="schedule-preset" data-id="nextmon">下週一 09:00</button></div></div><p class="subtitle">預約保存現在確認的文字或圖片與發送對象；到期再檢查帳號、收件範圍與訂閱。電腦與 LINE 服務需開啟，延遲超過 10 分鐘標記逾期，不補發。</p></div>`;}
+function scheduleFields(){return `<div class="schedule-fields"><label class="field">傳送時間<select id="send-timing"><option value="now">立即傳送</option><option value="scheduled">指定日期與時間</option></select></label><div id="scheduled-time-wrapper" hidden><label class="field">台北時間 UTC+08:00<input type="datetime-local" id="scheduled-time" hidden></label><div class="schedule-presets section-space"><span class="muted" data-s="sbb2c29b">快速預約：</span><button type="button" class="btn small" data-action="schedule-preset" data-id="15m">+15 分鐘</button><button type="button" class="btn small" data-action="schedule-preset" data-id="1h">+1 小時</button><button type="button" class="btn small" data-action="schedule-preset" data-id="tmr9">明天 09:00</button><button type="button" class="btn small" data-action="schedule-preset" data-id="tmr14">明天 14:00</button><button type="button" class="btn small" data-action="schedule-preset" data-id="nextmon">下週一 09:00</button></div></div><p class="subtitle">預約保存現在確認的文字或圖片與發送對象；到期再檢查帳號、收件範圍與訂閱。電腦與 LINE 服務需開啟，延遲超過 10 分鐘標記逾期，不補發。</p></div>`;}
 
 function organizationOptions(){return [["","選擇組織"],...(state.organizations||[]).filter(o=>o.active).map(o=>[o.org_id,o.name])];}
 

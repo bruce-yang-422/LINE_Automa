@@ -517,32 +517,34 @@ Cloudflare Tunnel 提供對外連線；Cloudflare Access 提供存取驗證。�
 - scrypt 密碼雜湊、隨機 opaque Session／HttpOnly Cookie、CSRF 與同源檢查、持久化速率限制已實作；Cookie 不取代後端組織／角色／發送範圍重驗。
 - 原有 Access 身分可設定自己的網站密碼；本機控制台仍保留獨立管理入口。平台管理員可產生 30 分鐘一次性設定連結；不自動寄信、不代設密碼、不開放聯絡對象註冊。
 - 一般登入最長 12 小時、閒置 2 小時失效；保持登入最長 30 天、閒置 7 天失效。改密碼／重設／停用會撤銷既有 Session，登出撤銷目前 Session。
-- 已新增 `ADMIN_AUTH_MODE=cloudflare|password`，本機 `configure_login.py` 檢查管理員已設定密碼後才允許切換。當前已切為 password 模式；Cloudflare Bypass 已生效，全新瀏覽器確認公開首頁進入同網域 `/login`、未登入 `/api/session` 回傳 401，使用者已確認登入完成。
+- （2026-10-02 更新：第七階段已完全移除 Cloudflare Access 模式、`configure_login.py` 與 `ADMIN_AUTH_MODE`，系統一律採用站內帳號密碼登入，包含首次設定與 `create_admin.py`）。
 - 後續已依使用者要求清空正式資料庫、刪除舊備份，並由完整 `schema.sql` 建立新資料表；舊版補欄位、换表與回填邏輯已移除。使用者已重新建立平台管理員及密碼。
-- 測試涵蓋有效／失效 Cookie、期限、跨站阻擋、角色隔離、停用、改密碼、啟用連結一次性／並行兌換與切換檢查；瀏覽器驗證完整操作。步驟與回復方式見 [網站登入.md](../功能規格/網站登入.md)。
+- 測試涵蓋有效／失效 Cookie、期限、跨站阻擋、角色隔離、停用、改密碼、啟用連結一次性／並行兌換與切換檢查；瀏覽器驗證完整操作。步驟見 [網站登入.md](../功能規格/網站登入.md)。
 
 此階段尚未包含 Email 發信、MFA、外部註冊及 LINE Login；多 OA 資料模型及其他 SaaS 功能仍依後續階段推進。
 
 
 ## 13. 個人／組織多 LINE OA 實作（2026-09-30）
 
+> 2026-10-02 第七階段更新：已取消個人工作區（個人使用者統一採用組織類型「個人」並由管理員操作），刪除「匯入既有 OA」、單一 OA 模式與 `upgrade_multi_oa.py`，所有 OA 連線與憑證一律由平台管理員在網頁後台「LINE OA」輸入並加密存入資料庫；資料庫以全新乾淨 `schema.sql` 重建（`user_version=1`）。以下內容保留作為歷史設計紀錄。
+
 本次已接上既有收訊、名稱快取、報告、圖片素材、多格式編輯、立即發送、單次預約、訂閱與發送紀錄。
 
-- **工作區與管理**：頂端選擇個人／組織工作區及 OA；「LINE OA 管理」可新增、驗證、更新憑證、停用／啟用。平台管理員可管理所有工作區；個人 OA 由本人管理；組織 OA 由該組織管理員管理。聯絡對象沒有後台登入資格。
-- **歸屬固定**：一個 OA 只屬於一個工作區，以 LINE 回傳的 Bot user ID 防止重複登記。Token 更新不能換成另一個 OA。此版未提供工作區移轉。
+- **工作區與管理**：頂端選擇組織工作區及 OA；「LINE OA 管理」可新增、驗證、更新憑證、停用／啟用。平台管理員可管理所有組織的 OA 連線；組織 OA 由該組織管理員管理。聯絡對象沒有後台登入資格。
+- **歸屬固定**：一個 OA 只屬於一個組織，以 LINE 回傳的 Bot user ID 防止重複登記。Token 更新不能換成另一個 OA。
 - **資料隔離**：同一 SQLite 檔內以 `channel_id` 區隔。訊息、聯絡對象、指令去重採 OA 複合鍵；報告、素材、發送工作、操作紀錄、發送範圍及授權均帶 OA 範圍。相同 LINE user ID／message ID 出現在不同 OA 時，不合併訂閱或資料。
-- **發送**：API 驗證 OA 存取權，畫面確認 OA／工作區；切換後清除尚未送出的內容與對象。預約固定保存 OA，工作執行時重新驗證資格、OA 狀態、收件範圍及 Token，絕不改用其他 OA。結果不明仍不自動重送。
+- **發送**：API 驗證 OA 存取權，畫面確認 OA／組織；切換後清除尚未送出的內容與對象。預約固定保存 OA，工作執行時重新驗證資格、OA 狀態、收件範圍及 Token，絕不改用其他 OA。結果不明仍不自動重送。
 - **憑證與 Webhook**：Token／Secret 以 Fernet 加密保存，金鑰位於忽略追蹤的 `instance/line-credentials.key`；管理 API 不回傳原值。每個 OA 使用 `/webhook/{channel_id}`，依其 Secret 驗證原始本文簽章及 `destination`。Token 驗證僅讀取官方帳號資料；Secret 須由 LINE Developers 的 Verify 實際確認。
-- **既有 OA**：首次匯入時選擇工作區，保留原本 `/webhook` 入口作為該 OA 的別名。原本帳號、密碼、組織與訊息保留；不重新建立管理員。
-- **部署**：`schema.sql` 仍是完整的新安裝 schema；舊安裝僅需停止 LINE 服務後執行一次 `upgrade_multi_oa.py --apply`。工具以單一交易保留所有資料並檢查筆數／完整性，錯誤即 rollback；正常啟動沒有歷史遷移分支。共享 Tunnel 不需重建。正式資料庫已於 2026-09-30 完成升級，服務已重啟。
+- **既有 OA**：所有 OA 統一在網頁後台由平台管理員新增與設定 Webhook URL。
+- **部署**：`schema.sql` 是唯一的資料結構來源；`initialize_database()` 只執行此檔並設定 `user_version=1`，移除了所有歷史升級與相容路徑。
 - **備份與 Linux**：須同時保存 SQLite、`instance/line-credentials.key`、上傳與已發布圖片；單有資料庫不能解密憑證。金鑰檔必須限制為服務帳號可讀，不提交 Git。
-- **命令列**：多 OA 模式的 `send_image.py` 必須加 `--oa <channel_id>`，避免以舊環境 Token 搭配其他 OA 名單。
+- **命令列**：`send_image.py` 保留發送模組供排程與服務呼叫。
 
-驗證包含既有 Python 回歸、多 OA 重複 ID／訂閱隔離、越權、素材／報告隔離、非預期 Token 更換、排程憑證路由、資格撤銷、Webhook 簽章及資料升級 rollback。瀏覽器以假 LINE API 驗證新增 OA、切換、個人上傳、手機版及文字 AA 對比（改為僅亮色後重新驗證）；沒有發送真實訊息。
+驗證包含既有 Python 回歸、多 OA 重複 ID／訂閱隔離、越權、素材／報告隔離、非預期 Token 更換、排程憑證路由、資格撤銷、Webhook 簽章與從零安裝驗證。瀏覽器以假 LINE API 驗證新增 OA、切換、上傳、手機版及文字 AA 對比；沒有發送真實訊息。
 
 此階段不包含額度／方案計費、公開註冊、草稿協作、審核、循環排程、檔案變更觸發或媒體下載；Telegram 繼續暫緩。
 
-**正式環境現況（2026-09-30，已由第七階段取代）**：既有 OA 尚未匯入工作區（`line_channels` 為 0 筆），服務以 `.env` 憑證的單一 OA 模式運作，收發正常。平台管理員於「LINE OA 管理」按「匯入既有 OA」並選定工作區後，即切換為多 OA 模式。
+**正式環境現況（2026-10-02）**：資料庫已依全新乾淨 `schema.sql` 重建完成，服務正常運作，待平台管理員於後台新增組織與 LINE OA 憑證。
 
 依據 LINE 官方文件：[Bot information / Messaging API](https://developers.line.biz/en/reference/messaging-api/#get-bot-info)、[Webhook 簽章驗證](https://developers.line.biz/en/docs/messaging-api/verify-webhook-signature/)、[接收訊息與 destination](https://developers.line.biz/en/docs/messaging-api/receiving-messages/)。
 

@@ -21,7 +21,8 @@ async function loadChannels(){
   lineUI.ready=true;
   if(lineUI.channel)state.session=await api('/api/session');
   if(lineUI.registry&&!messageDraft.items.length)messageDraft.organization_id=selectedWorkspace()?.org_id||"";
-  document.getElementById('line-context').hidden=!lineUI.registry&&!superAdmin();
+  // 平台管理員不進入 OA 營運畫面，不顯示工作區／OA 切換；在「LINE OA」頁內選組織。
+  document.getElementById('line-context').hidden=superAdmin()||!lineUI.registry;
   document.getElementById('line-workspace-select').innerHTML=options(lineUI.spaces.map(w=>[w.id,w.name]),lineUI.workspace);
   document.getElementById('line-oa-select').innerHTML=options(available.length?available.map(c=>[c.channel_id,c.name]):[['','尚未設定 OA']],lineUI.channel);
 }
@@ -37,8 +38,9 @@ function changeLineContext(workspace,channel){
 
 function channelsPage(){
   const w=selectedWorkspace(),rows=lineUI.channels.filter(c=>c.workspace_id===lineUI.workspace);
-  return heading('LINE OA 管理','一個工作區可以連結多個 OA。先選擇工作區，再設定要使用的官方帳號。',
-    w?.can_manage?'<button class="btn primary" data-line-action="add">'+icon('plus')+'新增 LINE OA</button>':'')+
+  const orgPicker=superAdmin()?`<label class="field oa-org-picker">組織<select id="channels-org-select" aria-label="選擇組織">${options(lineUI.spaces.map(s=>[s.id,s.name]),lineUI.workspace)}</select></label>`:'';
+  return heading('LINE OA 管理',superAdmin()?'選擇組織，設定該組織的 LINE 官方帳號連線。':'一個組織可以連結多個 OA。',
+    orgPicker+(w?.can_manage?'<button class="btn primary" data-line-action="add">'+icon('plus')+'新增 LINE OA</button>':''))+
     `<section class="panel panel-body"><div class="oa-section-heading"><div><h2>${esc(w?.name||'選擇工作區')}</h2><p class="subtitle">依組織角色與發送範圍授權。</p></div>${badge(rows.length+' 個 OA')}</div>
     <div class="oa-grid">${rows.map(oaCard).join('')||empty('這個工作區還沒有 OA',w?.can_manage?'新增 OA 後，就能接收訊息、管理名單與建立發送。':'請管理員先連結 LINE OA。')}</div></section>
     <section class="panel panel-body section-space"><h2>連結完成後</h2><ol class="oa-steps"><li>在 LINE Developers 設定這個 OA 的 Webhook URL，按「Verify」，再開啟 Use webhook。</li><li>用 LINE 傳一則訊息給該 OA，確認「Webhook 最近到達」與聯絡對象名單更新。</li><li>建立發送時，先確認頂端 OA；預約也會固定使用當時選擇的 OA。</li></ol><p class="subtitle">驗證連線只讀取官方帳號資料，不會傳送測試訊息。停用 OA 會停止收訊與尚未執行的發送，資料仍保留。</p>
@@ -47,7 +49,7 @@ function channelsPage(){
 
 function oaCard(c){
   const current=c.channel_id===lineUI.channel;
-  const use=c.active?`<button class="btn ${current?'':'primary'}" data-line-action="use" data-id="${c.channel_id}" ${current?'disabled':''}>${current?'目前使用':'使用此 OA'}</button>`:'';
+  const use=c.active&&!superAdmin()?`<button class="btn ${current?'':'primary'}" data-line-action="use" data-id="${c.channel_id}" ${current?'disabled':''}>${current?'目前使用':'使用此 OA'}</button>`:'';
   const head=`<div class="oa-card-heading"><span class="avatar">${icon('send')}</span><div><h3>${esc(c.name)}</h3><p class="subtitle">${esc(c.basic_id||'LINE 官方帳號')}</p></div>${c.shared?badge('共用'):''}${badge(c.active?'啟用中':'已停用',c.active?'good':'')}</div>`;
   if(c.shared)return `<article class="oa-card">${head}<p class="callout">由「${esc(c.owner_workspace_name)}」共用。憑證、Webhook 與可用聯絡對象由擁有者管理；這裡的報告、發送紀錄與排程只屬於本工作區。</p><div class="oa-actions">${use}</div></article>`;
   const shares=c.shares?`<div class="oa-shares"><h4>共用給其他工作區</h4>${c.shares.map(s=>`<div class="oa-share-row"><strong>${esc(s.workspace_name)}</strong>${badge(s.active?s.recipients+' 位聯絡對象':'已暫停',s.active?'':'warn')}${s.active?`<button class="btn small" data-line-action="assign" data-id="${s.share_id}">指派聯絡對象</button>`:''}${superAdmin()?`<button class="btn small text ${s.active?'danger':''}" data-line-action="share-active" data-id="${c.channel_id}" data-workspace="${esc(s.workspace_id)}" data-active="${!s.active}">${s.active?'暫停共用':'恢復共用'}</button>`:''}</div>`).join('')||'<p class="subtitle">尚未共用給其他工作區。</p>'}</div>`:'';
@@ -106,7 +108,7 @@ function channelForm(id){
 }
 
 document.addEventListener('change',event=>{
-  if(event.target.id==='line-workspace-select')changeLineContext(event.target.value,'');
+  if(event.target.id==='line-workspace-select'||event.target.id==='channels-org-select')changeLineContext(event.target.value,'');
   if(event.target.id==='line-oa-select')changeLineContext(lineUI.workspace,event.target.value);
 });
 document.addEventListener('click',async event=>{

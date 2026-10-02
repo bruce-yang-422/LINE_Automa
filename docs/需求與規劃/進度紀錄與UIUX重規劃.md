@@ -23,25 +23,25 @@
 - 原型元件 `contacts-manager.vue` 路徑中的 `crm` 只是既有命名，不構成產品需求或已實作能力；原型檔已於 2026-10-01 移除（可從 commit `3888aae` 取回）。
 - 本次只同步五份需求／研究／操作文件，沒有修改程式、資料庫或部署，也不代表標籤功能已完成。
 
-## 目前狀態與下次接續（2026-09-30 傍晚）
+## 目前狀態與最新進度（2026-10-02）
 
-> 2026-10-02 第七階段後，下表與「下次接續」提到的匯入既有 OA、單一 OA 模式、`upgrade_multi_oa.py` 均已移除；正式資料庫需備份後重建，見 [AI_AGENT_TASKS](../../AI_AGENT_TASKS.md) 第七階段。
+> 2026-10-02 第七階段已完成資料庫重建（`user_version=1`），匯入既有 OA、單一 OA 模式、個人工作區、`upgrade_multi_oa.py` 與 Cloudflare Access 模式均已完全移除。
 
 | 項目 | 狀態 |
 | --- | --- |
-| LINE 服務 | 執行中；本機與公開連線健康檢查正常。16:46 為套用多 OA 升級停止，17:00 重新啟動；期間約 14 分鐘沒有接收 Webhook 事件 |
-| 資料庫 | 已執行 `upgrade_multi_oa.py --apply`，結構為多 OA 版本（再次檢查回報 `already_current`） |
-| 管理入口 | 公開網址使用站內 Email／密碼登入；2026-10-02 程式已移除 Cloudflare Access 模式，Access 的 `line-admin` 應用程式（Bypass）待使用者刪除，Tunnel 保留 |
-| 既有 LINE OA | **尚未匯入工作區**（`line_channels` 為 0 筆）。目前沿用 `.env` 憑證以單一 OA 模式運作，收發不受影響 |
-| 介面 | 全站僅提供亮色，已移除深色模式及色系切換 |
-| 驗證 | 101 項 Python 測試；工作台、多 OA、登入瀏覽器流程；亮色 57 個畫面文字對比最低 5.297:1。皆使用隔離資料，沒有真實 LINE 發送 |
+| LINE 服務 | 執行中；本機與公開連線健康檢查正常 |
+| 資料庫 | 全新乾淨 Schema（39 表、`user_version=1`），`initialize_database()` 直接執行 `schema.sql`，移除所有 ALTER TABLE 與舊升級邏輯 |
+| 管理入口 | 公開網址一律使用站內 Email／密碼登入（含首次設定與 `create_admin.py`），Access 模式已完全移除 |
+| LINE OA 設定 | 一律由平台管理員在網頁後台「LINE OA」輸入 Channel secret 與 token，憑證加密存入資料庫；Webhook 為專屬 `/webhook/<OA>` |
+| 介面 | 全站統一 Apple 風格與僅亮色模式，導覽依四級權限顯示，聊天頁支援圖示窄欄收合 |
+| 驗證 | 131 項 Python 單元測試全數通過（含從零安裝測試、權限測試、限制測試） |
 
 下次接續：
 
-1. 平台管理員登入後台 →「LINE OA 管理」→「匯入既有 OA」，選定所屬工作區（歸屬建立後固定）。匯入後原 `/webhook` 網址繼續有效，並會建立 `instance/line-credentials.key`，需與資料庫一起納入備份。
-2. 視需要新增其他 OA，並在 LINE Developers 設定各自的 `/webhook/{channel_id}`。
-3. 提交「僅亮色介面」變更。
-4. 接續草稿／審核與循環排程（SaaS 筆記第 10.6 節）。
+1. 由使用者於本機或透過 `create_admin.py` 建立第一位平台管理員。
+2. 平台管理員建立組織與組織管理員帳號，並新增 LINE OA 連線設定。
+3. LINE Developers 後台設定對應的 Webhook URL 並啟用。
+4. 依權限規格指派操作人員與協作人員可用 OA。
 
 辦公室或外部同事一律使用 `https://line-admin.stack-base.com`，以本人帳號登入。`http://127.0.0.1:18475` 只能在執行服務的這台電腦使用，其他電腦無法連線。
 

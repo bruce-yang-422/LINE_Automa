@@ -103,7 +103,7 @@ function templatesView(){
   const all=[...builtinTemplates,...custom];
   const filtered=composerState.templateCategory==="all"?all:all.filter(t=>t.category===composerState.templateCategory);
   return `<section class="panel panel-body section-space">
-    <div class="panel-head" style="padding:0 0 16px;">
+    <div class="panel-head" data-s="s9d730a8">
       <div><h2>常用訊息範本庫</h2><p class="subtitle">選取範本一鍵套入編輯器，加速通知與訊息製作。</p></div>
       ${button(icon("plus")+"將目前內容存為新範本","save-as-template","small")}
     </div>
@@ -129,7 +129,7 @@ function templatesView(){
 function draftsView(){
   const drafts=loadSavedDrafts();
   return `<section class="panel panel-body section-space">
-    <div class="panel-head" style="padding:0 0 16px;">
+    <div class="panel-head" data-s="s9d730a8">
       <div><h2>草稿箱</h2><p class="subtitle">隨時保存編輯進度，可於多台裝置或下次登入時繼續編輯。</p></div>
       ${button("儲存目前編輯為草稿","save-current-draft","primary small")}
     </div>

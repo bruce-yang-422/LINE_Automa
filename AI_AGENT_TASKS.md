@@ -194,7 +194,7 @@
     - 現況：個人工作區程式（`personal_owner`、`owner_email`、`p:` 工作區）仍在。
     - 驗收：移轉前備份；移轉後原 OA 的聯絡對象、報告、發送紀錄、案件、記事完整；原擁有者以乙級登入可操作；介面不再出現個人工作區。
 - [x] **移除升級程式**： 2026-10-02 完成：`initialize_database()` 只執行 `schema.sql` 並寫入 `PRAGMA user_version = 1`；偵測到沒有結構版本的舊資料庫時拒絕啟動並提示備份重建。`initialize_database()` 只執行 `schema.sql`，刪除所有 `ALTER TABLE`、重建表、清理舊資料的程式；刪除 `upgrade_multi_oa.py` 及其測試，並更新提到它的文件（`line-oa-archive/README.md`、SaaS 規劃、進度紀錄）。
-- [ ] **資料處理**：不移轉舊資料，直接重建。
+- [x] **資料處理**：不移轉舊資料，直接重建。 2026-10-02 完成：停止服務後以 SQLite backup API 備份至 `line-oa-archive/backups/phase7-20261002_122714/`（含原始 `.db` 與 `line-credentials.key`，完整性檢查 ok）。備份時正式資料庫已是新結構（`user_version=1`）且全部資料表為空——12:23 控制台「重新啟動」前舊資料庫已不存在，舊資料（訊息 9 筆等）未在備份中。保留此空白新資料庫並重新啟動，本機與公開健康檢查正常，`/api/auth/setup-state` 回報尚未完成首次設定。**待使用者**：依權限規格 8.6 首次設定（平台管理員 → 自己的組織與管理員 → LINE OA 憑證）、LINE Developers 改用新 Webhook URL、清理 `.env`。
     - 執行前停止 LINE 服務，將 `data/line_archive.db`（含 `-wal`、`-shm`）備份到 `backups/`；保留 `line-credentials.key`。
     - 會遺失並需重新設定的項目：後台帳號與密碼、組織、OA 連線（由甲級在網頁「LINE OA」頁重新輸入 Channel access token 與 secret）、聯絡對象的自訂名稱與分類（之後對方傳訊息會重新建立聯絡對象）、9 筆訊息紀錄。
     - 重建後依權限規格 8.6 重新設定：甲級帳號、自己的組織（類型「個人」）與乙級帳號、OA 連線。

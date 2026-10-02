@@ -12,7 +12,8 @@ function workspaceHeader(){
   const kind = document.getElementById("workspace-context-kind");
   if(kind) kind.textContent=ch ? orgName(ch.org_id) : (superAdmin()?"跨組織":roleName(state.session?.role));
   const wrap = document.getElementById("workspace-context");
-  if(wrap) wrap.hidden=false;
+  // OA 切換器只給在 OA 內工作的人；平台管理員不進入 OA 營運畫面。
+  if(wrap) wrap.hidden=superAdmin();
   if(document.getElementById("organization-select")) document.getElementById("organization-select").hidden=true;
 }
 
@@ -48,7 +49,7 @@ function contactDetailPanel(){
     <div class="detail-body">
       ${person(r)}
       <div class="section-space">
-        <h4 style="margin:0 0 8px;font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;">聯絡資訊</h4>
+        <h4 data-s="s1aae5cd">聯絡資訊</h4>
         <dl>
           <dt>對象類型</dt><dd>${contactTypeBadge(r.contact_type)}</dd>
           ${r.organization_name?`<dt>對方組織</dt><dd>${esc(r.organization_name)}</dd>`:""}
@@ -64,7 +65,7 @@ function contactDetailPanel(){
         </dl>
       </div>
       <div class="section-space">
-        <h4 style="margin:0 0 8px;font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;">系統設定</h4>
+        <h4 data-s="s1aae5cd">系統設定</h4>
         <dl>
           <dt>系統組織</dt><dd>${esc(r.organization_id?orgName(r.organization_id):"尚未設定")}</dd>
           <dt>系統部門</dt><dd>${esc(r.department||"尚未設定")}</dd>
@@ -74,7 +75,7 @@ function contactDetailPanel(){
         </dl>
       </div>
       <div class="full section-space">
-        <label class="field" style="margin-bottom:4px;"><strong>備忘筆記（內部）</strong></label>
+        <label class="field" data-s="sd982937"><strong>備忘筆記（內部）</strong></label>
         ${r.notes?`<div class="contact-notes-box">${esc(r.notes)}</div>`:'<p class="muted">尚未填寫備忘筆記</p>'}
       </div>
       <div class="chat-notes-box section-space">
@@ -93,7 +94,7 @@ function contactDetailPanel(){
         </div>
         ${renderContactCases(r.recipient_id)}
       </div>
-      <details style="margin-top:14px;"><summary class="muted" style="font-size:12px;">查看聊天室識別資料</summary><p class="contact-id">${esc(r.recipient_id)}</p></details>
+      <details data-s="s88b9d5c"><summary class="muted" data-s="se71ae94">查看聊天室識別資料</summary><p class="contact-id">${esc(r.recipient_id)}</p></details>
       <div class="detail-actions">
         ${button(icon("message")+"開啟聊天","open-chat-from-contact","primary",`data-id="${esc(r.recipient_id)}"`)}
         ${manager()?button("編輯聯絡對象","edit-contact","",`data-id="${esc(r.recipient_id)}"`):""}
@@ -104,26 +105,26 @@ function contactDetailPanel(){
 
 function renderChatNotesList(recipient_id){
   const notes = state.chatNotes?.get(recipient_id) || [];
-  if(!notes.length) return `<div class="chat-notes-empty"><p class="muted" style="font-size:12px;margin:4px 0;">目前尚無對話記事，可點選上方「新增記事」記錄重要事項。</p><button class="btn text small" data-action="view-chat-notes-trash" data-recipient="${esc(recipient_id)}" style="font-size:11px;padding:2px 0;">🗑️ 查看最近刪除 (30 天內可還原)</button></div>`;
+  if(!notes.length) return `<div class="chat-notes-empty"><p class="muted" data-s="sf6951cb">目前尚無對話記事，可點選上方「新增記事」記錄重要事項。</p><button class="btn text small" data-action="view-chat-notes-trash" data-recipient="${esc(recipient_id)}" data-s="sca44a36">🗑️ 查看最近刪除 (30 天內可還原)</button></div>`;
   
   const pinned = notes.filter(n => n.is_pinned);
   const normal = notes.filter(n => !n.is_pinned);
   const ordered = [...pinned, ...normal];
 
   return `<div class="chat-notes-container">
-    <div class="chat-notes-toolbar" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+    <div class="chat-notes-toolbar" data-s="sa42388f">
       <small class="muted">共 ${notes.length} 筆（置頂 ${pinned.length}/5）</small>
-      <button class="btn text small" data-action="view-chat-notes-trash" data-recipient="${esc(recipient_id)}" style="font-size:11px;padding:0;">🗑️ 回收筒</button>
+      <button class="btn text small" data-action="view-chat-notes-trash" data-recipient="${esc(recipient_id)}" data-s="sab936e1">🗑️ 回收筒</button>
     </div>
     ${ordered.map(n=>`
       <div class="chat-note-item ${n.is_pinned?'pinned':''} ${n.is_locked?'locked':''}" style="border:1px solid var(--line, #e2e8f0);border-radius:8px;padding:8px 10px;margin-bottom:8px;background:${n.is_pinned?'rgba(254, 240, 138, 0.2)':'var(--card-bg, #fff)'};">
-        <div class="chat-note-meta" style="display:flex;justify-content:space-between;align-items:center;font-size:12px;">
+        <div class="chat-note-meta" data-s="sa7a6f11">
           <span>
             ${n.is_pinned?'<span title="已置頂">📌</span> ':''}
             ${n.is_locked?'<span title="防誤觸鎖定中">🔒</span> ':''}
             <strong>${esc(n.title||n.author||"記事")}</strong> · <span class="muted">${when(n.created_at)}</span>
           </span>
-          <div class="note-actions" style="display:flex;gap:4px;">
+          <div class="note-actions" data-s="s597636a">
             <button class="btn text small" data-action="toggle-chat-note-pin" data-id="${esc(n.note_id)}" data-recipient="${esc(recipient_id)}" title="${n.is_pinned?'取消置頂':'置頂'}">${n.is_pinned?'取消置頂':'📌 置頂'}</button>
             <button class="btn text small" data-action="toggle-chat-note-lock" data-id="${esc(n.note_id)}" data-recipient="${esc(recipient_id)}" title="${n.is_locked?'解除鎖定':'鎖定'}">${n.is_locked?'🔓':'🔒'}</button>
             ${!n.is_locked ? `<button class="btn text small" data-action="edit-chat-note" data-id="${esc(n.note_id)}" data-recipient="${esc(recipient_id)}">編輯</button>` : ''}
@@ -131,11 +132,11 @@ function renderChatNotesList(recipient_id){
             ${!n.is_locked ? `<button class="btn text small danger" data-action="delete-chat-note" data-id="${esc(n.note_id)}" data-recipient="${esc(recipient_id)}">刪除</button>` : ''}
           </div>
         </div>
-        ${n.title ? `<div style="font-weight:600;font-size:13px;margin:4px 0 2px;">${esc(n.title)}</div>` : ''}
-        <div class="chat-note-content" style="font-size:13px;white-space:pre-wrap;margin:4px 0;line-height:1.4;">${esc(n.content)}</div>
+        ${n.title ? `<div data-s="sb296c68">${esc(n.title)}</div>` : ''}
+        <div class="chat-note-content" data-s="se4c2eeb">${esc(n.content)}</div>
         ${(n.tags && n.tags.length) || n.due_date ? `
-          <div class="chat-note-footer" style="display:flex;gap:6px;align-items:center;margin-top:4px;font-size:11px;">
-            ${(n.tags || []).map(t => `<span class="badge" style="font-size:10px;">${esc(t)}</span>`).join(" ")}
+          <div class="chat-note-footer" data-s="sa451b52">
+            ${(n.tags || []).map(t => `<span class="badge" data-s="s0c8a27e">${esc(t)}</span>`).join(" ")}
             ${n.due_date ? `<span class="muted">📅 期限：${esc(n.due_date)}</span>` : ''}
           </div>
         ` : ''}
@@ -146,8 +147,8 @@ function renderChatNotesList(recipient_id){
 
 function renderContactCases(recipient_id){
   const related = (state.cases || []).filter(c => c.case_subject_id === recipient_id);
-  if(!related.length) return '<p class="muted" style="font-size:12px;margin:4px 0 0;">目前無關聯案件，可點選「建立案件」追蹤此對象的問題或需求。</p>';
-  return `<div class="contact-cases-list">${related.map(c=>`<div class="case-item" style="padding:10px 12px;margin-top:8px;" data-action="open-case-detail" data-id="${esc(c.case_id)}">
+  if(!related.length) return '<p class="muted" data-s="sf77f5e9">目前無關聯案件，可點選「建立案件」追蹤此對象的問題或需求。</p>';
+  return `<div class="contact-cases-list">${related.map(c=>`<div class="case-item" data-s="sdfaf1a8" data-action="open-case-detail" data-id="${esc(c.case_id)}">
     <div class="case-item-info">
       <div class="case-title-row">
         <span class="case-no-badge">${esc(c.case_no)}</span>
@@ -155,8 +156,8 @@ function renderContactCases(recipient_id){
         ${c.is_locked ? '<span title="防誤觸鎖定">🔒</span>' : ''}
         ${badge(caseStatusNames[c.status]||c.status, caseStatusTones[c.status]||"")}
       </div>
-      <div style="font-size:11px;margin-top:2px;">
-        ${c.category ? `<span class="badge" style="font-size:10px;">${esc(c.category)}</span> ` : ''}
+      <div data-s="s1ba4dce">
+        ${c.category ? `<span class="badge" data-s="s0c8a27e">${esc(c.category)}</span> ` : ''}
         ${c.ref_no ? `<span class="muted">參考號：${esc(c.ref_no)}</span> · ` : ''}
         <small class="muted">更新：${when(c.updated_at)}</small>
       </div>
@@ -200,7 +201,7 @@ function renderCommands(){
   document.getElementById("command-count").textContent=`${rows.length} 個結果；只搜尋目前已載入且有權限的資料。`;
 }
 function openCommand(){
-  if(!state.loaded||state.busy||document.getElementById("modal").open)return;
+  if(!state.loaded||superAdmin()||state.busy||document.getElementById("modal").open)return;
   const dialog=document.getElementById("command-dialog");
   document.getElementById("command-search").value="";renderCommands();dialog.showModal();document.getElementById("command-search").focus();
 }

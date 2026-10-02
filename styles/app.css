@@ -2,6 +2,7 @@
 @import "../line-oa-archive/web/admin.css";
 @import "../line-oa-archive/web/workspace-theme.css";
 @import "./management.css";
+@import "../line-oa-archive/web/inline-styles.css";
 @source "../index.html";
 @source "../line-oa-archive/web/admin.js";
 @source "../line-oa-archive/web/composer.js";
@@ -1066,3 +1067,48 @@ dialog { border-radius:18px; }
   body.nav-rail .sidebar:not(:hover):not(:focus-within) .brand-logo { width:36px; height:36px; }
   body.nav-rail .sidebar:not(:hover):not(:focus-within) nav button { font-size:0; justify-content:center; gap:0; padding:11px 0; }
 }
+
+/* 案件管理：卡片、詳情與處理紀錄（原本缺少樣式） */
+.cases-container { display: grid; gap: 14px; padding: 0 22px 22px; }
+.case-card { border: 1px solid var(--line); border-radius: 16px; background: var(--surface); padding: 16px 18px; display: grid; gap: 10px; box-shadow: 0 1px 2px rgb(36 55 42 / .05); }
+.case-card.locked { background: var(--soft); }
+.case-card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+.case-card-main-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.case-title { margin: 0; font-size: 16px; font-weight: 650; color: var(--ink); overflow-wrap: anywhere; }
+.case-card-badges { display: flex; gap: 6px; flex-wrap: wrap; }
+.case-desc { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.6; white-space: pre-wrap; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.case-card-meta { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 12px; color: var(--muted); align-items: center; }
+.case-card-meta strong { color: var(--ink); font-weight: 600; }
+.btn.link-style { min-height: 0; padding: 0; border: 0; background: none; color: var(--teal); font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
+.case-waiting-info, .case-closed-info { border-radius: 12px; padding: 10px 12px; font-size: 13px; line-height: 1.6; }
+.case-waiting-info { background: #fff8e6; border: 1px solid #f1d58a; color: #6b4e00; }
+.case-closed-info { background: var(--mint); border: 1px solid var(--line); color: var(--ink); }
+.case-waiting-info p, .case-closed-info p { margin: 0; }
+.case-card-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; border-top: 1px solid var(--line); padding-top: 10px; }
+.case-detail-view { display: grid; gap: 4px; }
+.case-detail-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+.case-detail-header h2 { margin: 6px 0 0; font-size: 20px; }
+.case-info-dl { display: grid; grid-template-columns: 96px 1fr; gap: 8px 12px; margin: 14px 0 0; font-size: 13px; }
+.case-info-dl dt { color: var(--muted); }
+.case-info-dl dd { margin: 0; color: var(--ink); overflow-wrap: anywhere; }
+.case-desc-box { margin: 6px 0 0; padding: 12px; border-radius: 12px; background: var(--soft); border: 1px solid var(--line); white-space: pre-wrap; font-size: 13px; line-height: 1.6; }
+.case-timeline-item { position: relative; margin-bottom: 12px; }
+.timeline-body { color: var(--ink); line-height: 1.6; overflow-wrap: anywhere; }
+@media (max-width: 850px) {
+  .cases-container { padding: 0 14px 16px; }
+  .case-info-dl { grid-template-columns: 1fr; gap: 2px; }
+  .case-info-dl dd { margin-bottom: 8px; }
+  /* 範本與分類頁原本以行內樣式固定兩欄，窄螢幕改單欄 */
+  .packs-layout { grid-template-columns: 1fr !important; }
+}
+
+/* 聯絡對象名稱列、聊天與其他零星元件 */
+.person-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px; }
+.person-sub { margin-top: 2px; }
+.chat-empty-state { display: grid; place-items: center; height: 100%; padding: 24px; text-align: center; }
+.chat-bubble-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.chat-info-body { display: grid; gap: 4px; }
+.info-section-title { margin: 0 0 6px; font-size: 13px; color: var(--muted); font-weight: 600; }
+.text-center { text-align: center; }
+.card { border: 1px solid var(--line); border-radius: 14px; background: var(--surface); padding: 16px; }
+.oa-org-picker { min-width: 200px; margin: 0; }

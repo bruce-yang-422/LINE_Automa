@@ -367,6 +367,8 @@ class AdminHandler(BaseHTTPRequestHandler):
 
     def apply_view(self):
         self.principal = self.identity
+        # 視角預覽會把 self.user 換成被預覽者；查看紀錄依實際登入者判斷。
+        self.principal_role = self.user['role']
         self.preview = False
         self.preview_edit = False
         org=self.headers.get('X-Workspace-Organization')
@@ -518,10 +520,10 @@ class AdminHandler(BaseHTTPRequestHandler):
                 return
 
         # 甲級平台管理員查閱客戶營運內容時寫入操作紀錄
-        if self.user['role'] == 'platform_admin' and self.path in {'/api/chat-notes', '/api/cases', '/api/chat/messages', '/api/contacts'}:
+        if getattr(self, 'principal_role', self.user['role']) == 'platform_admin' and self.path in {'/api/chat-notes', '/api/cases', '/api/chat/messages', '/api/contacts'}:
             with app.database_connection() as conn:
                 # 記在該 OA 所屬組織，讓組織管理員在操作紀錄看得到（權限規格 6.2）。
-                reports.audit(conn, self.identity, "vendor.view", channels.current_id() or "all", f"平台管理員檢視客戶營運內容（{self.path}）",
+                reports.audit(conn, getattr(self, 'principal', self.identity), "vendor.view", channels.current_id() or "all", f"平台管理員檢視客戶營運內容（{self.path}）",
                               channels.current_organization_id() or '')
 
         if self.path in files:
@@ -653,12 +655,12 @@ class AdminHandler(BaseHTTPRequestHandler):
                 })
         elif self.path == "/api/chat/messages":
             cid = query.get('recipient_id') or query.get('chat_id') or ''
-            if self.user['role'] == 'platform_admin' and channels.current_id():
+            if getattr(self, 'principal_role', self.user['role']) == 'platform_admin' and channels.current_id():
                 with app.database_connection() as conn:
                     tz_taipei = timezone(timedelta(hours=8))
                     t_str = datetime.now(tz_taipei).strftime('%Y-%m-%d %H:%M')
                     org_id = channels.current_organization_id() or ''
-                    last = conn.execute("SELECT created_at FROM audit_events WHERE actor=? AND action='vendor.view' AND channel_id=? ORDER BY event_id DESC LIMIT 1", (self.identity, channels.current_id())).fetchone()
+                    last = conn.execute("SELECT created_at FROM audit_events WHERE actor=? AND action='vendor.view' AND channel_id=? ORDER BY event_id DESC LIMIT 1", (getattr(self, 'principal', self.identity), channels.current_id())).fetchone()
                     should_log = True
                     if last:
                         try:
@@ -669,7 +671,7 @@ class AdminHandler(BaseHTTPRequestHandler):
                         except Exception:
                             pass
                     if should_log:
-                        reports.audit(conn, self.identity, "vendor.view", channels.current_id(), f"供應商曾於 {t_str} 查看", org_id)
+                        reports.audit(conn, getattr(self, 'principal', self.identity), "vendor.view", channels.current_id(), f"供應商曾於 {t_str} 查看", org_id)
             with app.database_connection() as conn:
                 if query.get('q'):
                     res = chat.search_messages(conn, chat_id=cid, query=query.get('q'), limit=query.get('limit'))
@@ -1181,9 +1183,17 @@ class AdminHandler(BaseHTTPRequestHandler):
                 reports.restore_weather(self.identity)
                 self.respond(200, {'ok': True})
             elif self.path == "/api/accounts/save":
-                # 甲級只建立平台管理員與管理員；操作人員、協作人員由該組織的管理員在「人員與權限」建立。
+                # 甲級在「組織」只建立組織的管理員；操作人員、協作人員由該組織的管理員在「人員與權限」建立。
                 if self.user['role'] == 'platform_admin' and payload.get('role') in {'operator', 'collaborator'}:
                     raise ValueError('操作人員與協作人員請由該組織的管理員在「人員與權限」建立。')
+                # 權限規格第 9 節：平台管理員只能經首次設定或 create_admin.py 建立；這裡不能新增、升級或降級平台管理員。
+                email = str(payload.get('email', '')).strip().lower()
+                existing = next((u for u in reports.users() if u['email'] == email), None)
+                was_platform = bool(existing and existing['role'] == 'platform_admin')
+                if payload.get('role') == 'platform_admin' and not was_platform:
+                    raise ValueError('平台管理員只能從本機控制台首次設定或 create_admin.py 建立。')
+                if was_platform and payload.get('role') != 'platform_admin':
+                    raise ValueError('平台管理員帳號不能改為組織帳號；組織的管理員請使用另一個 Email。')
                 reports.save_user(payload, self.identity)
                 self.respond(200, {"ok": True})
             else:

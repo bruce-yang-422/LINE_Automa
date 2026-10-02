@@ -102,6 +102,14 @@ class RolesAndPermissionsTests(unittest.TestCase):
         status, res = self.request(server, '/api/activity', ORG_ADMIN, organization=ORG_A, channel='primary')
         self.assertEqual(status, 200)
         self.assertTrue(any(e['action'] == 'vendor.view' for e in res['events']))
+        # 透過視角預覽查看客戶內容，同樣以平台管理員本人記錄。
+        with app.database_connection() as conn:
+            conn.execute("DELETE FROM audit_events WHERE action='vendor.view'")
+        status, _ = self.request(server, '/api/cases', ADMIN, view_as=ORG_ADMIN, preview_org=ORG_A, channel='primary')
+        self.assertEqual(status, 200)
+        with app.database_connection() as conn:
+            rows = conn.execute("SELECT actor, organization_id FROM audit_events WHERE action='vendor.view'").fetchall()
+        self.assertEqual(rows, [(ADMIN, ORG_A)])
 
     def test_administrator_write_blocked_with_403(self):
         self.setup_roles_environment()
@@ -138,6 +146,16 @@ class RolesAndPermissionsTests(unittest.TestCase):
         self.assertEqual(self.request(server, '/api/org-settings/save', ADMIN, {'name': 'Renamed'})[0], 403)
         # 乙級仍可使用自己的人員與權限。
         self.assertEqual(self.request(server, '/api/personnel', ORG_ADMIN)[0], 200)
+        # 平台管理員只能經首次設定或 create_admin.py 建立：帳號 API 不能新增、升級或降級平台管理員。
+        status, res = self.request(server, '/api/accounts/save', ADMIN, {'email': 'new-vendor@example.com', 'role': 'platform_admin', 'active': True})
+        self.assertEqual(status, 400); self.assertIn('create_admin.py', res.get('error', ''))
+        status, _ = self.request(server, '/api/accounts/save', ADMIN, {'email': 'boss2@org-a.com', 'role': 'platform_admin', 'active': True})
+        self.assertEqual(status, 400)
+        self.assertEqual(reports.account('boss2@org-a.com')['role'], 'org_admin')
+        status, _ = self.request(server, '/api/accounts/save', ADMIN, {'email': ADMIN, 'role': 'org_admin', 'organization_id': ORG_A, 'active': True})
+        self.assertEqual(status, 400)
+        # 既有平台管理員仍可改顯示名稱。
+        self.assertEqual(self.request(server, '/api/accounts/save', ADMIN, {'email': ADMIN, 'role': 'platform_admin', 'display_name': '供應商', 'active': True})[0], 200)
 
     def test_org_admin_can_manage_operator_and_collaborator_in_own_org(self):
         self.setup_roles_environment()

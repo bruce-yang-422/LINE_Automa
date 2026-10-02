@@ -52,8 +52,8 @@ function chatPage() {
     <!-- 1. Left Sidebar: Chat List -->
     <aside class="chat-sidebar-col">
       <div class="chat-sidebar-header">
-        <div style="display:flex;align-items:center;gap:8px;">
-          <label class="search-field" style="flex:1;">
+        <div data-s="se3f6104">
+          <label class="search-field" data-s="s7623f05">
             ${icon("search")}
             <input id="chat-list-search" type="search" value="${esc(chatUI.query)}" placeholder="搜尋聯絡對象或訊息…" aria-label="搜尋聊天">
           </label>
@@ -64,8 +64,8 @@ function chatPage() {
             <button data-action="chat-filter" data-id="${id}" class="${chatUI.filter === id ? 'active' : ''}">${t}</button>
           `).join("")}
         </div>
-        ${canSend() ? `<div style="margin-top:8px;display:flex;justify-content:flex-end;">
-          <button type="button" class="btn text small" data-action="send-to-chat-filtered" style="font-size:12px;padding:2px 8px;color:var(--primary,#00B900);">📨 對目前篩選對象發送</button>
+        ${canSend() ? `<div data-s="s13a7212">
+          <button type="button" class="btn text small" data-action="send-to-chat-filtered" data-s="s839adf8">📨 對目前篩選對象發送</button>
         </div>` : ""}
       </div>
       <div class="chat-room-list" id="chat-room-list">
@@ -166,12 +166,12 @@ function renderConversationView(room) {
   </div>
 
   ${chatUI.searchOpen ? `
-    <div class="chat-search-bar" style="display:flex;align-items:center;gap:8px;padding:8px 16px;background:var(--card-subtle,#f8fafc);border-bottom:1px solid var(--line,#e2e8f0);">
-      <label class="search-field" style="flex:1;">
+    <div class="chat-search-bar" data-s="s79a2e3f">
+      <label class="search-field" data-s="s7623f05">
         ${icon("search")}
         <input id="chat-inner-search-input" type="search" placeholder="在對話中搜尋訊息關鍵字…" value="${esc(chatUI.searchQuery)}" autofocus>
       </label>
-      ${chatUI.searchQuery ? `<span class="badge" style="font-size:12px;">找到 ${chatUI.messages.filter(m => (m.text_content || '').toLowerCase().includes(chatUI.searchQuery.toLowerCase())).length} 則</span>` : ''}
+      ${chatUI.searchQuery ? `<span class="badge" data-s="se71ae94">找到 ${chatUI.messages.filter(m => (m.text_content || '').toLowerCase().includes(chatUI.searchQuery.toLowerCase())).length} 則</span>` : ''}
       <button type="button" class="btn text small" data-action="close-chat-search">關閉</button>
     </div>
   ` : ''}
@@ -182,12 +182,12 @@ function renderConversationView(room) {
 
   <div class="chat-input-wrapper">
     ${state.session?.role === 'collaborator' ? `
-      <div class="callout muted text-center" style="padding:14px;background:var(--card-subtle,#f8fafc);border-radius:10px;margin:8px;">
-        <p style="margin:0;font-size:13px;">ℹ️ <strong>協作人員無法傳送訊息</strong>（具備對話閱讀、記事本與案件管理權限）</p>
+      <div class="callout muted text-center" data-s="s0fe9368">
+        <p data-s="se22915d">ℹ️ <strong>協作人員無法傳送訊息</strong>（具備對話閱讀、記事本與案件管理權限）</p>
       </div>
     ` : state.session?.role === 'platform_admin' ? `
-      <div class="callout muted text-center" style="padding:14px;background:var(--card-subtle,#f8fafc);border-radius:10px;margin:8px;">
-        <p style="margin:0;font-size:13px;">👁️ <strong>平台管理員僅能檢視對話紀錄</strong>（唯讀模式）</p>
+      <div class="callout muted text-center" data-s="s0fe9368">
+        <p data-s="se22915d">👁️ <strong>平台管理員僅能檢視對話紀錄</strong>（唯讀模式）</p>
       </div>
     ` : `
       ${renderReplyTokenBanner()}
@@ -226,7 +226,7 @@ function highlightSearchText(text, q) {
   if (!q || !text) return esc(text).replace(/\n/g, '<br>');
   const safeQ = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const parts = text.split(new RegExp(`(${safeQ})`, 'gi'));
-  return parts.map(p => p.toLowerCase() === q.toLowerCase() ? `<mark style="background:#fef08a;color:#854d0e;padding:1px 3px;border-radius:3px;font-weight:600;">${esc(p)}</mark>` : esc(p)).join("").replace(/\n/g, '<br>');
+  return parts.map(p => p.toLowerCase() === q.toLowerCase() ? `<mark data-s="se07ba57">${esc(p)}</mark>` : esc(p)).join("").replace(/\n/g, '<br>');
 }
 
 function renderMessageBubbles() {
@@ -258,26 +258,26 @@ function renderMessageBubbles() {
     if (m.message_type === "image") {
       bubbleContent = `<div class="chat-media-image">
         <a href="/api/chat/media/${esc(m.message_id)}" target="_blank" title="點擊放大檢視圖片">
-          <img src="/api/chat/media/${esc(m.message_id)}" alt="LINE 圖片" style="max-width:280px;max-height:280px;border-radius:8px;object-fit:cover;cursor:pointer;display:block;" loading="lazy" onerror="this.onerror=null;this.parentElement.innerHTML='<span class=\\'muted\\' style=\\'font-size:12px;\\'>🖼️ [圖片已過期或無法載入]</span>';">
+          <img src="/api/chat/media/${esc(m.message_id)}" alt="LINE 圖片" data-s="s79041b7" loading="lazy" onerror="this.onerror=null;this.parentElement.innerHTML='<span class=\\'muted\\' style=\\'font-size:12px;\\'>🖼️ [圖片已過期或無法載入]</span>';">
         </a>
       </div>`;
     } else if (m.message_type === "video") {
       bubbleContent = `<div class="chat-media-video">
-        <video src="/api/chat/media/${esc(m.message_id)}" controls style="max-width:320px;max-height:280px;border-radius:8px;display:block;background:#000;"></video>
-        <div style="margin-top:4px;"><a href="/api/chat/media/${esc(m.message_id)}" download="video_${esc(m.message_id)}.mp4" class="btn text small" style="font-size:11px;padding:2px 0;">⬇️ 下載影片</a></div>
+        <video src="/api/chat/media/${esc(m.message_id)}" controls data-s="s08d6822"></video>
+        <div data-s="sa3a5568"><a href="/api/chat/media/${esc(m.message_id)}" download="video_${esc(m.message_id)}.mp4" class="btn text small" data-s="sca44a36">⬇️ 下載影片</a></div>
       </div>`;
     } else if (m.message_type === "audio") {
       bubbleContent = `<div class="chat-media-audio">
-        <audio src="/api/chat/media/${esc(m.message_id)}" controls style="max-width:280px;display:block;"></audio>
+        <audio src="/api/chat/media/${esc(m.message_id)}" controls data-s="sbccdd33"></audio>
       </div>`;
     } else if (m.message_type === "file") {
       bubbleContent = `<div class="chat-media-file">
-        <a href="/api/chat/media/${esc(m.message_id)}" download class="btn small" style="display:inline-flex;align-items:center;gap:6px;">
+        <a href="/api/chat/media/${esc(m.message_id)}" download class="btn small" data-s="s23fa588">
           📁 下載傳送的檔案
         </a>
       </div>`;
     } else if (m.message_type === "sticker") {
-      bubbleContent = `<div class="chat-media-sticker"><span class="badge" style="font-size:12px;">🌟 [貼圖]</span></div>`;
+      bubbleContent = `<div class="chat-media-sticker"><span class="badge" data-s="se71ae94">🌟 [貼圖]</span></div>`;
     } else {
       const text = m.text_content || `[${m.message_type}]`;
       bubbleContent = `<div class="chat-bubble-text">${highlightSearchText(text, chatUI.searchQuery)}</div>`;
@@ -608,12 +608,12 @@ function openChatExportModal(recipient_id) {
   const r = chatUI.rooms.find(x => x.recipient_id === recipient_id) || { name: "聊天室" };
   const title = r.name || r.display_name || "聊天室";
   modal("匯出聊天紀錄", `<div>
-    <p class="muted" style="margin-bottom:16px;">匯出 <strong>${esc(title)}</strong> 的完整對話訊息紀錄（文字與時間戳記，不含二進位媒體檔）：</p>
-    <div style="display:flex;flex-direction:column;gap:12px;">
-      <a href="/api/chat/export?chat_id=${encodeURIComponent(recipient_id)}&format=txt" download class="btn primary" style="display:flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;padding:10px 16px;">
+    <p class="muted" data-s="s79a1c5a">匯出 <strong>${esc(title)}</strong> 的完整對話訊息紀錄（文字與時間戳記，不含二進位媒體檔）：</p>
+    <div data-s="s2e1ca33">
+      <a href="/api/chat/export?chat_id=${encodeURIComponent(recipient_id)}&format=txt" download class="btn primary" data-s="s10d00c1">
         ${icon("file")} 下載純文字紀錄檔 (.txt)
       </a>
-      <a href="/api/chat/export?chat_id=${encodeURIComponent(recipient_id)}&format=csv" download class="btn" style="display:flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;padding:10px 16px;">
+      <a href="/api/chat/export?chat_id=${encodeURIComponent(recipient_id)}&format=csv" download class="btn" data-s="s10d00c1">
         ${icon("download")} 下載試算表格式 (.csv, 含 UTF-8 BOM)
       </a>
     </div>
@@ -630,29 +630,29 @@ async function openChatSettingsModal() {
     chatNotify.responseHours = hoursRes;
     const stats = statsRes || { total_mb: 0, percent: 0, file_count: 0 };
     modal("聊天設定與容量管理", `<div>
-      <div class="card" style="margin-bottom:16px;">
-        <h3 style="margin-top:0;">提醒偏好設定</h3>
-        <p class="muted" style="font-size:13px;margin:4px 0 12px;">有新訊息時的提醒方式（依目前瀏覽器本機儲存）：</p>
-        <p class="callout" id="chat-notify-permission" style="font-size:12px;margin:0 0 10px;">${esc(notificationPermissionText())}</p>
-        <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:14px;cursor:pointer;">
+      <div class="card" data-s="s79a1c5a">
+        <h3 data-s="s291b7bb">提醒偏好設定</h3>
+        <p class="muted" data-s="s74b044d">有新訊息時的提醒方式（依目前瀏覽器本機儲存）：</p>
+        <p class="callout" id="chat-notify-permission" data-s="sd37a65c">${esc(notificationPermissionText())}</p>
+        <label data-s="seec8072">
           <input type="checkbox" id="chat-pref-notify" ${localStorage.getItem("chat_pref_notify") !== "0" ? "checked" : ""}>
           顯示瀏覽器桌面通知
         </label>
-        <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:14px;cursor:pointer;">
+        <label data-s="seec8072">
           <input type="checkbox" id="chat-pref-sound" ${localStorage.getItem("chat_pref_sound") === "1" ? "checked" : ""}>
           播放新訊息提示音
         </label>
-        <label style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer;">
+        <label data-s="s3178e6a">
           <input type="checkbox" id="chat-pref-preview" ${localStorage.getItem("chat_pref_preview") !== "0" ? "checked" : ""}>
           在通知中預覽訊息內容
         </label>
       </div>
 
-      <div class="card" style="margin-bottom:16px;">
-        <h3 style="margin-top:0;">回應時間設定</h3>
-        <p class="muted" style="font-size:13px;margin:4px 0 12px;">設定每週回應時段（非回應時段將靜音並停止發出瀏覽器桌面通知）：</p>
+      <div class="card" data-s="s79a1c5a">
+        <h3 data-s="s291b7bb">回應時間設定</h3>
+        <p class="muted" data-s="s74b044d">設定每週回應時段（非回應時段將靜音並停止發出瀏覽器桌面通知）：</p>
         <form id="chat-response-hours-form">
-          <label style="display:flex;align-items:center;gap:8px;margin-bottom:12px;font-size:14px;cursor:pointer;">
+          <label data-s="sf23bf8f">
             <input type="checkbox" name="enabled" ${hoursRes.enabled ? "checked" : ""}>
             <strong>啟用回應時間排程通知過濾</strong>
           </label>
@@ -660,22 +660,22 @@ async function openChatSettingsModal() {
             <div>${field("時區", "timezone", hoursRes.timezone || "Asia/Taipei", 'readonly')}</div>
           </div>
           ${renderResponseWeekly(hoursRes.weekly || {})}
-          <label class="field" style="margin-top:12px;">例假日（每行一個日期，例如 2026-10-10；當天整天不通知）
+          <label class="field" data-s="s9374e84">例假日（每行一個日期，例如 2026-10-10；當天整天不通知）
             <textarea name="holidays" rows="3" placeholder="2026-10-10">${esc((hoursRes.holidays || []).join("\n"))}</textarea>
           </label>
-          <div class="form-actions" style="margin-top:12px;">
+          <div class="form-actions" data-s="s9374e84">
             <button class="btn primary small" type="submit">儲存回應時間設定</button>
           </div>
         </form>
       </div>
 
       <div class="card">
-        <h3 style="margin-top:0;">媒體儲存容量與保存期限</h3>
-        <p class="muted" style="font-size:13px;margin:4px 0 12px;">單台主機儲存上限：${stats.limit_gb} GB（單一檔案上限 ${stats.single_limit_mb} MB，媒體檔案保存 ${Math.round(stats.retention_days / 365)} 年）</p>
-        <div style="background:var(--line,#e2e8f0);height:10px;border-radius:5px;overflow:hidden;margin-bottom:8px;">
+        <h3 data-s="s291b7bb">媒體儲存容量與保存期限</h3>
+        <p class="muted" data-s="s74b044d">單台主機儲存上限：${stats.limit_gb} GB（單一檔案上限 ${stats.single_limit_mb} MB，媒體檔案保存 ${Math.round(stats.retention_days / 365)} 年）</p>
+        <div data-s="seae2ecd">
           <div style="background:${stats.warning ? '#ef4444' : 'var(--accent,#00b900)'};width:${Math.min(100, Math.max(2, stats.percent))}%;height:100%;"></div>
         </div>
-        <div style="display:flex;justify-content:space-between;align-items:center;font-size:13px;">
+        <div data-s="sb463249">
           <span>已使用 <strong>${stats.total_mb} MB</strong> / ${stats.limit_gb} GB (${stats.percent}%) · 共 ${stats.file_count} 個媒體檔</span>
           <button type="button" class="btn small" data-action="cleanup-expired-media">🧹 清理過期媒體</button>
         </div>
@@ -692,16 +692,16 @@ async function viewChatNotesTrashModal(recipient_id) {
     const res = await api(`/api/chat-notes/trash?recipient_id=${encodeURIComponent(recipient_id)}`);
     const trashed = res.trash || [];
     if (!trashed.length) {
-      modal("最近刪除的記事", '<p class="muted" style="padding:1rem;">資源回收筒內目前沒有已刪除的記事。</p>');
+      modal("最近刪除的記事", '<p class="muted" data-s="sc951e35">資源回收筒內目前沒有已刪除的記事。</p>');
       return;
     }
     const html = trashed.map(n => `
-      <div class="chat-note-trash-item" style="border:1px solid var(--line, #e2e8f0);border-radius:8px;padding:8px 10px;margin-bottom:8px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;">
+      <div class="chat-note-trash-item" data-s="sc277c20">
+        <div data-s="sa7a6f11">
           <span><strong>${esc(n.title || "記事")}</strong> · <span class="muted">刪除於 ${when(n.deleted_at)}</span></span>
           <button class="btn small primary" data-action="restore-chat-note" data-id="${esc(n.note_id)}" data-recipient="${esc(recipient_id)}">還原此記事</button>
         </div>
-        <div style="font-size:13px;margin-top:4px;color:var(--text-subtle,#64748b);">${esc(n.content)}</div>
+        <div data-s="sc548f14">${esc(n.content)}</div>
       </div>
     `).join("");
     modal(`最近刪除的記事（${cap("NOTE_TRASH_DAYS")} 天內可還原）`, `<div>${html}</div>`);
@@ -743,11 +743,11 @@ function notificationPermissionText() {
 }
 
 function renderResponseWeekly(weekly) {
-  return `<div class="response-weekly" style="display:grid;gap:6px;margin-top:12px;">
+  return `<div class="response-weekly" data-s="se04ff4e">
     ${CHAT_WEEKDAYS.map(([d, name]) => {
       const slot = weekly[d];
-      return `<div style="display:flex;align-items:center;gap:8px;font-size:13px;flex-wrap:wrap;">
-        <label class="check-label" style="min-width:72px;"><input type="checkbox" name="day_${d}" ${slot ? "checked" : ""}>${name}</label>
+      return `<div data-s="sff2e604">
+        <label class="check-label" data-s="s233915b"><input type="checkbox" name="day_${d}" ${slot ? "checked" : ""}>${name}</label>
         <input type="time" name="start_${d}" value="${esc(slot?.start || "09:00")}" aria-label="${name}開始時間">
         <span>至</span>
         <input type="time" name="end_${d}" value="${esc(slot?.end || "18:00")}" aria-label="${name}結束時間">
@@ -840,10 +840,11 @@ function detectNewInbound(rooms) {
 }
 
 async function pollChat() {
-  if (chatNotify.polling || typeof state === "undefined" || !state.loaded || !admin() || !lineDataReady() || state.authLost) return;
+  if (chatNotify.polling || typeof state === "undefined" || !state.loaded || !admin() || superAdmin() || !lineDataReady() || state.authLost) return;
   const leader = isChatPollLeader();
   const viewingChat = state.view === "chat" && !document.hidden;
-  if (!leader && !viewingChat) return;
+  const viewingContacts = state.view === "contacts" && !document.hidden;
+  if (!leader && !viewingChat && !viewingContacts) return;
   chatNotify.polling = true;
   try {
     if (chatNotify.channel !== lineUI.channel) {
@@ -865,11 +866,23 @@ async function pollChat() {
     } else if (before !== JSON.stringify(chatUI.rooms.map(r => [r.recipient_id, r.last_message?.message_id, r.unread_count, r.status])) && state.view === "overview" && !$("modal").open) {
       render();
     }
+    // 聯絡對象頁：新加入的對象與背景查到的 LINE 名稱會自動出現；使用者正在輸入或開著視窗時不重畫。
+    if (viewingContacts) await refreshContactsIfChanged();
   } catch (e) {
     console.warn("Chat polling failed:", e);
   } finally {
     chatNotify.polling = false;
   }
+}
+
+async function refreshContactsIfChanged() {
+  const res = await api("/api/contacts");
+  const next = res.contacts || [];
+  if (JSON.stringify(next) === JSON.stringify(state.contacts) && JSON.stringify(res.tags || []) === JSON.stringify(state.tags)) return;
+  state.contacts = next;
+  state.tags = res.tags || [];
+  const typing = document.activeElement && ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName);
+  if (state.view === "contacts" && !typing && !$("modal").open) render();
 }
 
 setInterval(pollChat, CHAT_POLL_MS);
