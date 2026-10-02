@@ -1909,19 +1909,13 @@ function scheduleFields(){return `<div class="schedule-fields"><label class="fie
 
 function organizationOptions(){return [["","選擇組織"],...(state.organizations||[]).filter(o=>o.active).map(o=>[o.org_id,o.name])];}
 
-// 聊天頁左側選單收合為圖示窄欄（聊天規格 4.3）；使用者按「固定展開」後，本次瀏覽期間維持展開。
-function chatNavPinned(){try{return sessionStorage.getItem("chatNavExpanded")==="1";}catch(_){return false;}}
+// 聊天頁左側選單維持標準寬度（不自動收合為窄欄）
 function applyNavRail(){
   const chat=state.view==="chat";
-  const rail=chat&&!window.matchMedia('(max-width:850px)').matches&&!chatNavPinned();
   document.body.classList.toggle("chat-view",chat);
-  document.body.classList.toggle("nav-rail",rail);
-  document.querySelectorAll("#sidebar nav [data-view]").forEach(el=>{if(!el.title)el.title=el.textContent.trim();});
-  const t=$("nav-rail-toggle");
-  if(t){const label=rail?"固定展開選單":"收合為圖示窄欄";t.setAttribute("aria-label",label);t.title=label;}
+  document.body.classList.remove("nav-rail");
 }
-$("nav-rail-toggle")?.addEventListener("click",()=>{try{sessionStorage.setItem("chatNavExpanded",chatNavPinned()?"0":"1");}catch(_){}applyNavRail();});
-window.matchMedia('(max-width:850px)').addEventListener('change',applyNavRail);
+$("nav-rail-toggle")?.remove();
 
 // Mobile navigation behaves as a drawer; keyboard focus stays inside until closed.
 const compactNavigation=window.matchMedia('(max-width:850px)');
