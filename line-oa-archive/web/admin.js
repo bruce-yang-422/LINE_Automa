@@ -69,8 +69,8 @@ let authCsrf="";
 const token = remote ? "" : location.hash.slice(1) || sessionStorage.getItem("lineAdminToken") || "";
 if(location.hash){if(!remote)sessionStorage.setItem("lineAdminToken",token);history.replaceState(null,"",location.pathname+location.search);}
 $("logout").hidden=!remote;
-const state={session:null,view:new URLSearchParams(location.search).get("view")||"overview",reports:[],contacts:[],tags:[],jobs:[],cases:[],caseFilter:"all",casePriority:"all",caseQuery:"",savedFilters:[],chatNotes:new Map(),settings:{users:[]},events:[],previews:new Map(),selected:new Set(),tagAudienceMode:"any",selectedAudienceTags:new Set(),selectedFilterId:"",report:null,step:1,audience:"selected",search:"",kind:"all",organization_id:"",department:"",tagFilter:"",page:1,reportFilter:"all",historyFilter:"all",subFilter:"all",busy:false,loaded:false,authLost:false};
-const titles={overview:"工作總覽","oa-list":"OA 一覽",chat:"聊天對話",reports:"報告中心",send:"建立發送",cases:"案件管理",contacts:"聯絡對象",subscriptions:"天氣訂閱",history:"發送紀錄",schedule:"排程管理",personnel:"人員與權限","org-settings":"組織設定",organizations:"組織管理",channels:"LINE OA 管理"};
+const state={session:null,view:new URLSearchParams(location.search).get("view")||"overview",reports:[],contacts:[],tags:[],jobs:[],cases:[],caseFilter:"all",casePriority:"all",caseQuery:"",savedFilters:[],chatNotes:new Map(),noteCategories:[],noteTags:[],globalNotes:[],globalNotesStats:null,globalNotesCategories:[],globalNotesTags:[],noteHubQuery:"",noteHubCategory:"",noteHubTag:"",noteHubStatus:"all",noteHubChannel:"",noteHubViewMode:"grid",settings:{users:[]},events:[],previews:new Map(),selected:new Set(),tagAudienceMode:"any",selectedAudienceTags:new Set(),selectedFilterId:"",report:null,step:1,audience:"selected",search:"",kind:"all",organization_id:"",department:"",tagFilter:"",page:1,reportFilter:"all",historyFilter:"all",subFilter:"all",busy:false,loaded:false,authLost:false};
+const titles={overview:"工作總覽","oa-list":"OA 一覽",chat:"聊天對話","chat-notes":"對話記事本",reports:"報告中心",send:"建立發送",cases:"案件管理",contacts:"聯絡對象",subscriptions:"天氣訂閱",history:"發送紀錄",schedule:"排程管理",personnel:"人員與權限","org-settings":"組織設定",organizations:"組織管理",channels:"LINE OA 管理"};
 const admin=()=>["platform_admin","org_admin","operator","collaborator"].includes(state.session?.role);
 const manager=()=>["platform_admin","org_admin"].includes(state.session?.role);
 // 數量上限只由後端 limits.py 定義，經 /api/session 取得
@@ -640,6 +640,37 @@ async function caseDetailModal(case_id){
   }
 }
 
+function fallbackCopy(text) {
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.style.position = "fixed";
+  ta.style.opacity = "0";
+  document.body.appendChild(ta);
+  ta.select();
+  document.execCommand("copy");
+  document.body.removeChild(ta);
+  notice("記事內容已複製至剪貼簿。");
+}
+
+function tagPillHtml(tagName){
+  const found = (state.noteTags || []).find(t => t.name === tagName);
+  let color = found?.color;
+  if(!color){
+    const palette = ["#007AFF","#34C759","#FF9500","#AF52DE","#FF2D55","#5856D6","#30B0C7","#FF3B30","#FFCC00","#8E8E93"];
+    let hash = 0;
+    for(let i=0; i<tagName.length; i++) hash = (hash << 5) - hash + tagName.charCodeAt(i);
+    color = palette[Math.abs(hash) % palette.length];
+  }
+  const bg = color.length === 7 ? color + "20" : "rgba(0,122,255,0.14)";
+  const border = color.length === 7 ? color + "40" : "rgba(0,122,255,0.28)";
+  return `<span class="apple-pill" data-color="${esc(color)}" style="background-color:${esc(bg)}!important;color:${esc(color)}!important;border-color:${esc(border)}!important;"><span class="apple-pill-dot" style="background-color:${esc(color)}!important;"></span>${esc(tagName)}</span>`;
+}
+
+function categoryPillHtml(categoryName){
+  if(!categoryName) return '';
+  return `<span class="tax-item-category-badge" style="font-size:11.5px;padding:2px 8px;gap:5px;">${icon("folder")}<span>${esc(categoryName)}</span></span>`;
+}
+
 async function loadChatNotes(recipient_id){
   try{
     const res=await api(`/api/chat-notes?recipient_id=${encodeURIComponent(recipient_id)}`);
@@ -651,34 +682,472 @@ async function loadChatNotes(recipient_id){
   }
 }
 
-function chatNoteModal(recipient_id,note_id="",prefill={}){
+async function loadTaxonomyCaches(){
+  try{
+    const [catsRes, tagsRes] = await Promise.all([
+      api("/api/chat-notes/categories"),
+      api("/api/chat-notes/tags")
+    ]);
+    state.noteCategories = catsRes.categories || [];
+    state.noteTags = tagsRes.tags || [];
+  }catch(_){}
+}
+
+function renderCategoryScopedTagsHtml(categoryId, selectedTagsList = []){
+  const cat = (state.noteCategories||[]).find(c => c.category_id === categoryId);
+  const catName = cat?.name || "";
+  
+  const sortedTags = [...(state.noteTags||[])].sort((a,b) => {
+    const aCatScore = (a.category_usage?.[categoryId] || (catName && a.category_usage?.[catName]) || 0);
+    const bCatScore = (b.category_usage?.[categoryId] || (catName && b.category_usage?.[catName]) || 0);
+    const aTotal = a.note_count || a.usage_count || 0;
+    const bTotal = b.note_count || b.usage_count || 0;
+    
+    // 優先依照該分類下的專屬熱門度（引用次數）排序；次之依照 OA 總次數
+    if(bCatScore !== aCatScore) return bCatScore - aCatScore;
+    return bTotal - aTotal;
+  });
+
+  if(!sortedTags.length) return "";
+
+  const hintText = catName ? `「${catName}」專屬熱門` : "依使用熱門度排序";
+
+  return `
+    <div class="quick-tag-wrapper">
+      <div class="quick-tag-label">
+        <div class="quick-tag-label-left">${icon("tag")} <span>${catName ? `「${esc(catName)}」常用推薦標籤：` : '常用熱門標籤（點選帶入）：'}</span></div>
+        <small class="muted" style="font-size:11px;">${hintText}</small>
+      </div>
+      <div class="quick-tag-pills">
+        ${sortedTags.map(t => {
+          const color = t.color || '#007AFF';
+          const bg = color.length === 7 ? color + "24" : "rgba(0,122,255,0.15)";
+          const border = color.length === 7 ? color + "48" : "rgba(0,122,255,0.3)";
+          const isSelected = selectedTagsList.includes(t.name);
+          const catCount = (t.category_usage?.[categoryId] || (catName && t.category_usage?.[catName]) || 0);
+          const totalCount = t.note_count || t.usage_count || 0;
+          const tip = catName && catCount > 0 ? `${catName}分類引用 ${catCount} 次 · 全OA總計 ${totalCount} 次` : `全OA引用 ${totalCount} 次`;
+          return `<button type="button" class="apple-tag-pill ${isSelected?'active-selected':''}" data-action="quick-add-note-tag" data-tag="${esc(t.name)}" style="background:${esc(bg)}!important;color:${esc(color)}!important;border-color:${esc(border)}!important;" title="${esc(tip)}"><span class="apple-pill-dot" style="background:${esc(color)}!important;"></span>${esc(t.name)}</button>`;
+        }).join("")}
+      </div>
+    </div>
+  `;
+}
+
+async function chatNoteModal(recipient_id,note_id="",prefill={}){
+  if(!state.noteCategories.length || !state.noteTags.length){
+    await loadTaxonomyCaches();
+  }
   const notes=state.chatNotes.get(recipient_id)||[];
   const existing=note_id?notes.find(n=>n.note_id===note_id):null;
   const title = prefill.title || existing?.title || "";
   const content = prefill.content || existing?.content || "";
-  const note_type = prefill.note_type || existing?.note_type || "一般";
+  const category_id = prefill.category_id || existing?.category_id || (state.noteCategories[0]?.category_id || "");
   const due_date = prefill.due_date || existing?.due_date || "";
-  const tagsStr = prefill.tags || (existing?.tags ? existing.tags.join(", ") : "");
+  const tagsList = prefill.tags ? (Array.isArray(prefill.tags) ? prefill.tags : prefill.tags.split(/[,，]/).map(s=>s.trim()).filter(Boolean)) : (existing?.tags || []);
+  const tagsStr = tagsList.join(", ");
   const updated_at = existing?.updated_at || "";
 
-  const typeOptions = [["一般","一般"], ["待辦","待辦"], ["約定事項","約定事項"], ["重要提醒","重要提醒"], ["交接","交接"]];
+  const catOptions = (state.noteCategories||[]).map(c => [c.category_id, c.name]);
+  if(!catOptions.length) catOptions.push(["", "一般"]);
 
-  modal(existing ? "編輯對話記事" : "新增對話記事", `<form id="chat-note-form" data-recipient="${esc(recipient_id)}" data-note-id="${esc(note_id)}">
+  modal(existing ? "編輯對話記事" : "新增對話記事", `<form id="chat-note-form" data-recipient="${esc(recipient_id)}" data-note-id="${esc(note_id)}" data-dirty="false">
     ${updated_at ? `<input type="hidden" name="expected_updated_at" value="${esc(updated_at)}">` : ''}
-    <div data-s="s40eee6f">
-      <span class="muted" data-s="s9e6595f">填寫對話重要記事或從範本包帶入</span>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+      <span class="muted" style="font-size:12px;">記錄對話重要承諾、待辦、工務或商務摘要</span>
       <button type="button" class="btn text small" data-action="open-note-template-picker" data-recipient="${esc(recipient_id)}">從範本帶入</button>
     </div>
     <div class="form-grid">
-      <div class="full">${field("記事標題（選填）", "title", title, 'maxlength="50" placeholder="例如：客戶詢問保固條件、確認發票開立"')}</div>
-      ${selectField("記事類型", "note_type", typeOptions, note_type)}
+      <div class="full">${field("記事標題（選填）", "title", title, 'maxlength="50" placeholder="例如：客戶詢問合約條件、報修現況、會議結論"')}</div>
+      ${selectField("記事分類", "category_id", catOptions, category_id)}
       ${field("完成期限（選填）", "due_date", due_date, 'type="date"')}
-      <div class="full">${field(`記事標籤（以逗號分隔，最多 ${cap("TAGS_PER_NOTE")} 個）`, "tags", tagsStr, 'maxlength="100" placeholder="例如：重要, 報修, 聯絡紀錄"')}</div>
-      <div class="full"><label class="field">記事內容（1–1,000 字）<textarea name="content" rows="4" required minlength="1" maxlength="1000" placeholder="記錄該聊天室的重要交辦、對話摘要、待確認事項...">${esc(content)}</textarea></label></div>
+      <div class="full">
+        <label class="field">記事標籤（以逗號分隔，最多 ${cap("TAGS_PER_NOTE")} 個）
+          <input name="tags" id="chat-note-tags-input" value="${esc(tagsStr)}" maxlength="100" placeholder="例如：重要, 緊急, 已報價">
+        </label>
+        <div id="chat-note-quick-tags-container">
+          ${renderCategoryScopedTagsHtml(category_id, tagsList)}
+        </div>
+      </div>
+      <div class="full"><label class="field">記事內容（1–2,000 字）<textarea name="content" rows="4" required minlength="1" maxlength="2000" placeholder="記錄該對話的重要交辦、協商細節、政策討論、客戶訴求...">${esc(content)}</textarea></label></div>
     </div>
-    <p class="callout">對話記事本獨立於聯絡對象筆記，專屬於此 OA 聊天室對話。支援置頂 (最多 ${cap("PINNED_NOTES_PER_ROOM")} 筆)、鎖定防誤改與 ${cap("NOTE_TRASH_DAYS")} 天回收筒還原。</p>
+    <p class="callout" style="font-size:12px;">手動點選「儲存」以生效。未儲存前離開將彈出防呆警示；鎖定後支援唯讀複製，防止其他人誤改。</p>
     <div class="form-actions"><button class="btn primary" type="submit">${existing ? "儲存變更" : "新增記事"}</button></div>
   </form>`);
+
+  const form = $("chat-note-form");
+  if(form){
+    form.addEventListener("input", () => { form.dataset.dirty = "true"; });
+    form.addEventListener("change", () => { form.dataset.dirty = "true"; });
+    
+    // 切換分類時，智慧重排專屬熱門標籤
+    const catSelect = form.querySelector('select[name="category_id"]');
+    if(catSelect){
+      catSelect.addEventListener("change", (e) => {
+        const input = $("chat-note-tags-input");
+        const curList = input ? input.value.split(/[,，]/).map(s=>s.trim()).filter(Boolean) : [];
+        const container = $("chat-note-quick-tags-container");
+        if(container){
+          container.innerHTML = renderCategoryScopedTagsHtml(e.target.value, curList);
+        }
+      });
+    }
+  }
+}
+
+async function manageNotesTaxonomyModal(initialTab = "categories"){
+  modal("分類與標籤治理", '<div class="loading-panel"><span class="spinner"></span><p>讀取分類與標籤資料…</p></div>');
+  try{
+    const [catsRes, tagsRes] = await Promise.all([
+      api("/api/chat-notes/categories"),
+      api("/api/chat-notes/tags")
+    ]);
+    state.noteCategories = catsRes.categories || [];
+    state.noteTags = tagsRes.tags || [];
+
+    const orphanTagsCount = state.noteTags.filter(t => !t.note_count).length;
+
+    const html = `
+      <div class="tax-container">
+        <div class="segmented" style="margin-bottom:8px;">
+          <button type="button" class="${initialTab==='categories'?'active':''}" data-action="switch-tax-tab" data-tab="categories">${icon("folder")} 記事分類 (${state.noteCategories.length})</button>
+          <button type="button" class="${initialTab==='tags'?'active':''}" data-action="switch-tax-tab" data-tab="tags">${icon("tag")} 記事標籤 (${state.noteTags.length})</button>
+        </div>
+
+        <!-- 記事分類治理分頁 -->
+        <div id="tax-tab-categories" ${initialTab!=='categories'?'hidden':''}>
+          <div class="tax-meta-bar">
+            <p class="tax-meta-hint">設定對話記事的大項業務分類（如商務、工務、教務），統一團隊規範。</p>
+          </div>
+
+          <!-- 內嵌極速建立列 (Apple Inline Creation Bar) -->
+          <form id="tax-category-create-form" class="tax-quick-create-bar">
+            <span style="color:var(--muted);display:inline-flex;align-items:center;padding-left:4px;">${icon("folder")}</span>
+            <input name="name" class="tax-quick-input" required maxlength="20" placeholder="輸入新分類名稱（如：售後服務、簽約保固、工務工程）…" autocomplete="off">
+            <button class="btn primary tax-quick-submit" type="submit">${icon("plus")} 新增分類</button>
+          </form>
+
+          <!-- 分組列表 (Apple Inset Grouped Table) -->
+          <div class="tax-grouped-card">
+            <div class="tax-grouped-list">
+              ${state.noteCategories.map(c => `
+                <div class="tax-item-row">
+                  <div class="tax-item-left">
+                    <span class="tax-item-category-badge">
+                      ${icon("folder")}
+                      <span>${esc(c.name)}</span>
+                    </span>
+                    <span class="tax-item-usage-bubble ${c.note_count?'':'zero'}">${c.note_count ? `${c.note_count} 則引用` : '無引用'}</span>
+                    ${c.is_default ? '<span class="apple-pill" style="background:var(--soft);color:var(--muted);font-size:10px;padding:2px 7px;">預設</span>' : ''}
+                  </div>
+                  <div class="tax-item-actions">
+                    <button type="button" class="tax-icon-btn" data-action="edit-category-modal" data-id="${esc(c.category_id)}" data-name="${esc(c.name)}" title="編輯分類名稱">${icon("edit")}</button>
+                    <button type="button" class="tax-icon-btn" data-action="merge-category-modal" data-id="${esc(c.category_id)}" data-name="${esc(c.name)}" title="批次合併轉移至其他分類">${icon("layers")}</button>
+                    <button type="button" class="tax-icon-btn danger" data-action="delete-category-btn" data-id="${esc(c.category_id)}" data-name="${esc(c.name)}" title="刪除分類">${icon("trash")}</button>
+                  </div>
+                </div>
+              `).join("") || '<div style="padding:28px;text-align:center;color:var(--muted);font-size:13px;">目前尚無分類，請於上方輸入新增。</div>'}
+            </div>
+          </div>
+        </div>
+
+        <!-- 記事標籤治理分頁 -->
+        <div id="tax-tab-tags" ${initialTab!=='tags'?'hidden':''}>
+          <div class="tax-meta-bar">
+            <p class="tax-meta-hint">集中管理記事標籤，避免相同概念標籤氾濫；支援同義詞合併與孤立清理。</p>
+            ${orphanTagsCount ? `<button type="button" class="btn small text" data-action="cleanup-orphan-tags-btn" style="color:var(--orange);font-size:12px;padding:2px 8px;">${icon("trash")} 清理 ${orphanTagsCount} 個無引用標籤</button>` : ''}
+          </div>
+
+          <!-- 內嵌極速建立列 (Apple Inline Creation Bar) -->
+          <form id="tax-tag-create-form" class="tax-quick-create-bar">
+            <div style="position:relative;">
+              <button type="button" id="tag-create-color-btn" class="tax-inline-color-trigger" style="background:#007AFF!important;" data-action="toggle-color-picker" data-target="tag-color-popover" title="選擇代表色"></button>
+              <div id="tag-color-popover" class="tax-color-picker" style="position:absolute;top:34px;left:0;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:10px;box-shadow:0 10px 30px rgba(0,0,0,.15);z-index:20;width:190px;" hidden>
+                ${APPLE_TAG_COLORS.map(c => `<button type="button" class="tax-color-dot ${c.hex==='#007AFF'?'selected':''}" data-action="select-inline-color" data-color="${c.hex}" data-input="tag-create-color-input" data-trigger="tag-create-color-btn" data-popover="tag-color-popover" style="background:${c.hex}!important;" title="${c.name}"></button>`).join("")}
+              </div>
+              <input type="hidden" name="color" id="tag-create-color-input" value="#007AFF">
+            </div>
+            <input name="name" class="tax-quick-input" required maxlength="30" placeholder="輸入新標籤（如：VIP客戶、緊急處理、待回電）…" autocomplete="off">
+            <button class="btn primary tax-quick-submit" type="submit">${icon("plus")} 新增標籤</button>
+          </form>
+
+          <!-- 分組列表 (Apple Inset Grouped Table) -->
+          <div class="tax-grouped-card">
+            <div class="tax-grouped-list">
+              ${state.noteTags.map(t => {
+                const color = t.color || '#007AFF';
+                const bg = color.length === 7 ? color + "20" : "rgba(0,122,255,0.14)";
+                const border = color.length === 7 ? color + "40" : "rgba(0,122,255,0.28)";
+                return `
+                <div class="tax-item-row">
+                  <div class="tax-item-left">
+                    <span class="tax-item-tag-preview" data-color="${esc(color)}" style="background-color:${esc(bg)}!important;color:${esc(color)}!important;border-color:${esc(border)}!important;">
+                      <span class="apple-pill-dot" style="background-color:${esc(color)}!important;"></span>
+                      ${esc(t.name)}
+                    </span>
+                    <span class="tax-item-usage-bubble ${t.note_count?'':'zero'}">${t.note_count ? `${t.note_count} 則引用` : '無引用'}</span>
+                    ${t.is_default ? '<span class="apple-pill" style="background:var(--soft);color:var(--muted);font-size:10px;padding:2px 7px;">預設</span>' : ''}
+                  </div>
+                  <div class="tax-item-actions">
+                    <button type="button" class="tax-icon-btn" data-action="edit-tag-modal" data-id="${esc(t.tag_id)}" data-name="${esc(t.name)}" data-color="${esc(color)}" title="編輯標籤名稱與代表色">${icon("edit")}</button>
+                    <button type="button" class="tax-icon-btn" data-action="merge-tag-modal" data-id="${esc(t.tag_id)}" data-name="${esc(t.name)}" title="合併至其他同義標籤">${icon("layers")}</button>
+                    <button type="button" class="tax-icon-btn danger" data-action="delete-note-tag-btn" data-id="${esc(t.tag_id)}" data-name="${esc(t.name)}" title="刪除標籤">${icon("trash")}</button>
+                  </div>
+                </div>`;
+              }).join("") || '<div style="padding:28px;text-align:center;color:var(--muted);font-size:13px;">目前尚無標籤，請於上方輸入新增。</div>'}
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+    modal("分類與標籤治理", html);
+  }catch(e){
+    modal("載入失敗", `<p class="callout warn">${esc(e.message)}</p>`);
+  }
+}
+
+async function loadGlobalChatNotes(){
+  const query = state.noteHubQuery || "";
+  const cat = state.noteHubCategory || "";
+  const tag = state.noteHubTag || "";
+  const status = state.noteHubStatus || "all";
+  const channel = state.noteHubChannel || "";
+  
+  const params = new URLSearchParams();
+  if (query) params.set("query", query);
+  if (cat) params.set("category_id", cat);
+  if (tag) params.set("tag", tag);
+  if (status !== "all") params.set("status", status);
+  if (channel) params.set("channel_id", channel);
+
+  try{
+    const res = await api(`/api/chat-notes/global?${params.toString()}`);
+    state.globalNotes = res.notes || [];
+    state.globalNotesStats = res.stats || { total: 0, pinned: 0, locked: 0, completed: 0 };
+    state.globalNotesCategories = res.categories || [];
+    state.globalNotesTags = res.tags || [];
+    if (state.view === "chat-notes") {
+      const container = $("global-notes-content");
+      if (container) container.innerHTML = renderGlobalNotesBody();
+      if ($("nav-note-count")) $("nav-note-count").textContent = state.globalNotesStats.total || "0";
+    }
+  }catch(e){
+    console.error("Failed to load global chat notes:", e);
+  }
+}
+
+function renderGlobalNotesBody(){
+  const notes = state.globalNotes || [];
+  if(!notes.length){
+    return empty("查無符合的對話記事", "請確認搜尋關鍵字或調整分類、標籤與狀態篩選條件。");
+  }
+
+  const orgLockPolicy = state.session?.org_settings?.note_lock_policy || "disabled";
+
+  if(state.noteHubViewMode === "table"){
+    return `
+      <div class="table-scroll" style="background:var(--surface);border-radius:14px;border:1px solid var(--line);">
+        <table class="contacts-table">
+          <thead>
+            <tr>
+              <th style="width:40px;">置頂</th>
+              <th>記事標題與內容</th>
+              <th>分類與標籤</th>
+              <th>對話對象 / OA</th>
+              <th>更新時間</th>
+              <th style="text-align:right;">操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${notes.map(n => {
+              const isLocked = Boolean(n.is_locked);
+              const isCompleted = n.status === "completed";
+              const canUnlock = orgLockPolicy === "collaborative" || (orgLockPolicy === "strict_admin" && manager()) || orgLockPolicy === "disabled";
+              const canEdit = !isLocked || canUnlock;
+
+              return `
+              <tr class="${n.is_pinned?'pinned':''} ${isLocked?'locked':''} ${isCompleted?'completed':''}">
+                <td>
+                  ${n.is_pinned ? `<span style="color:#b45309;" title="置頂">${icon("pin")}</span>` : ''}
+                  ${isLocked ? `<span style="color:#64748b;" title="已鎖定">${icon("lock")}</span>` : ''}
+                </td>
+                <td style="max-width:320px;">
+                  <strong style="display:block;margin-bottom:3px;">${esc(n.title || "記事")}</strong>
+                  <div class="chat-note-content" id="chat-note-content-${esc(n.note_id)}" style="font-size:12.5px;color:var(--muted);max-height:48px;overflow:hidden;text-overflow:ellipsis;">${esc(n.content)}</div>
+                </td>
+                <td>
+                  ${n.category_name ? categoryPillHtml(n.category_name) : ''}
+                  <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;">
+                    ${(n.tags||[]).map(t => tagPillHtml(t)).join("")}
+                  </div>
+                </td>
+                <td>
+                  <button type="button" class="btn text small" data-action="open-chat-from-contact" data-id="${esc(n.recipient_id)}" style="padding:0;font-size:12px;text-align:left;">
+                    <strong>${esc(n.recipient_name || n.recipient_id)}</strong>
+                    <small class="muted" style="display:block;">${esc(n.channel_name || "")}</small>
+                  </button>
+                </td>
+                <td style="font-size:12px;color:var(--muted);white-space:nowrap;">
+                  ${when(n.updated_at || n.created_at)}
+                  <small style="display:block;">${esc(n.author||"")}</small>
+                </td>
+                <td style="text-align:right;white-space:nowrap;">
+                  <button type="button" class="btn text small" data-action="copy-chat-note-content" data-id="${esc(n.note_id)}" title="一鍵複製內容">${icon("copy")}</button>
+                  <button type="button" class="btn text small" data-action="toggle-chat-note-complete" data-id="${esc(n.note_id)}" data-recipient="${esc(n.recipient_id)}" title="${isCompleted?'標記未完成':'標記完成'}">${icon(isCompleted?"refresh":"check")}</button>
+                  <button type="button" class="btn text small" data-action="toggle-chat-note-pin" data-id="${esc(n.note_id)}" data-recipient="${esc(n.recipient_id)}" title="${n.is_pinned?'取消置頂':'置頂'}">${icon(n.is_pinned?"unpin":"pin")}</button>
+                  ${orgLockPolicy !== "disabled" ? `<button type="button" class="btn text small" data-action="toggle-chat-note-lock" data-id="${esc(n.note_id)}" data-recipient="${esc(n.recipient_id)}" title="${isLocked?'解除鎖定':'鎖定防誤改'}">${icon(isLocked?"unlock":"lock")}</button>` : ''}
+                  ${canEdit && !isLocked ? `<button type="button" class="btn text small" data-action="edit-chat-note" data-id="${esc(n.note_id)}" data-recipient="${esc(n.recipient_id)}" title="編輯">${icon("edit")}</button>` : ''}
+                  <button type="button" class="btn text small" data-action="convert-note-to-case" data-id="${esc(n.note_id)}" data-recipient="${esc(n.recipient_id)}" title="轉為案件">${icon("folder")}</button>
+                  ${canEdit && !isLocked ? `<button type="button" class="btn text small danger" data-action="delete-chat-note" data-id="${esc(n.note_id)}" data-recipient="${esc(n.recipient_id)}" title="刪除">${icon("trash")}</button>` : ''}
+                </td>
+              </tr>`;
+            }).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="notes-hub-grid">
+      ${notes.map(n => {
+        const isLocked = Boolean(n.is_locked);
+        const isCompleted = n.status === "completed";
+        const canUnlock = orgLockPolicy === "collaborative" || (orgLockPolicy === "strict_admin" && manager()) || orgLockPolicy === "disabled";
+        const canEdit = !isLocked || canUnlock;
+
+        return `
+        <div class="notes-hub-card ${n.is_pinned?'pinned':''} ${isLocked?'locked':''} ${isCompleted?'completed':''}">
+          <div class="notes-hub-card-header">
+            <div>
+              <span class="notes-hub-card-recipient" data-action="open-chat-from-contact" data-id="${esc(n.recipient_id)}" title="前往聊天室">
+                ${icon("message")} ${esc(n.recipient_name || n.recipient_id)}
+                ${n.channel_name ? `<span class="muted">· ${esc(n.channel_name)}</span>` : ''}
+              </span>
+              <h4 class="notes-hub-card-title">${esc(n.title || "記事")}</h4>
+            </div>
+            <div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end;align-items:center;">
+              ${n.is_pinned ? `<span class="apple-pill" style="background:rgba(234,179,8,.18);color:#b45309;border-color:rgba(234,179,8,.3);">${icon("pin")} 置頂</span>` : ''}
+              ${isLocked ? `<span class="apple-pill" style="background:rgba(100,116,139,.18);color:#475569;border-color:rgba(100,116,139,.3);">${icon("lock")} 已鎖定</span>` : ''}
+              ${isCompleted ? `<span class="apple-pill" style="background:rgba(34,197,94,.18);color:#16a34a;border-color:rgba(34,197,94,.3);">${icon("check")} 已完成</span>` : ''}
+              ${n.category_name ? categoryPillHtml(n.category_name) : ''}
+            </div>
+          </div>
+          <div class="notes-hub-card-body" id="chat-note-content-${esc(n.note_id)}">${esc(n.content)}</div>
+          <div class="notes-hub-card-footer">
+            <div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;">
+              ${(n.tags || []).map(t => tagPillHtml(t)).join("")}
+              ${n.due_date ? `<span class="muted" style="display:inline-flex;align-items:center;gap:3px;font-size:11px;">${icon("clock")} 期限：${esc(n.due_date)}</span>` : ''}
+              ${n.linked_case_id ? `<span class="apple-pill" style="background:rgba(88,86,214,.12);color:#5856D6;cursor:pointer;" data-action="open-case-detail" data-id="${esc(n.linked_case_id)}">${icon("folder")} 關聯案件</span>` : ''}
+            </div>
+            <div class="notes-hub-card-actions">
+              <button type="button" class="btn text small" data-action="copy-chat-note-content" data-id="${esc(n.note_id)}" title="一鍵複製內容">${icon("copy")}</button>
+              <button type="button" class="btn text small" data-action="toggle-chat-note-complete" data-id="${esc(n.note_id)}" data-recipient="${esc(n.recipient_id)}" title="${isCompleted?'標記未完成':'標記完成'}">${icon(isCompleted?"refresh":"check")}</button>
+              <button type="button" class="btn text small" data-action="toggle-chat-note-pin" data-id="${esc(n.note_id)}" data-recipient="${esc(n.recipient_id)}" title="${n.is_pinned?'取消置頂':'置頂'}">${icon(n.is_pinned?"unpin":"pin")}</button>
+              ${orgLockPolicy !== "disabled" ? `<button type="button" class="btn text small" data-action="toggle-chat-note-lock" data-id="${esc(n.note_id)}" data-recipient="${esc(n.recipient_id)}" title="${isLocked?'解除鎖定':'鎖定防誤改'}">${icon(isLocked?"unlock":"lock")}</button>` : ''}
+              ${canEdit && !isLocked ? `<button type="button" class="btn text small" data-action="edit-chat-note" data-id="${esc(n.note_id)}" data-recipient="${esc(n.recipient_id)}" title="編輯">${icon("edit")}</button>` : ''}
+              <button type="button" class="btn text small" data-action="convert-note-to-case" data-id="${esc(n.note_id)}" data-recipient="${esc(n.recipient_id)}" title="轉為案件">${icon("folder")}</button>
+              ${canEdit && !isLocked ? `<button type="button" class="btn text small danger" data-action="delete-chat-note" data-id="${esc(n.note_id)}" data-recipient="${esc(n.recipient_id)}" title="刪除">${icon("trash")}</button>` : ''}
+            </div>
+          </div>
+        </div>`;
+      }).join("")}
+    </div>
+  `;
+}
+
+function chatNotesPage(){
+  if (!state.globalNotesLoaded) {
+    state.globalNotesLoaded = true;
+    state.noteHubViewMode = state.noteHubViewMode || "grid";
+    loadGlobalChatNotes();
+  }
+  const stats = state.globalNotesStats || { total: 0, pinned: 0, locked: 0, completed: 0 };
+  const canManageTax = manager();
+
+  return heading("對話記事本", "跨 OA 集中查閱、搜尋、治理與追蹤所有對話重要記事與待辦事項", `
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <div class="segmented" style="display:inline-flex;">
+        <button type="button" class="${state.noteHubViewMode==='grid'?'active':''}" data-action="toggle-notes-view-mode" data-id="grid" title="卡片模式">${icon("grid")}</button>
+        <button type="button" class="${state.noteHubViewMode==='table'?'active':''}" data-action="toggle-notes-view-mode" data-id="table" title="列表模式">${icon("menu")}</button>
+      </div>
+      <button type="button" class="btn small" data-action="export-chat-notes-modal">${icon("download")} 匯出記事</button>
+      ${canManageTax ? `<button type="button" class="btn small" data-action="manage-notes-taxonomy">${icon("tag")} 分類與標籤治理</button>` : ''}
+    </div>
+  `) + `
+  <div class="notes-hub-stats">
+    ${stat("全部記事", stats.total, "則", "所有已記錄的對話記事", "file")}
+    ${stat("重要置頂", stats.pinned, "則", "置頂於對話頂端", "pin")}
+    ${stat("唯讀鎖定", stats.locked, "則", "鎖定防誤改", "lock")}
+    ${stat("處理完畢", stats.completed, "則", "已標記完成事項", "check")}
+  </div>
+
+  <div class="notes-hub-toolbar">
+    <div class="notes-hub-toolbar-row">
+      <div class="search-field" style="flex:2;min-width:240px;">
+        ${icon("search")}
+        <input type="search" id="notes-hub-search" value="${esc(state.noteHubQuery||'')}" placeholder="搜尋記事標題、內容或對話對象…">
+      </div>
+      ${(state.channels||[]).length > 1 ? `
+        <select id="notes-hub-channel-filter" style="flex:1;min-width:160px;">
+          <option value="">全部 LINE OA</option>
+          ${(state.channels||[]).map(c => `<option value="${esc(c.channel_id)}" ${state.noteHubChannel===c.channel_id?'selected':''}>${esc(c.name)}</option>`).join("")}
+        </select>
+      ` : ''}
+      <select id="notes-hub-category-filter" style="flex:1;min-width:140px;">
+        <option value="">全部分類</option>
+        ${(state.globalNotesCategories||[]).map(c => `<option value="${esc(c.category_id)}" ${state.noteHubCategory===c.category_id?'selected':''}>${esc(c.name)} (${c.note_count||0})</option>`).join("")}
+      </select>
+      <select id="notes-hub-tag-filter" style="flex:1;min-width:140px;">
+        <option value="">全部標籤</option>
+        ${(state.globalNotesTags||[]).map(t => `<option value="${esc(t.name)}" ${state.noteHubTag===t.name?'selected':''}>${esc(t.name)} (${t.note_count||0})</option>`).join("")}
+      </select>
+      <select id="notes-hub-status-filter" style="flex:1;min-width:130px;">
+        <option value="all" ${state.noteHubStatus==='all'?'selected':''}>全部狀態</option>
+        <option value="active" ${state.noteHubStatus==='active'?'selected':''}>進行中</option>
+        <option value="completed" ${state.noteHubStatus==='completed'?'selected':''}>已完成</option>
+        <option value="pinned" ${state.noteHubStatus==='pinned'?'selected':''}>已置頂</option>
+        <option value="locked" ${state.noteHubStatus==='locked'?'selected':''}>已鎖定</option>
+      </select>
+    </div>
+  </div>
+
+  <div id="global-notes-content">
+    ${renderGlobalNotesBody()}
+  </div>
+  `;
+}
+
+function exportChatNotesModal(){
+  const query = state.noteHubQuery || "";
+  const cat = state.noteHubCategory || "";
+  const tag = state.noteHubTag || "";
+  const status = state.noteHubStatus || "all";
+  const channel = state.noteHubChannel || "";
+
+  const q = new URLSearchParams();
+  if (query) q.set("query", query);
+  if (cat) q.set("category_id", cat);
+  if (tag) q.set("tag", tag);
+  if (status !== "all") q.set("status", status);
+  if (channel) q.set("channel_id", channel);
+
+  modal("匯出對話記事本", `
+    <div>
+      <p class="muted" style="margin-bottom:16px;">依據目前的篩選條件匯出對話記事資料，支援 CSV (Excel 格式含 UTF-8 BOM)、Markdown 文件與 JSON 格式：</p>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <a href="/api/chat-notes/export?${q.toString()}&format=csv" download class="btn primary" style="display:flex;align-items:center;gap:8px;">
+          ${icon("download")} 下載試算表格式 (.csv)
+        </a>
+        <a href="/api/chat-notes/export?${q.toString()}&format=markdown" download class="btn" style="display:flex;align-items:center;gap:8px;">
+          ${icon("file")} 下載 Markdown 文件 (.md)
+        </a>
+        <a href="/api/chat-notes/export?${q.toString()}&format=json" download class="btn" style="display:flex;align-items:center;gap:8px;">
+          ${icon("file")} 下載 JSON 資料檔 (.json)
+        </a>
+      </div>
+    </div>
+  `);
 }
 
 async function templatePickerModal(subject_id="", target_type="case"){
@@ -1022,6 +1491,7 @@ function render(){
     overview,
     "oa-list": oaListPage,
     chat:()=>chatPage(),
+    "chat-notes": chatNotesPage,
     reports:reportsPage,
     send:sendPage,
     cases:casesPage,
@@ -1125,7 +1595,7 @@ function personnelPage(){
 function orgSettingsPage(){
   const org = mgCurrentOrg();
   if(!org) return empty("尚未選擇組織", "請先建立或選擇組織。");
-  return heading("組織設定", `檢視與設定「${esc(org.name)}」的基本資料、範本包與操作紀錄。`, "")+`
+  return heading("組織設定", `檢視與設定「${esc(org.name)}」的基本資料、記事本治理政策、範本包與操作紀錄。`, "")+`
   <div class="management">
     <section class="mg-card">
       <div class="mg-head">
@@ -1133,6 +1603,39 @@ function orgSettingsPage(){
         ${button("編輯組織資料", "edit-organization", "small", `data-id="${esc(org.org_id)}"`)}
       </div>
     </section>
+
+    <section class="mg-card">
+      <div class="mg-head">
+        <div><h2>對話記事本治理政策</h2><p>設定組織層級的記事鎖定防護模式與標籤分類治理權限。</p></div>
+      </div>
+      <div class="mg-body" style="padding:18px 24px;">
+        <form id="org-notes-policy-form" data-org="${esc(org.org_id)}">
+          <div class="form-grid">
+            <div class="full">
+              <label class="field">記事鎖定防護模式
+                <select name="note_lock_policy">
+                  <option value="disabled" ${(org.note_lock_policy||"disabled")==='disabled'?'selected':''}>自由編輯模式（預設：1–2 人微型團隊，介面隱藏鎖定，全員皆可自由編輯，流暢輕快）</option>
+                  <option value="collaborative" ${(org.note_lock_policy||"disabled")==='collaborative'?'selected':''}>協作鎖定模式（全員皆可鎖定與解鎖，鎖定後唯讀可複製，防止誤改）</option>
+                  <option value="strict_admin" ${(org.note_lock_policy||"disabled")==='strict_admin'?'selected':''}>嚴格管理員模式（僅組織管理員可執行鎖定與解鎖，操作員僅能讀取與複製）</option>
+                </select>
+              </label>
+            </div>
+            <div class="full">
+              <label class="field">標籤與分類治理權限
+                <select name="note_tag_policy">
+                  <option value="controlled" ${(org.note_tag_policy||"controlled")==='controlled'?'selected':''}>集中治理模式（預設：僅乙級/丙級可新增與管理分類標籤，丁級僅能選用，防標籤氾濫）</option>
+                  <option value="open" ${(org.note_tag_policy||"controlled")==='open'?'selected':''}>開放自訂模式（全員皆可自訂新增標籤）</option>
+                </select>
+              </label>
+            </div>
+          </div>
+          <div class="form-actions" style="margin-top:14px;">
+            <button class="btn primary small" type="submit">儲存記事本治理政策</button>
+          </div>
+        </form>
+      </div>
+    </section>
+
     <section class="mg-card">
       <div class="mg-head">
         <div><h2>自訂範本包管理</h2><p>為組織建立自訂案件與記事範本包，各 OA 可勾選啟用。</p></div>
@@ -1458,9 +1961,230 @@ document.addEventListener("click",async event=>{
     else if(action==="case-back-processing"){await api(`/api/cases/${id}`,{status:"processing"});await load();render();notice("案件已退回為「處理中」。");}
     else if(action==="open-case-close-modal")caseCloseModal(id);
     else if(action==="new-chat-note")chatNoteModal(id);
-    else if(action==="edit-chat-note")chatNoteModal(target.dataset.recipient,id);
-    else if(action==="delete-chat-note"){modal("刪除對話記事？",`<p>確定要刪除這筆記事嗎？刪除後無法恢復。</p><div class="form-actions">${button("確認刪除","confirm-delete-chat-note","danger",`data-id="${esc(id)}" data-recipient="${esc(target.dataset.recipient)}"`)}</div>`);}
-    else if(action==="confirm-delete-chat-note"){await api("/api/chat-notes",{action:"delete",note_id:id});await loadChatNotes(target.dataset.recipient);$("modal").close();notice("記事已刪除。");}
+    else if(action==="edit-chat-note")chatNoteModal(target.dataset.recipient||chatUI.selectedId, id);
+    else if(action==="delete-chat-note"){
+      const recId = target.dataset.recipient || chatUI.selectedId || "";
+      modal("刪除對話記事？",`<p>確定要刪除這筆記事嗎？刪除後移至回收筒（30 天內可還原）。</p><div class="form-actions">${button("確認刪除","confirm-delete-chat-note","danger",`data-id="${esc(id)}" data-recipient="${esc(recId)}"`)}</div>`);
+    }
+    else if(action==="confirm-delete-chat-note"){
+      await api("/api/chat-notes",{action:"delete",note_id:id});
+      if(target.dataset.recipient) await loadChatNotes(target.dataset.recipient);
+      if(state.view === "chat-notes") await loadGlobalChatNotes();
+      $("modal").close();
+      notice("記事已刪除。");
+    }
+    else if(action==="toggle-chat-note-pin"){
+      const recId = target.dataset.recipient || chatUI.selectedId;
+      const res = await api("/api/chat-notes/pin", { note_id: id });
+      if(recId) loadChatNotes(recId);
+      if(state.view === "chat-notes") loadGlobalChatNotes();
+      notice(res.is_pinned ? "記事已置頂。" : "已取消置頂。");
+    }
+    else if(action==="toggle-chat-note-lock"){
+      const recId = target.dataset.recipient || chatUI.selectedId;
+      const res = await api("/api/chat-notes/lock", { note_id: id });
+      if(recId) loadChatNotes(recId);
+      if(state.view === "chat-notes") loadGlobalChatNotes();
+      notice(res.is_locked ? "記事已鎖定，防止誤改。" : "記事已解除鎖定。");
+    }
+    else if(action==="toggle-chat-note-complete"){
+      const recId = target.dataset.recipient || chatUI.selectedId;
+      const res = await api("/api/chat-notes/complete", { note_id: id });
+      if(recId) loadChatNotes(recId);
+      if(state.view === "chat-notes") loadGlobalChatNotes();
+      notice(res.status === "completed" ? "記事已標記為完成。" : "記事已重新開啟。");
+    }
+    else if(action==="copy-chat-note-content"){
+      const el = document.getElementById("chat-note-content-" + id);
+      const text = el ? el.innerText : "";
+      if(text){
+        if(navigator.clipboard && navigator.clipboard.writeText){
+          navigator.clipboard.writeText(text).then(() => notice("記事內容已複製至剪貼簿。")).catch(() => fallbackCopy(text));
+        } else {
+          fallbackCopy(text);
+        }
+      }
+    }
+    else if(action==="toggle-notes-view-mode"){
+      state.noteHubViewMode = id;
+      if(state.view === "chat-notes") render();
+    }
+    else if(action==="manage-notes-taxonomy"){
+      manageNotesTaxonomyModal();
+    }
+    else if(action==="export-chat-notes-modal"){
+      exportChatNotesModal();
+    }
+    else if(action==="quick-add-note-tag"){
+      const input = $("chat-note-tags-input");
+      if(input){
+        let current = input.value.split(/[,，]/).map(s=>s.trim()).filter(Boolean);
+        const tag = target.dataset.tag;
+        if(tag){
+          if(current.includes(tag)){
+            current = current.filter(t => t !== tag);
+            target.classList.remove("active-selected");
+          } else {
+            if(current.length >= 5){
+              notice("每則記事最多設定 5 個標籤。", true);
+              return;
+            }
+            current.push(tag);
+            target.classList.add("active-selected");
+          }
+          input.value = current.join(", ");
+          const form = input.closest("form");
+          if(form) form.dataset.dirty = "true";
+        }
+      }
+    }
+    else if(action==="switch-tax-tab"){
+      manageNotesTaxonomyModal(target.dataset.tab || "categories");
+    }
+    else if(action==="toggle-color-picker"){
+      const popover = $(target.dataset.target);
+      if(popover) popover.hidden = !popover.hidden;
+    }
+    else if(action==="select-inline-color"){
+      const color = target.dataset.color || "#007AFF";
+      const input = $(target.dataset.input);
+      const trigger = $(target.dataset.trigger);
+      const popover = $(target.dataset.popover);
+      if(input) input.value = color;
+      if(trigger) trigger.style.background = color;
+      if(popover){
+        popover.querySelectorAll(".tax-color-dot").forEach(d => d.classList.remove("selected"));
+        target.classList.add("selected");
+        popover.hidden = true;
+      }
+    }
+    else if(action==="pick-tax-color"){
+      const picker = target.closest(".tax-color-picker");
+      if(picker){
+        picker.querySelectorAll(".tax-color-dot").forEach(d => d.classList.remove("selected"));
+        target.classList.add("selected");
+        const hiddenInput = picker.parentElement.querySelector('input[name="color"]');
+        if(hiddenInput) hiddenInput.value = target.dataset.color || "#007AFF";
+      }
+    }
+    else if(action==="edit-category-modal"){
+      modal("編輯記事分類", `<form id="tax-category-edit-form" data-id="${esc(id)}">
+        <div class="form-grid">
+          <div class="full"><label class="field">分類名稱<input name="name" value="${esc(target.dataset.name||"")}" required maxlength="20" placeholder="例如：商務商談、工程工務、售後客服"></label></div>
+        </div>
+        <div class="form-actions"><button class="btn primary small" type="submit">儲存變更</button></div>
+      </form>`);
+    }
+    else if(action==="merge-category-modal"){
+      const otherCats = (state.noteCategories||[]).filter(c => c.category_id !== id);
+      if(!otherCats.length){
+        notice("目前沒有其他分類可供合併轉移。", true);
+        return;
+      }
+      const opts = otherCats.map(c => `<option value="${esc(c.category_id)}">${esc(c.name)} (${c.note_count||0} 則)</option>`).join("");
+      modal("合併轉移記事分類", `<form id="tax-category-merge-form" data-source="${esc(id)}">
+        <div class="tax-merge-flow">
+          <div class="tax-merge-node">
+            <small class="muted" style="display:block;margin-bottom:6px;font-size:11px;">來源分類（即將移除）</small>
+            <span class="tax-item-category-badge" style="font-size:13px;padding:4px 12px;">
+              ${icon("folder")}
+              <span>${esc(target.dataset.name)}</span>
+            </span>
+          </div>
+          <div class="tax-merge-arrow">
+            ${icon("arrow")}
+            <small style="font-size:10.5px;color:var(--muted);font-weight:600;">批次整併</small>
+          </div>
+          <div class="tax-merge-node">
+            <small class="muted" style="display:block;margin-bottom:6px;font-size:11px;">目標分類（接收全部記事）</small>
+            <select name="target_category_id" required style="font-size:13px;padding:6px 10px;min-height:36px;width:100%;">${opts}</select>
+          </div>
+        </div>
+        <p class="callout" style="font-size:12px;">確認合併後，原分類下的所有歷史記事將自動遷移至目標分類，並自動清理原分類名稱。</p>
+        <div class="form-actions"><button class="btn primary small" type="submit">確認合併轉移</button></div>
+      </form>`);
+    }
+    else if(action==="delete-category-btn"){
+      modal("刪除記事分類？", `<p>確定要刪除分類「<strong>${esc(target.dataset.name)}</strong>」嗎？<br><br><span class="muted" style="font-size:12px;">若該分類下已有歷史記事，記事將自動轉移至預設分類，避免資料遺失。</span></p>
+        <div class="form-actions">${button("確認刪除", "confirm-delete-note-category", "danger", `data-id="${esc(id)}"`)}</div>`);
+    }
+    else if(action==="confirm-delete-note-category"){
+      await api("/api/chat-notes/categories/delete", { category_id: id });
+      $("modal").close();
+      await manageNotesTaxonomyModal("categories");
+      notice("記事分類已刪除。");
+    }
+    else if(action==="edit-tag-modal"){
+      const color = target.dataset.color || "#007AFF";
+      const colorOptionsHtml = APPLE_TAG_COLORS.map(c => 
+        `<button type="button" class="tax-color-dot ${c.hex===color?'selected':''}" data-action="pick-tax-color" data-color="${c.hex}" style="background:${c.hex};" title="${c.name}"></button>`
+      ).join("");
+      modal("編輯記事標籤", `<form id="tax-tag-edit-form" data-id="${esc(id)}" data-old-name="${esc(target.dataset.name)}">
+        <div class="form-grid">
+          <div class="full"><label class="field">標籤名稱<input name="name" value="${esc(target.dataset.name||"")}" required maxlength="30" placeholder="例如：VIP客戶、緊急處理"></label></div>
+          <div class="full">
+            <label class="field">標籤代表色
+              <div class="tax-color-picker">${colorOptionsHtml}</div>
+              <input type="hidden" name="color" value="${esc(color)}">
+            </label>
+          </div>
+        </div>
+        <div class="form-actions"><button class="btn primary small" type="submit">儲存變更</button></div>
+      </form>`);
+    }
+    else if(action==="merge-tag-modal"){
+      const otherTags = (state.noteTags||[]).filter(t => t.tag_id !== id);
+      if(!otherTags.length){
+        notice("目前沒有其他標籤可供合併。", true);
+        return;
+      }
+      const sourceColor = target.dataset.color || (state.noteTags.find(t=>t.tag_id===id)?.color || "#007AFF");
+      const opts = otherTags.map(t => `<option value="${esc(t.tag_id)}">${esc(t.name)} (${t.note_count||0} 則)</option>`).join("");
+      modal("同義詞標籤合併", `<form id="tax-tag-merge-form" data-source="${esc(id)}">
+        <div class="tax-merge-flow">
+          <div class="tax-merge-node">
+            <small class="muted" style="display:block;margin-bottom:6px;font-size:11px;">來源同義詞（即將移除）</small>
+            <span class="apple-pill" style="background:${esc(sourceColor)}18;color:${esc(sourceColor)};border-color:${esc(sourceColor)}33;font-size:13px;padding:4px 12px;">
+              <span class="apple-pill-dot" style="background:${esc(sourceColor)};"></span>${esc(target.dataset.name)}
+            </span>
+          </div>
+          <div class="tax-merge-arrow">
+            ${icon("arrow")}
+            <small style="font-size:10.5px;color:var(--muted);font-weight:600;">同義整併</small>
+          </div>
+          <div class="tax-merge-node">
+            <small class="muted" style="display:block;margin-bottom:6px;font-size:11px;">目標正式標籤（保留）</small>
+            <select name="target_tag_id" required style="font-size:13px;padding:6px 10px;min-height:36px;width:100%;">${opts}</select>
+          </div>
+        </div>
+        <p class="callout" style="font-size:12px;">確認後將自動將帶有來源標籤的所有記事更新為目標標籤，有效防止團隊同義標籤氾濫。</p>
+        <div class="form-actions"><button class="btn primary small" type="submit">確認合併標籤</button></div>
+      </form>`);
+    }
+    else if(action==="delete-note-tag-btn"){
+      modal("刪除記事標籤？", `<p>確定要刪除標籤「<strong>${esc(target.dataset.name)}</strong>」嗎？<br><br><span class="muted" style="font-size:12px;">刪除後所有既有記事將自動移除此標籤關聯。</span></p>
+        <div class="form-actions">${button("確認刪除", "confirm-delete-note-tag", "danger", `data-id="${esc(id)}"`)}</div>`);
+    }
+    else if(action==="cleanup-orphan-tags-btn"){
+      modal("清理無引用孤立標籤？", `<p>將一鍵清除目前沒有任何記事引用的孤立標籤（預設標籤會保留）。</p>
+        <div class="form-actions">${button("確認清理", "confirm-cleanup-orphan-tags", "danger")}</div>`);
+    }
+    else if(action==="confirm-cleanup-orphan-tags"){
+      const res = await api("/api/chat-notes/tags/cleanup-orphans", {});
+      $("modal").close();
+      await manageNotesTaxonomyModal("tags");
+      notice(`清理完成：共移除 ${res.deleted_count} 個無引用標籤。`);
+    }
+    else if(action==="delete-note-tag-btn"){
+      modal("刪除記事標籤？", `<p>確定要刪除標籤「${esc(target.dataset.name)}」嗎？記事將移除此標籤關聯。</p>
+        <div class="form-actions">${button("確認刪除", "confirm-delete-note-tag", "danger", `data-id="${esc(id)}"`)}</div>`);
+    }
+    else if(action==="confirm-delete-note-tag"){
+      await api("/api/chat-notes/tags/delete", { tag_id: id });
+      $("modal").close();
+      await manageNotesTaxonomyModal("tags");
+      notice("標籤已刪除。");
+    }
     else if(action==="open-save-filter-modal")saveFilterModal();
     else if(action==="new-organization")organizationForm();
     else if(action==="edit-organization")organizationForm(id);
@@ -1829,15 +2553,82 @@ document.addEventListener("submit",async event=>{if(event.target.id==="password-
         recipient_id,
         note_id: note_id || undefined,
         title: values.title?.trim() || "",
-        note_type: values.note_type || "一般",
+        category_id: values.category_id || undefined,
         due_date: values.due_date || "",
         tags,
         expected_updated_at: values.expected_updated_at || undefined,
         content: values.content
       });
-      await loadChatNotes(recipient_id);
+      form.dataset.dirty = "false";
+      if(recipient_id) await loadChatNotes(recipient_id);
+      if(state.view === "chat-notes") await loadGlobalChatNotes();
       $("modal").close();
       notice(note_id ? "記事已更新。" : "記事已新增。");
+      return;
+    }else if(form.id==="tax-category-create-form"){
+      await api("/api/chat-notes/categories/save", {
+        name: values.name
+      });
+      $("modal").close();
+      await manageNotesTaxonomyModal("categories");
+      notice("記事分類已新增。");
+      return;
+    }else if(form.id==="tax-category-edit-form"){
+      await api("/api/chat-notes/categories/save", {
+        category_id: form.dataset.id,
+        name: values.name
+      });
+      $("modal").close();
+      await manageNotesTaxonomyModal("categories");
+      notice("記事分類已更新。");
+      return;
+    }else if(form.id==="tax-category-merge-form"){
+      await api("/api/chat-notes/categories/merge", {
+        source_category_id: form.dataset.source,
+        target_category_id: values.target_category_id
+      });
+      $("modal").close();
+      await manageNotesTaxonomyModal("categories");
+      notice("記事分類已合併轉移。");
+      return;
+    }else if(form.id==="tax-tag-create-form"){
+      await api("/api/chat-notes/tags/save", {
+        name: values.name,
+        color: values.color || "#007AFF"
+      });
+      $("modal").close();
+      await manageNotesTaxonomyModal("tags");
+      notice("記事標籤已新增。");
+      return;
+    }else if(form.id==="tax-tag-edit-form"){
+      await api("/api/chat-notes/tags/save", {
+        tag_id: form.dataset.id,
+        name: values.name,
+        color: values.color || "#007AFF",
+        old_name: form.dataset.oldName
+      });
+      $("modal").close();
+      await manageNotesTaxonomyModal("tags");
+      notice("記事標籤已更新。");
+      return;
+    }else if(form.id==="tax-tag-merge-form"){
+      await api("/api/chat-notes/tags/merge", {
+        source_tag_id: form.dataset.source,
+        target_tag_id: values.target_tag_id
+      });
+      $("modal").close();
+      await manageNotesTaxonomyModal("tags");
+      notice("同義記事標籤已合併。");
+      return;
+    }else if(form.id==="org-notes-policy-form"){
+      await api("/api/org-settings/notes-policy", {
+        org_id: form.dataset.org,
+        note_lock_policy: values.note_lock_policy,
+        note_tag_policy: values.note_tag_policy
+      });
+      await load();
+      render();
+      notice("記事本治理政策已儲存。");
       return;
     }else if(form.id==="case-notify-form"){
       await api(`/api/cases/${form.dataset.id}/notify`, {message_text: values.message_text});
@@ -1980,7 +2771,49 @@ document.addEventListener("submit",async event=>{if(event.target.id==="password-
     $("modal").close();await load();managementAfterSave(form,values);render();notice("設定已儲存。");
   }catch(error){$("modal-error").textContent=error.message;$("modal-error").hidden=false;submit.disabled=false;}
 });
-$("modal-close").addEventListener("click",()=>$("modal").close());
+function closeModalSafely(){
+  const form = document.querySelector("#modal form");
+  if(form && form.dataset.dirty === "true"){
+    if(!confirm("您有尚未儲存的變更，確定要放棄修改並離開嗎？")){
+      return false;
+    }
+  }
+  $("modal").close();
+  return true;
+}
+
+$("modal-close").addEventListener("click", () => {
+  closeModalSafely();
+});
+
+$("modal").addEventListener("cancel", (event) => {
+  if(!closeModalSafely()){
+    event.preventDefault();
+  }
+});
+
+document.addEventListener("input", event => {
+  if(event.target.id === "notes-hub-search"){
+    state.noteHubQuery = event.target.value;
+    if(state.view === "chat-notes") loadGlobalChatNotes();
+  }
+});
+
+document.addEventListener("change", event => {
+  if(event.target.id === "notes-hub-category-filter"){
+    state.noteHubCategory = event.target.value;
+    if(state.view === "chat-notes") loadGlobalChatNotes();
+  } else if(event.target.id === "notes-hub-tag-filter"){
+    state.noteHubTag = event.target.value;
+    if(state.view === "chat-notes") loadGlobalChatNotes();
+  } else if(event.target.id === "notes-hub-status-filter"){
+    state.noteHubStatus = event.target.value;
+    if(state.view === "chat-notes") loadGlobalChatNotes();
+  } else if(event.target.id === "notes-hub-channel-filter"){
+    state.noteHubChannel = event.target.value;
+    if(state.view === "chat-notes") loadGlobalChatNotes();
+  }
+});
 $("menu").addEventListener("click",()=>setSidebarOpen(!$("sidebar").classList.contains("open")));
 document.addEventListener("keydown",event=>{
   if(event.key==="Escape"){setSidebarOpen(false);}

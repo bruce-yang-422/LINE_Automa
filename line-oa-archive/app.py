@@ -60,11 +60,20 @@ def initialize_database() -> None:
             # 第七階段以前的資料庫沒有結構版本，欄位與目前程式不同；不能沿用，須備份後重建。
             raise RuntimeError("這是舊版結構的資料庫，請先備份並依安裝說明重建資料庫。")
         conn.execute("PRAGMA journal_mode=WAL")
+        for alter_sql in (
+            "ALTER TABLE recipients ADD COLUMN picture_url TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE organizations ADD COLUMN note_lock_policy TEXT NOT NULL DEFAULT 'disabled'",
+            "ALTER TABLE organizations ADD COLUMN note_tag_policy TEXT NOT NULL DEFAULT 'controlled'",
+            "ALTER TABLE chat_notes ADD COLUMN target_user_id TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE chat_notes ADD COLUMN category_id TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE chat_notes ADD COLUMN source_message_id TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE chat_notes ADD COLUMN linked_case_id TEXT NOT NULL DEFAULT ''",
+        ):
+            try:
+                conn.execute(alter_sql)
+            except Exception:
+                pass
         conn.executescript((BASE_DIR / "schema.sql").read_text(encoding="utf-8"))
-        try:
-            conn.execute("ALTER TABLE recipients ADD COLUMN picture_url TEXT NOT NULL DEFAULT ''")
-        except Exception:
-            pass
         try:
             conn.execute("UPDATE recipients SET profile_next_at = 0 WHERE picture_url = ''")
         except Exception:

@@ -524,7 +524,9 @@ class AdminHandler(BaseHTTPRequestHandler):
             return
         read_routes = {
             "/api/channels", "/api/session", "/api/reports", "/api/organizations",
-            "/api/chat-notes", "/api/chat-notes/trash", "/api/saved-filters",
+            "/api/chat-notes", "/api/chat-notes/global", "/api/chat-notes/trash",
+            "/api/chat-notes/categories", "/api/chat-notes/tags", "/api/chat-notes/export",
+            "/api/saved-filters",
             "/api/cases", "/api/cases/prefix", "/api/cases/export",
             "/api/template-packs", "/api/template-packs/templates", "/api/categories",
             "/api/chat/rooms", "/api/chat/messages", "/api/chat/canned-replies",
@@ -542,7 +544,7 @@ class AdminHandler(BaseHTTPRequestHandler):
                 return
 
         # 甲級平台管理員查閱客戶營運內容時寫入操作紀錄
-        if getattr(self, 'principal_role', self.user['role']) == 'platform_admin' and self.path in {'/api/chat-notes', '/api/cases', '/api/chat/messages', '/api/contacts'}:
+        if getattr(self, 'principal_role', self.user['role']) == 'platform_admin' and (self.path.startswith('/api/chat-notes') or self.path in {'/api/cases', '/api/chat/messages', '/api/contacts'}):
             with app.database_connection() as conn:
                 # 記在該 OA 所屬組織，讓組織管理員在操作紀錄看得到（權限規格 6.2）。
                 reports.audit(conn, getattr(self, 'principal', self.identity), "vendor.view", channels.current_id() or "all", f"平台管理員檢視客戶營運內容（{self.path}）",
@@ -598,9 +600,28 @@ class AdminHandler(BaseHTTPRequestHandler):
         elif self.path == "/api/chat-notes":
             with app.database_connection() as conn:
                 self.respond(200, chat_notes.list_chat_notes(conn, query.get('recipient_id', '')))
+        elif self.path == "/api/chat-notes/global":
+            with app.database_connection() as conn:
+                self.respond(200, chat_notes.list_global_chat_notes(conn, query, self.user['role']))
         elif self.path == "/api/chat-notes/trash":
             with app.database_connection() as conn:
                 self.respond(200, {"trash": chat_notes.list_trash_notes(conn, query.get('recipient_id', ''))})
+        elif self.path == "/api/chat-notes/categories":
+            with app.database_connection() as conn:
+                self.respond(200, chat_notes.list_note_categories(conn))
+        elif self.path == "/api/chat-notes/tags":
+            with app.database_connection() as conn:
+                self.respond(200, chat_notes.list_note_tags(conn))
+        elif self.path == "/api/chat-notes/export":
+            if self.user['role'] not in {'org_admin', 'operator', 'platform_admin'}:
+                self.respond(403, {'error': '沒有匯出記事的權限。'})
+                return
+            with app.database_connection() as conn:
+                content, mime, filename = chat_notes.export_chat_notes(conn, query, query.get('format', 'csv'), actor=self.identity)
+                from urllib.parse import quote
+                ext = "json" if query.get('format', 'csv').lower() == "json" else ("md" if query.get('format', 'csv').lower() in ("md", "markdown") else "csv")
+                ascii_name = f"chat_notes_export.{ext}"
+                self.respond(200, content, content_type=mime, headers={'Content-Disposition': f'attachment; filename="{ascii_name}"; filename*=UTF-8\'\'{quote(filename)}'})
         elif self.path == "/api/saved-filters":
             with app.database_connection() as conn:
                 self.respond(200, chat_notes.list_saved_filters(conn))
@@ -639,9 +660,6 @@ class AdminHandler(BaseHTTPRequestHandler):
         elif self.path == "/api/categories":
             with app.database_connection() as conn:
                 self.respond(200, template_packs.list_oa_categories(conn, channels.current_id()))
-        elif self.path == "/api/chat-notes/tags":
-            with app.database_connection() as conn:
-                self.respond(200, chat_notes.list_note_tags(conn))
         elif self.path == "/api/chat/rooms":
             with app.database_connection() as conn:
                 res = chat.list_chat_rooms(conn, status=query.get('status'), query=query.get('q'), limit=query.get('limit'), offset=query.get('offset'))
@@ -807,7 +825,7 @@ class AdminHandler(BaseHTTPRequestHandler):
             '/api/contacts/bulk', '/api/contact', '/api/tags/save', '/api/tags/delete',
             '/api/chat-notes', '/api/chat-notes/save', '/api/chat-notes/delete',
             '/api/chat-notes/pin', '/api/chat-notes/lock', '/api/chat-notes/restore', '/api/chat-notes/convert-to-case',
-            '/api/chat-notes/complete', '/api/chat-notes/tags/save', '/api/chat-notes/tags/delete',
+            '/api/chat-notes/complete',
             '/api/saved-filters', '/api/saved-filters/save', '/api/saved-filters/delete',
             '/api/cases', '/api/cases/save', '/api/cases/transition', '/api/cases/activity',
             '/api/template-packs/save', '/api/template-packs/delete', '/api/template-packs/copy', '/api/template-packs/lock',
@@ -820,7 +838,9 @@ class AdminHandler(BaseHTTPRequestHandler):
         allowed_operator_posts = allowed_collaborator_posts | {
             '/api/send', '/api/jobs/cancel', '/api/assets/upload', '/api/channels/save',
             '/api/channels/verify', '/api/channels/active', '/api/chat/send',
-            '/api/chat/canned-replies/save', '/api/chat/canned-replies/delete', '/api/chat/response-hours/save'
+            '/api/chat/canned-replies/save', '/api/chat/canned-replies/delete', '/api/chat/response-hours/save',
+            '/api/chat-notes/categories/save', '/api/chat-notes/categories/merge', '/api/chat-notes/categories/delete',
+            '/api/chat-notes/tags/save', '/api/chat-notes/tags/merge', '/api/chat-notes/tags/cleanup', '/api/chat-notes/tags/delete'
         }
 
         if self.user['role'] == 'collaborator' and (self.path not in allowed_collaborator_posts and not re.fullmatch(r'/api/cases/[0-9a-f]{32}(/lock)?', self.path)):
@@ -836,7 +856,10 @@ class AdminHandler(BaseHTTPRequestHandler):
             self.respond(403, {'error': '模組歸屬及來源設定由平台管理員管理。'})
             return
 
-        org_admin_only_posts = {'/api/memberships/save', '/api/accounts/save', '/api/dispatch-scopes/save', '/api/sender-grants/save'}
+        org_admin_only_posts = {
+            '/api/memberships/save', '/api/accounts/save', '/api/dispatch-scopes/save', '/api/sender-grants/save',
+            '/api/chat-notes/purge', '/api/org-settings/notes-policy'
+        }
         if self.path in org_admin_only_posts and self.user['role'] not in {'platform_admin', 'org_admin'}:
             self.respond(403, {'error': '管理員才能變更成員與授權設定。'})
             return
@@ -846,7 +869,10 @@ class AdminHandler(BaseHTTPRequestHandler):
             '/api/chat/send', '/api/send', '/api/jobs/cancel', '/api/contact', '/api/contacts/bulk',
             '/api/tags/save', '/api/tags/delete', '/api/chat-notes', '/api/chat-notes/save',
             '/api/chat-notes/delete', '/api/chat-notes/pin', '/api/chat-notes/lock', '/api/chat-notes/restore',
-            '/api/chat-notes/convert-to-case', '/api/chat-notes/complete', '/api/chat-notes/tags/save', '/api/chat-notes/tags/delete',
+            '/api/chat-notes/purge', '/api/chat-notes/convert-to-case', '/api/chat-notes/complete',
+            '/api/chat-notes/categories/save', '/api/chat-notes/categories/merge', '/api/chat-notes/categories/delete',
+            '/api/chat-notes/tags/save', '/api/chat-notes/tags/merge', '/api/chat-notes/tags/cleanup', '/api/chat-notes/tags/delete',
+            '/api/org-settings/notes-policy',
             '/api/saved-filters', '/api/saved-filters/save', '/api/saved-filters/delete',
             '/api/cases', '/api/cases/save', '/api/cases/transition', '/api/cases/activity',
             '/api/template-packs/save', '/api/template-packs/delete', '/api/template-packs/copy', '/api/template-packs/lock',
@@ -917,16 +943,16 @@ class AdminHandler(BaseHTTPRequestHandler):
                 action = payload.get('action', 'save')
                 with app.database_connection() as conn:
                     if action == 'delete':
-                        chat_notes.delete_chat_note(conn, payload.get('note_id') or payload.get('id'))
+                        chat_notes.delete_chat_note(conn, payload.get('note_id') or payload.get('id'), self.user['role'])
                         reports.audit(conn, actor_label, "chat_note.delete", payload.get('note_id') or payload.get('id', ''), "刪除對話記事", self.user.get('organization_id', ''))
                         self.respond(200, {'ok': True})
                     else:
-                        res = chat_notes.save_chat_note(conn, payload, actor_label)
+                        res = chat_notes.save_chat_note(conn, payload, actor_label, self.user['role'])
                         reports.audit(conn, actor_label, "chat_note.save", res.get('recipient_id', ''), "儲存對話記事", self.user.get('organization_id', ''))
                         self.respond(200, {'ok': True, 'note': res})
             elif self.path == '/api/chat-notes/delete':
                 with app.database_connection() as conn:
-                    chat_notes.delete_chat_note(conn, payload.get('note_id') or payload.get('id'))
+                    chat_notes.delete_chat_note(conn, payload.get('note_id') or payload.get('id'), self.user['role'])
                     reports.audit(conn, actor_label, "chat_note.delete", payload.get('id', ''), "刪除對話記事", self.user.get('organization_id', ''))
                 self.respond(200, {'ok': True})
             elif self.path == '/api/chat-notes/pin':
@@ -935,11 +961,16 @@ class AdminHandler(BaseHTTPRequestHandler):
                     self.respond(200, {'ok': True, **res})
             elif self.path == '/api/chat-notes/lock':
                 with app.database_connection() as conn:
-                    res = chat_notes.toggle_note_lock(conn, payload.get('note_id') or payload.get('id'))
+                    res = chat_notes.toggle_note_lock(conn, payload.get('note_id') or payload.get('id'), self.user['role'])
                     self.respond(200, {'ok': True, **res})
             elif self.path == '/api/chat-notes/restore':
                 with app.database_connection() as conn:
                     ok = chat_notes.restore_chat_note(conn, payload.get('note_id') or payload.get('id'))
+                    self.respond(200, {'ok': ok})
+            elif self.path == '/api/chat-notes/purge':
+                with app.database_connection() as conn:
+                    ok = chat_notes.purge_chat_note(conn, payload.get('note_id') or payload.get('id'), self.user['role'])
+                    reports.audit(conn, actor_label, "chat_note.purge", payload.get('note_id') or payload.get('id', ''), "永久刪除對話記事", self.user.get('organization_id', ''))
                     self.respond(200, {'ok': ok})
             elif self.path == '/api/chat-notes/convert-to-case':
                 with app.database_connection() as conn:
@@ -950,14 +981,57 @@ class AdminHandler(BaseHTTPRequestHandler):
                 with app.database_connection() as conn:
                     res = chat_notes.toggle_note_completed(conn, payload.get('note_id') or payload.get('id'))
                     self.respond(200, {'ok': True, **res})
+            elif self.path == '/api/chat-notes/categories/save':
+                with app.database_connection() as conn:
+                    res = chat_notes.save_note_category(conn, payload, self.user['role'])
+                    reports.audit(conn, actor_label, "chat_note_category.save", res.get('name', ''), "儲存記事分類", self.user.get('organization_id', ''))
+                    self.respond(200, {'ok': True, 'category': res})
+            elif self.path == '/api/chat-notes/categories/merge':
+                with app.database_connection() as conn:
+                    res = chat_notes.merge_note_categories(conn, payload.get('source_category_ids') or payload.get('source_ids', []), payload.get('target_category_id') or payload.get('target_id', ''), self.user['role'])
+                    reports.audit(conn, actor_label, "chat_note_category.merge", payload.get('target_category_id', ''), "合併記事分類", self.user.get('organization_id', ''))
+                    self.respond(200, res)
+            elif self.path == '/api/chat-notes/categories/delete':
+                with app.database_connection() as conn:
+                    res = chat_notes.delete_note_category(conn, payload.get('category_id') or payload.get('id', ''), payload.get('reassign_to_id', ''), self.user['role'])
+                    reports.audit(conn, actor_label, "chat_note_category.delete", payload.get('category_id') or payload.get('id', ''), "刪除記事分類", self.user.get('organization_id', ''))
+                    self.respond(200, res)
             elif self.path == '/api/chat-notes/tags/save':
                 with app.database_connection() as conn:
-                    res = chat_notes.save_note_tag(conn, payload.get('name'), payload.get('old_name', ''))
+                    res = chat_notes.save_note_tag(conn, payload.get('name'), payload.get('old_name', ''), payload.get('color', ''), payload.get('category', ''), self.user['role'])
+                    reports.audit(conn, actor_label, "chat_note_tag.save", payload.get('name', ''), "儲存記事標籤", self.user.get('organization_id', ''))
                     self.respond(200, {'ok': True, **res})
+            elif self.path == '/api/chat-notes/tags/merge':
+                with app.database_connection() as conn:
+                    res = chat_notes.merge_note_tags(conn, payload.get('source_names') or payload.get('sources', []), payload.get('target_name') or payload.get('target', ''), self.user['role'])
+                    reports.audit(conn, actor_label, "chat_note_tag.merge", payload.get('target_name', ''), "合併記事標籤", self.user.get('organization_id', ''))
+                    self.respond(200, res)
+            elif self.path == '/api/chat-notes/tags/cleanup':
+                with app.database_connection() as conn:
+                    res = chat_notes.cleanup_orphan_tags(conn, self.user['role'])
+                    reports.audit(conn, actor_label, "chat_note_tag.cleanup", f"{res.get('cleaned_count', 0)} tags", "清理孤立記事標籤", self.user.get('organization_id', ''))
+                    self.respond(200, res)
             elif self.path == '/api/chat-notes/tags/delete':
                 with app.database_connection() as conn:
-                    res = chat_notes.delete_note_tag(conn, payload.get('name'))
+                    res = chat_notes.delete_note_tag(conn, payload.get('name'), self.user['role'])
+                    reports.audit(conn, actor_label, "chat_note_tag.delete", payload.get('name', ''), "刪除記事標籤", self.user.get('organization_id', ''))
                     self.respond(200, {'ok': True, **res})
+            elif self.path == '/api/org-settings/notes-policy':
+                if self.user['role'] not in {'org_admin', 'platform_admin'}:
+                    raise ValueError('只有管理員可以修改組織記事政策。')
+                lock_policy = payload.get('note_lock_policy', 'disabled')
+                tag_policy = payload.get('note_tag_policy', 'controlled')
+                if lock_policy not in {'disabled', 'collaborative', 'strict_admin'}:
+                    raise ValueError('不支援的鎖定政策值。')
+                if tag_policy not in {'controlled', 'open'}:
+                    raise ValueError('不支援的標籤政策值。')
+                with app.database_connection() as conn:
+                    org_id = self.user.get('organization_id')
+                    if not org_id and self.user['role'] == 'platform_admin':
+                        org_id = payload.get('org_id')
+                    conn.execute("UPDATE organizations SET note_lock_policy=?, note_tag_policy=? WHERE org_id=?", (lock_policy, tag_policy, org_id))
+                    reports.audit(conn, actor_label, "org.notes_policy", org_id or '', f"更新記事政策（鎖定={lock_policy}, 標籤={tag_policy}）", org_id or '')
+                self.respond(200, {'ok': True, 'note_lock_policy': lock_policy, 'note_tag_policy': tag_policy})
             elif self.path in ('/api/saved-filters', '/api/saved-filters/save'):
                 action = payload.get('action', 'save')
                 with app.database_connection() as conn:

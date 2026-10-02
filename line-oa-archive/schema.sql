@@ -17,7 +17,12 @@ CREATE TABLE IF NOT EXISTS organizations (
     messaging_enabled INTEGER NOT NULL DEFAULT 1 CHECK (messaging_enabled IN (0, 1)),
     -- 客製模組：天氣訂閱，由平台管理員為組織啟用並設定圖片來源。
     weather_enabled INTEGER NOT NULL DEFAULT 0 CHECK (weather_enabled IN (0, 1)),
-    weather_image_path TEXT NOT NULL DEFAULT ''
+    weather_image_path TEXT NOT NULL DEFAULT '',
+    -- 記事政策設定：鎖定政策與標籤政策（對話記事本管理規格 5.2 與 7.2.3）
+    note_lock_policy TEXT NOT NULL DEFAULT 'disabled'
+        CHECK (note_lock_policy IN ('disabled', 'collaborative', 'strict_admin')),
+    note_tag_policy TEXT NOT NULL DEFAULT 'controlled'
+        CHECK (note_tag_policy IN ('controlled', 'open'))
 );
 
 -- organization_id 為帳號的主要組織；平台管理員為空字串。各組織的等級見 organization_members。
@@ -268,8 +273,10 @@ CREATE TABLE IF NOT EXISTS chat_notes (
     note_id TEXT PRIMARY KEY,
     channel_id TEXT NOT NULL,
     recipient_id TEXT NOT NULL,
+    target_user_id TEXT NOT NULL DEFAULT '',
     title TEXT NOT NULL DEFAULT '',
     note_type TEXT NOT NULL DEFAULT '一般',
+    category_id TEXT NOT NULL DEFAULT '',
     tags_json TEXT NOT NULL DEFAULT '[]',
     content TEXT NOT NULL,
     is_pinned INTEGER NOT NULL DEFAULT 0 CHECK (is_pinned IN (0, 1)),
@@ -277,12 +284,48 @@ CREATE TABLE IF NOT EXISTS chat_notes (
     about_member_id TEXT NOT NULL DEFAULT '',
     due_date TEXT NOT NULL DEFAULT '',
     is_completed INTEGER NOT NULL DEFAULT 0 CHECK (is_completed IN (0, 1)),
+    source_message_id TEXT NOT NULL DEFAULT '',
+    linked_case_id TEXT NOT NULL DEFAULT '',
     deleted_at TEXT NOT NULL DEFAULT '',
     author TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 CREATE INDEX IF NOT EXISTS chat_notes_channel_idx ON chat_notes(channel_id, recipient_id);
+CREATE INDEX IF NOT EXISTS idx_chat_notes_lookup ON chat_notes(channel_id, recipient_id, deleted_at, is_pinned DESC, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_chat_notes_global ON chat_notes(channel_id, deleted_at, is_completed, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_chat_notes_case ON chat_notes(channel_id, linked_case_id) WHERE linked_case_id != '';
+
+-- 記事分類主表 (預設 8 大通用分類，乙丙級可自訂增刪改)
+CREATE TABLE IF NOT EXISTS chat_note_categories (
+    category_id TEXT PRIMARY KEY,
+    channel_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    color TEXT NOT NULL DEFAULT '#007AFF',
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    UNIQUE(channel_id, name)
+);
+
+-- 記事標準標籤主表 (預設 8 大通用標籤，乙丙級可自訂增刪改)
+CREATE TABLE IF NOT EXISTS chat_note_tags (
+    tag_id TEXT PRIMARY KEY,
+    channel_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    color TEXT NOT NULL DEFAULT '#007AFF',
+    category TEXT NOT NULL DEFAULT 'general',
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    UNIQUE(channel_id, name)
+);
+
+-- 記事與標籤多對多關聯表
+CREATE TABLE IF NOT EXISTS chat_note_tag_assignments (
+    channel_id TEXT NOT NULL,
+    note_id TEXT NOT NULL,
+    tag_id TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    PRIMARY KEY (channel_id, note_id, tag_id)
+);
 
 -- ============ 案件 ============
 

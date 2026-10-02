@@ -104,45 +104,75 @@ function contactDetailPanel(){
   </aside>`;
 }
 
+function tagPillHtml(tagName){
+  const found = (state.noteTags || []).find(t => t.name === tagName);
+  let color = found?.color;
+  if(!color){
+    const palette = ["#007AFF","#34C759","#FF9500","#AF52DE","#FF2D55","#5856D6","#30B0C7","#FF3B30","#FFCC00","#8E8E93"];
+    let hash = 0;
+    for(let i=0; i<tagName.length; i++) hash = (hash << 5) - hash + tagName.charCodeAt(i);
+    color = palette[Math.abs(hash) % palette.length];
+  }
+  const bg = color.length === 7 ? color + "20" : "rgba(0,122,255,0.14)";
+  const border = color.length === 7 ? color + "40" : "rgba(0,122,255,0.28)";
+  return `<span class="apple-pill" data-color="${esc(color)}" style="background-color:${esc(bg)}!important;color:${esc(color)}!important;border-color:${esc(border)}!important;"><span class="apple-pill-dot" style="background-color:${esc(color)}!important;"></span>${esc(tagName)}</span>`;
+}
+
 function renderChatNotesList(recipient_id){
   const notes = state.chatNotes?.get(recipient_id) || [];
-  if(!notes.length) return `<div class="chat-notes-empty"><p class="muted" data-s="sf6951cb">目前尚無對話記事，可點選上方「新增記事」記錄重要事項。</p><button class="btn text small" data-action="view-chat-notes-trash" data-recipient="${esc(recipient_id)}" data-s="sca44a36">查看最近刪除 (30 天內可還原)</button></div>`;
+  const orgLockPolicy = state.session?.org_settings?.note_lock_policy || "disabled";
+  const canManageTax = ["platform_admin", "org_admin", "operator"].includes(state.session?.role) && manager();
+
+  if(!notes.length) return `<div class="chat-notes-empty" style="text-align:center;padding:24px 12px;"><p class="muted" style="font-size:13px;margin-bottom:10px;">目前尚無對話記事，可點選上方「新增記事」記錄重要事項。</p><div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;"><button class="btn text small" data-action="view-chat-notes-trash" data-recipient="${esc(recipient_id)}">${icon("trash")} 最近刪除 (30天內可還原)</button>${canManageTax ? `<button class="btn text small" data-action="manage-notes-taxonomy">${icon("tag")} 分類與標籤治理</button>` : ''}</div></div>`;
   
   const pinned = notes.filter(n => n.is_pinned);
   const normal = notes.filter(n => !n.is_pinned);
   const ordered = [...pinned, ...normal];
 
   return `<div class="chat-notes-container">
-    <div class="chat-notes-toolbar" data-s="sa42388f">
-      <small class="muted">共 ${notes.length} 筆（置頂 ${pinned.length}/5）</small>
-      <button class="btn text small" data-action="view-chat-notes-trash" data-recipient="${esc(recipient_id)}" data-s="sab936e1">回收筒</button>
+    <div class="chat-notes-toolbar" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--line);">
+      <small class="muted">共 ${notes.length} 則（置頂 ${pinned.length}/5）</small>
+      <div style="display:flex;gap:4px;">
+        ${canManageTax ? `<button class="btn text small" data-action="manage-notes-taxonomy" title="分類與標籤管理">${icon("tag")} 治理</button>` : ''}
+        <button class="btn text small" data-action="view-chat-notes-trash" data-recipient="${esc(recipient_id)}" title="查看回收筒">${icon("trash")} 回收筒</button>
+      </div>
     </div>
-    ${ordered.map(n=>`
-      <div class="chat-note-item ${n.is_pinned?'pinned':''} ${n.is_locked?'locked':''}" style="border:1px solid var(--line, #e2e8f0);border-radius:8px;padding:8px 10px;margin-bottom:8px;background:${n.is_pinned?'rgba(254, 240, 138, 0.2)':'var(--card-bg, #fff)'};">
-        <div class="chat-note-meta" data-s="sa7a6f11">
-          <span>
-            ${n.is_pinned?'<span class="badge" style="font-size:10px;">置頂</span> ':''}
-            ${n.is_locked?'<span class="badge warn" style="font-size:10px;">已鎖定</span> ':''}
-            <strong>${esc(n.title||n.author||"記事")}</strong> · <span class="muted">${when(n.created_at)}</span>
+    ${ordered.map(n=>{
+      const isCompleted = n.status === "completed";
+      const isLocked = Boolean(n.is_locked);
+      const canUnlock = orgLockPolicy === "collaborative" || (orgLockPolicy === "strict_admin" && manager()) || orgLockPolicy === "disabled";
+      const canEdit = !isLocked || canUnlock;
+      
+      return `
+      <div class="chat-note-item ${n.is_pinned?'pinned':''} ${isLocked?'locked':''} ${isCompleted?'completed':''}">
+        <div class="chat-note-meta">
+          <span style="display:inline-flex;align-items:center;gap:5px;flex-wrap:wrap;">
+            ${n.is_pinned ? `<span class="apple-pill" style="background:rgba(234,179,8,.18);color:#b45309;border-color:rgba(234,179,8,.3);">${icon("pin")} 置頂</span>` : ''}
+            ${isLocked ? `<span class="apple-pill" style="background:rgba(100,116,139,.18);color:#475569;border-color:rgba(100,116,139,.3);">${icon("lock")} 已鎖定</span>` : ''}
+            ${n.category_name ? `<span class="tax-item-category-badge" style="font-size:11.5px;padding:2px 8px;gap:4px;">${icon("folder")}<span>${esc(n.category_name)}</span></span>` : ''}
+            <strong style="font-size:12.5px;">${esc(n.title || n.author || "記事")}</strong>
+            <span class="muted" style="font-size:11px;">· ${when(n.created_at)}</span>
           </span>
-          <div class="note-actions" data-s="s597636a">
-            <button class="btn text small" data-action="toggle-chat-note-pin" data-id="${esc(n.note_id)}" data-recipient="${esc(recipient_id)}" title="${n.is_pinned?'取消置頂':'置頂'}">${n.is_pinned?'取消置頂':'置頂'}</button>
-            <button class="btn text small" data-action="toggle-chat-note-lock" data-id="${esc(n.note_id)}" data-recipient="${esc(recipient_id)}" title="${n.is_locked?'解除鎖定':'鎖定'}">${n.is_locked?'解鎖':'鎖定'}</button>
-            ${!n.is_locked ? `<button class="btn text small" data-action="edit-chat-note" data-id="${esc(n.note_id)}" data-recipient="${esc(recipient_id)}">編輯</button>` : ''}
-            <button class="btn text small" data-action="convert-note-to-case" data-id="${esc(n.note_id)}" data-recipient="${esc(recipient_id)}" title="轉為案件">轉為案件</button>
-            ${!n.is_locked ? `<button class="btn text small danger" data-action="delete-chat-note" data-id="${esc(n.note_id)}" data-recipient="${esc(recipient_id)}">刪除</button>` : ''}
+          <div class="note-actions">
+            <button class="btn text small" data-action="copy-chat-note-content" data-id="${esc(n.note_id)}" data-recipient="${esc(recipient_id)}" title="一鍵複製內容">${icon("copy")}</button>
+            <button class="btn text small" data-action="toggle-chat-note-complete" data-id="${esc(n.note_id)}" data-recipient="${esc(recipient_id)}" title="${isCompleted?'標記未完成':'標記完成'}">${icon(isCompleted ? "refresh" : "check")}</button>
+            <button class="btn text small" data-action="toggle-chat-note-pin" data-id="${esc(n.note_id)}" data-recipient="${esc(recipient_id)}" title="${n.is_pinned?'取消置頂':'置頂'}">${icon(n.is_pinned ? "unpin" : "pin")}</button>
+            ${orgLockPolicy !== "disabled" ? `<button class="btn text small" data-action="toggle-chat-note-lock" data-id="${esc(n.note_id)}" data-recipient="${esc(recipient_id)}" title="${isLocked?'解除鎖定':'鎖定防誤改'}">${icon(isLocked ? "unlock" : "lock")}</button>` : ''}
+            ${canEdit && !isLocked ? `<button class="btn text small" data-action="edit-chat-note" data-id="${esc(n.note_id)}" data-recipient="${esc(recipient_id)}" title="編輯記事">${icon("edit")}</button>` : ''}
+            <button class="btn text small" data-action="convert-note-to-case" data-id="${esc(n.note_id)}" data-recipient="${esc(recipient_id)}" title="轉為案件">${icon("folder")}</button>
+            ${canEdit && !isLocked ? `<button class="btn text small danger" data-action="delete-chat-note" data-id="${esc(n.note_id)}" data-recipient="${esc(recipient_id)}" title="刪除記事">${icon("trash")}</button>` : ''}
           </div>
         </div>
-        ${n.title ? `<div data-s="sb296c68">${esc(n.title)}</div>` : ''}
-        <div class="chat-note-content" data-s="se4c2eeb">${esc(n.content)}</div>
-        ${(n.tags && n.tags.length) || n.due_date ? `
-          <div class="chat-note-footer" data-s="sa451b52">
-            ${(n.tags || []).map(t => `<span class="badge" data-s="s0c8a27e">${esc(t)}</span>`).join(" ")}
-            ${n.due_date ? `<span class="muted">期限：${esc(n.due_date)}</span>` : ''}
+        <div class="chat-note-content" id="chat-note-content-${esc(n.note_id)}">${esc(n.content)}</div>
+        ${((n.tags && n.tags.length) || n.due_date || n.linked_case_id) ? `
+          <div class="chat-note-footer">
+            ${(n.tags || []).map(t => (typeof tagPillHtml === 'function' ? tagPillHtml(t) : `<span class="apple-pill">${esc(t)}</span>`)).join("")}
+            ${n.due_date ? `<span class="muted" style="display:inline-flex;align-items:center;gap:3px;font-size:11px;">${icon("clock")} 期限：${esc(n.due_date)}</span>` : ''}
+            ${n.linked_case_id ? `<span class="apple-pill" style="background:rgba(88,86,214,.12);color:#5856D6;border-color:rgba(88,86,214,.25);cursor:pointer;" data-action="open-case-detail" data-id="${esc(n.linked_case_id)}">${icon("folder")} 關聯案件</span>` : ''}
           </div>
         ` : ''}
-      </div>
-    `).join("")}
+      </div>`;
+    }).join("")}
   </div>`;
 }
 

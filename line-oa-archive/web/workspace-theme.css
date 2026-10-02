@@ -408,7 +408,108 @@ dialog { background: var(--surface); }
 .timeline-content{background:var(--soft);border:1px solid var(--line);border-radius:8px;padding:10px 12px;font-size:13px}
 .timeline-meta{font-size:11px;color:var(--muted);margin-bottom:4px;display:flex;justify-content:space-between}
 .chat-notes-box{margin-top:14px}
-.chat-note-item{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:8px}
-.chat-note-meta{font-size:11px;color:var(--muted);display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
-.chat-note-content{font-size:13px;line-height:1.5;white-space:pre-wrap;color:var(--ink)}
+.chat-note-item{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:10px;transition:all .18s ease;position:relative}
+.chat-note-item:hover{border-color:var(--control-border);box-shadow:0 3px 10px rgba(0,0,0,.03)}
+.chat-note-item.pinned{background:linear-gradient(135deg, rgba(254, 240, 138, 0.28), rgba(253, 230, 138, 0.12));border-color:rgba(234, 179, 8, 0.45);box-shadow:0 2px 8px rgba(234, 179, 8, 0.08)}
+.chat-note-item.locked{background:linear-gradient(135deg, rgba(241, 245, 249, 0.7), rgba(226, 232, 240, 0.3));border-color:rgba(148, 163, 184, 0.45)}
+.chat-note-item.completed{opacity:.75;background:var(--soft)}
+.chat-note-item.completed .chat-note-content{text-decoration:line-through;color:var(--muted)}
+.chat-note-meta{font-size:11px;color:var(--muted);display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:8px}
+.chat-note-content{font-size:13.5px;line-height:1.55;white-space:pre-wrap;color:var(--ink);user-select:text;-webkit-user-select:text;margin:6px 0;word-break:break-word}
+.chat-note-footer{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:8px;font-size:11px}
+.note-actions{display:flex;align-items:center;gap:3px}
+.note-actions .btn{padding:4px 7px;min-height:28px;font-size:11px;border-radius:6px}
+
+/* Apple HIG Tag / Category Pill Badges & Interactive Tag Selectors */
+.apple-pill,.apple-tag-pill{display:inline-flex!important;align-items:center!important;gap:6px!important;padding:4px 10px!important;border-radius:9999px!important;font-size:12px!important;font-weight:550!important;line-height:1.3!important;border:1px solid transparent!important;transition:all .16s cubic-bezier(0.16,1,0.3,1)!important;box-sizing:border-box!important;text-decoration:none!important;vertical-align:middle!important}
+.apple-pill svg,.apple-tag-pill svg{width:12px!important;height:12px!important;stroke-width:2px!important;flex-shrink:0!important}
+.apple-pill-dot{width:8px!important;height:8px!important;min-width:8px!important;min-height:8px!important;border-radius:50%!important;display:inline-block!important;flex-shrink:0!important;box-shadow:inset 0 1px 1px rgba(0,0,0,.25),0 1px 2px rgba(0,0,0,.12)!important}
+
+/* Interactive Apple Tag Picker Pill Button (用於快速帶入、篩選點選) */
+button.apple-pill,button.apple-tag-pill{appearance:none!important;-webkit-appearance:none!important;cursor:pointer!important;outline:none!important;padding:4.5px 12px!important;font-family:inherit!important;font-size:12px!important;font-weight:600!important;border-radius:9999px!important;box-shadow:0 1px 2px rgba(0,0,0,.03)!important;user-select:none!important;-webkit-user-select:none!important}
+button.apple-pill:hover,button.apple-tag-pill:hover{transform:translateY(-1.5px)!important;box-shadow:0 3px 8px rgba(0,0,0,.08)!important;filter:brightness(0.96)!important}
+button.apple-pill:active,button.apple-tag-pill:active{transform:scale(0.95)!important}
+button.apple-tag-pill.active-selected{box-shadow:0 0 0 2px var(--surface),0 0 0 3.5px currentColor!important;font-weight:700!important}
+
+.quick-tag-wrapper{margin-top:10px!important;background:var(--surface)!important;border:1px solid var(--line)!important;border-radius:14px!important;padding:12px 14px!important;box-shadow:0 1px 3px rgba(0,0,0,.02)!important}
+.quick-tag-label{display:flex!important;align-items:center!important;justify-content:space-between!important;font-size:12px!important;font-weight:600!important;color:var(--muted)!important;margin-bottom:8px!important}
+.quick-tag-label-left{display:flex!important;align-items:center!important;gap:6px!important}
+.quick-tag-label-left svg{width:13px!important;height:13px!important;color:var(--teal)!important}
+.quick-tag-pills{display:flex!important;flex-wrap:wrap!important;gap:7px!important;align-items:center!important}
+
+
+
+/* Global Notes Hub */
+.notes-hub-header{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;margin-bottom:20px;flex-wrap:wrap}
+.notes-hub-stats{display:grid;grid-template-columns:repeat(4, minmax(0, 1fr));gap:14px;margin-bottom:20px}
+.notes-hub-toolbar{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:14px 18px;margin-bottom:18px;display:flex;flex-direction:column;gap:12px;box-shadow:0 2px 8px rgba(0,0,0,.02)}
+.notes-hub-toolbar-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.notes-hub-grid{display:grid;grid-template-columns:repeat(auto-fill, minmax(320px, 1fr));gap:16px}
+.notes-hub-card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px;display:flex;flex-direction:column;justify-content:space-between;transition:all .18s ease;position:relative;box-shadow:0 2px 6px rgba(0,0,0,.02)}
+.notes-hub-card:hover{border-color:var(--control-border);box-shadow:0 6px 18px rgba(0,0,0,.05);transform:translateY(-1px)}
+.notes-hub-card.pinned{background:linear-gradient(135deg, rgba(254, 240, 138, 0.28), rgba(253, 230, 138, 0.1));border-color:rgba(234, 179, 8, 0.45)}
+.notes-hub-card.locked{background:linear-gradient(135deg, rgba(241, 245, 249, 0.7), rgba(226, 232, 240, 0.3));border-color:rgba(148, 163, 184, 0.45)}
+.notes-hub-card.completed{opacity:.75;background:var(--soft)}
+.notes-hub-card-header{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:8px}
+.notes-hub-card-title{font-size:14px;font-weight:650;color:var(--ink);line-height:1.4}
+.notes-hub-card-recipient{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);background:var(--soft);padding:3px 8px;border-radius:6px;cursor:pointer;margin-bottom:8px}
+.notes-hub-card-recipient:hover{color:var(--teal);background:var(--mint)}
+.notes-hub-card-body{font-size:13px;line-height:1.55;color:var(--ink);margin-bottom:12px;user-select:text;-webkit-user-select:text;white-space:pre-wrap;word-break:break-word;flex:1}
+.notes-hub-card-footer{display:flex;align-items:center;justify-content:space-between;border-top:1px solid var(--line);padding-top:10px;font-size:11px;color:var(--muted);gap:8px}
+.notes-hub-card-actions{display:flex;align-items:center;gap:4px}
+.notes-hub-card-actions .btn{min-height:28px;padding:3px 7px;font-size:11px;border-radius:6px}
+
+/* Apple HIG Category & Tag Taxonomy Governance Manager */
+.tax-container{display:flex;flex-direction:column;gap:16px;padding:4px 0}
+.tax-segmented-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+.tax-meta-bar{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:14px;padding:2px 0}
+.tax-meta-hint{font-size:12.5px;color:var(--muted);margin:0;line-height:1.5}
+
+/* Apple Inset Inline Creation Bar */
+.tax-quick-create-bar{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:10px 14px;display:flex;align-items:center;gap:12px;margin-bottom:18px;box-shadow:0 2px 6px rgba(0,0,0,.03);transition:all .18s ease}
+.tax-quick-create-bar:focus-within{border-color:#007AFF;box-shadow:0 0 0 3px rgba(0,122,255,.18)}
+.tax-inline-color-trigger{width:24px;height:24px;min-width:24px;min-height:24px;border-radius:50%;border:2px solid #ffffff!important;box-shadow:0 0 0 1px rgba(0,0,0,.2),0 2px 4px rgba(0,0,0,.12);cursor:pointer;flex-shrink:0;padding:0;display:inline-block;transition:transform .14s ease,box-shadow .14s ease}
+.tax-inline-color-trigger:hover{transform:scale(1.18);box-shadow:0 0 0 1px rgba(0,0,0,.28),0 3px 6px rgba(0,0,0,.2)}
+.tax-quick-input{flex:1;min-width:0;border:none!important;background:transparent!important;padding:0 4px!important;min-height:unset!important;font-size:13.5px;font-family:inherit;color:var(--ink);outline:none!important;box-shadow:none!important}
+.tax-quick-input::placeholder{color:var(--muted);font-size:13px}
+.tax-quick-submit{flex-shrink:0;padding:6px 14px;min-height:32px;font-size:12.5px;font-weight:600;border-radius:9px}
+
+/* Apple Inset Grouped Table / List */
+.tax-grouped-card{background:var(--surface);border:1px solid var(--line);border-radius:16px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.03)}
+.tax-grouped-list{display:flex;flex-direction:column;max-height:380px;overflow-y:auto}
+.tax-item-row{display:flex;align-items:center;justify-content:space-between;padding:12px 18px;border-bottom:1px solid var(--line);gap:12px;transition:background-color .14s ease}
+.tax-item-row:last-child{border-bottom:none}
+.tax-item-row:hover{background:var(--soft)}
+.tax-item-left{display:flex;align-items:center;gap:12px;min-width:0;flex:1}
+.tax-item-category-badge{display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:600;color:var(--ink);background:var(--soft);border:1px solid var(--line);padding:4px 12px;border-radius:9999px;white-space:nowrap;box-shadow:0 1px 2px rgba(0,0,0,.02)}
+.tax-item-category-badge svg{width:13px;height:13px;color:var(--muted);flex-shrink:0}
+.tax-item-tag-preview{display:inline-flex!important;align-items:center!important;gap:7px!important;font-size:13px!important;font-weight:600!important;padding:4px 12px!important;border-radius:9999px!important;border:1px solid transparent!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;max-width:280px!important;box-shadow:0 1px 2px rgba(0,0,0,.03)!important}
+.apple-pill-dot{width:9px!important;height:9px!important;min-width:9px!important;min-height:9px!important;border-radius:50%!important;display:inline-block!important;flex-shrink:0!important;box-shadow:inset 0 1px 1.5px rgba(0,0,0,.25),0 1px 2px rgba(0,0,0,.1)!important}
+.tax-item-usage-bubble{font-size:11.5px;font-weight:550;color:var(--muted);background:rgba(0,0,0,.05);padding:3px 9px;border-radius:9999px;white-space:nowrap}
+.tax-item-usage-bubble.zero{color:#8e8e93;background:transparent;border:1px dashed var(--line);font-weight:400}
+.tax-item-actions{display:flex;align-items:center;gap:4px;flex-shrink:0}
+.tax-icon-btn{width:28px;height:28px;min-width:28px;min-height:28px;padding:0;display:inline-flex;align-items:center;justify-content:center;border-radius:7px;color:var(--muted);background:transparent;border:none;cursor:pointer;transition:all .14s ease}
+.tax-icon-btn:hover{background:rgba(0,0,0,.06);color:var(--ink)}
+.tax-icon-btn.danger:hover{background:rgba(255,59,48,.12);color:#ff3b30}
+.tax-icon-btn svg{width:14px;height:14px;stroke-width:2px}
+
+/* Apple Color Popover / Color Wells */
+.tax-color-picker{display:flex!important;flex-wrap:wrap!important;gap:8px!important;padding:6px 2px!important}
+.tax-color-dot{width:24px!important;height:24px!important;min-width:24px!important;min-height:24px!important;border-radius:50%!important;border:2px solid transparent!important;cursor:pointer!important;transition:transform .14s ease,box-shadow .14s ease!important;outline:none!important;padding:0!important;display:inline-block!important}
+.tax-color-dot:hover{transform:scale(1.18)!important}
+.tax-color-dot.selected{box-shadow:0 0 0 2px var(--surface),0 0 0 4px var(--ink)!important;transform:scale(1.08)!important}
+
+/* Apple Visual Merge Flow Box */
+.tax-merge-flow{background:var(--soft);border:1px solid var(--line);border-radius:14px;padding:16px;margin:12px 0;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.tax-merge-node{flex:1;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px;text-align:center;min-width:0}
+.tax-merge-arrow{color:var(--muted);display:flex;flex-direction:column;align-items:center;gap:2px;flex-shrink:0}
+.tax-merge-arrow svg{width:20px;height:20px;stroke-width:2px;color:var(--ink)}
+
+@media (max-width: 768px) {
+  .notes-hub-stats{grid-template-columns:repeat(2, minmax(0, 1fr))}
+  .notes-hub-grid{grid-template-columns:1fr}
+  .tax-item-row{flex-direction:column;align-items:flex-start;gap:8px}
+  .tax-item-actions{align-self:flex-end}
+}
+
 

@@ -646,6 +646,40 @@ function chatAction(action, id, target) {
     selectChatRoom(id);
     return true;
   }
+  if (action === "copy-chat-note-content") {
+    const el = document.getElementById("chat-note-content-" + id);
+    const content = el ? el.innerText : "";
+    if (content) {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(content).then(() => notice("記事內容已複製至剪貼簿。")).catch(() => fallbackCopy(content));
+      } else {
+        fallbackCopy(content);
+      }
+    }
+    return true;
+  }
+  if (action === "toggle-chat-note-complete") {
+    const recId = target.dataset.recipient || chatUI.selectedId;
+    api("/api/chat-notes/complete", { note_id: id }).then(res => {
+      loadChatNotes(recId);
+      notice(res.status === "completed" ? "記事已標記為完成。" : "記事已重新開啟。");
+    }).catch(e => notice(e.message, true));
+    return true;
+  }
+  if (action === "manage-notes-taxonomy") {
+    if (typeof manageNotesTaxonomyModal === "function") manageNotesTaxonomyModal();
+    return true;
+  }
+  if (action === "edit-chat-note") {
+    const recId = target.dataset.recipient || chatUI.selectedId;
+    if (typeof chatNoteModal === "function") chatNoteModal(recId, id);
+    return true;
+  }
+  if (action === "delete-chat-note") {
+    const recId = target.dataset.recipient || chatUI.selectedId;
+    modal("刪除對話記事？", `<p>確定要刪除這筆記事嗎？刪除後移至回收筒（30 天內可還原）。</p><div class="form-actions">${button("確認刪除", "confirm-delete-chat-note", "danger", `data-id="${esc(id)}" data-recipient="${esc(recId)}"`)}</div>`);
+    return true;
+  }
   if (action === "toggle-chat-note-pin") {
     const recId = target.dataset.recipient || chatUI.selectedId;
     api("/api/chat-notes/pin", { note_id: id }).then(res => {
@@ -684,7 +718,7 @@ function chatAction(action, id, target) {
       createCaseModal(recId, {
         title: note.title || "從記事建立案件",
         description: note.content || "",
-        category: note.note_type || "一般"
+        category: note.category_name || note.note_type || "一般"
       });
     }
     return true;
