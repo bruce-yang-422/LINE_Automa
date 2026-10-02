@@ -673,8 +673,8 @@ def get_recipient_avatar(conn, recipient_id: str) -> tuple[bytes, str] | None:
     if cache_file.exists() and meta_file.exists():
         try:
             mtime = cache_file.stat().st_mtime
-            if time.time() - mtime < 86400 * 7:
-                meta = json.loads(meta_file.read_text(encoding="utf-8"))
+            meta = json.loads(meta_file.read_text(encoding="utf-8"))
+            if meta.get("picture_url") == picture_url and time.time() - mtime < 86400 * 7:
                 return cache_file.read_bytes(), meta.get("content_type", "image/jpeg")
         except Exception:
             pass
@@ -686,7 +686,7 @@ def get_recipient_avatar(conn, recipient_id: str) -> tuple[bytes, str] | None:
             data = resp.read()
             content_type = resp.headers.get_content_type() or "image/jpeg"
             cache_file.write_bytes(data)
-            meta_file.write_text(json.dumps({"content_type": content_type, "cached_at": time.time()}), encoding="utf-8")
+            meta_file.write_text(json.dumps({"picture_url": picture_url, "content_type": content_type, "cached_at": time.time()}), encoding="utf-8")
             return data, content_type
     except Exception:
         if cache_file.exists():
