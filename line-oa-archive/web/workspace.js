@@ -6,6 +6,7 @@ function workspaceHeader(){
   if(!state.contacts.some(r=>r.recipient_id===workspaceUI.contactDetail))workspaceUI.contactDetail="";
   if(!state.reports.some(r=>r.report_id===workspaceUI.reportDetail))workspaceUI.reportDetail="";
   const user=state.session?.user;
+  const context=document.getElementById("workspace-context-name");
   const ch = typeof selectedOA === "function" ? selectedOA() : null;
   if(context) context.textContent=ch ? ch.name : (superAdmin()?"平台管理":orgName(user?.organization_id));
   const kind = document.getElementById("workspace-context-kind");
