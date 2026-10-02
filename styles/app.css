@@ -1112,3 +1112,23 @@ dialog { border-radius:18px; }
 .text-center { text-align: center; }
 .card { border: 1px solid var(--line); border-radius: 14px; background: var(--surface); padding: 16px; }
 .oa-org-picker { min-width: 200px; margin: 0; }
+
+/* 無障礙隱藏文字 */
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border-width: 0; }
+
+/* 開通引導卡片 (Onboarding Panel) */
+.onboarding-panel { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 18px 22px; margin-bottom: 22px; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.02); }
+.onboarding-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+.onboarding-head h2 { font-size: 16px; font-weight: 650; color: var(--ink); margin: 0; }
+.onboarding-steps { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+.onboarding-step { display: flex; align-items: flex-start; gap: 12px; padding: 12px 14px; background: var(--soft); border: 1px solid var(--line); border-radius: 12px; transition: all 0.2s ease; }
+.onboarding-step.done { background: var(--mint); border-color: rgba(0, 185, 0, 0.2); }
+.onboarding-check { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid var(--line); background: var(--surface); color: var(--primary, #00B900); font-size: 12px; font-weight: 700; flex-shrink: 0; margin-top: 2px; }
+.onboarding-step.done .onboarding-check { background: var(--primary, #00B900); border-color: var(--primary, #00B900); color: #fff; }
+.onboarding-step-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.onboarding-step strong { font-size: 13.5px; font-weight: 600; color: var(--ink); }
+.onboarding-step small { font-size: 12px; color: var(--muted); line-height: 1.4; }
+
+/* 統計卡片數值自適應 */
+.stat-value { word-break: break-word; font-size: 24px; font-weight: 700; }
+

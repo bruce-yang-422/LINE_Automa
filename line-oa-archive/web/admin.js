@@ -159,14 +159,14 @@ function renderOnboardingCard(){
   const hasTemplate = true;
   const hasColleagues = (state.settings?.users||[]).filter(u => u.active && u.organization_id === orgId).length > 1;
   if(hasConnectedOA && hasTemplate && hasColleagues) return "";
-  const step = (done, title, detail) => `<li class="onboarding-step ${done?"done":""}"><span class="onboarding-check" aria-hidden="true">${done?"✓":""}</span><div><strong>${title}</strong><small>${detail}</small></div><span class="sr-only">${done?"已完成":"未完成"}</span></li>`;
+  const step = (done, title, detail) => `<li class="onboarding-step ${done?"done":""}"><span class="onboarding-check" aria-hidden="true">${done?"✓":""}</span><div class="onboarding-step-body"><strong>${title}</strong><small>${detail}</small></div><span class="sr-only">${done?"已完成":"未完成"}</span></li>`;
   return `<section class="panel onboarding-panel" aria-labelledby="onboarding-title">
     <div class="onboarding-head"><h2 id="onboarding-title">開始使用</h2><button type="button" class="btn text small" data-action="dismiss-onboarding">略過</button></div>
-    <ol class="onboarding-steps">
+    <ul class="onboarding-steps">
       ${step(hasConnectedOA, "確認 LINE OA 連線", hasConnectedOA ? "已連結 OA" : "請平台管理員在「LINE OA」完成連線")}
       ${step(hasTemplate, "選擇範本包", "已預設啟用通用範本包，可在「LINE OA」調整")}
       ${step(hasColleagues, "新增同事", hasColleagues ? "已建立同事帳號" : "到「人員與權限」新增操作人員或協作人員")}
-    </ol>
+    </ul>
   </section>`;
 }
 
@@ -175,9 +175,10 @@ function overview(){
   const pending=state.jobs.filter(j=>["scheduled","queued","running"].includes(j.status)).length;
   const date=new Date().toLocaleDateString("zh-TW",{month:"long",day:"numeric",weekday:"long"});
   const r=state.reports[0];
+  const currentOrgName = orgName(state.session.user?.organization_id) || "—";
   return heading(admin()?"今天的工作，一目了然":"你的報告，都在這裡",`${esc(date)}　·　${admin()?"檢查報告、安排收件對象，掌握每次發送結果。":"依照你的公司、部門與個人權限，查看最新內容。"}`,canSend()?button(icon("plus")+"建立發送","start-send","primary"):button("瀏覽報告 "+icon("arrow"),"go-reports","primary"),"YOUR DAILY WORKSPACE")+
     renderOnboardingCard()+
-    `<div class="stats">${stat("可用報告",ready,"份",`已登記 ${state.reports.length} 份報告`,"file")}${admin()?stat("有效聯絡對象",active,"個",`${state.contacts.filter(r=>r.active&&r.kind!=="user").length} 個群組聊天室`,"users")+(weatherModule()?stat("天氣訂閱",subscribed,"個","發送時檢查最新訂閱狀態","bell"):stat("所屬組織",esc(state.session.user?.organization_id||"—"),"","資料依公司隔離","shield"))+stat("進行中的發送",pending,"筆","結果不明的請求不自動重送","send"):stat("所屬部門",esc(state.session.user?.department||"未指定"),"","只顯示獲授權內容","shield")}</div>
+    `<div class="stats">${stat("可用報告",ready,"份",`已登記 ${state.reports.length} 份報告`,"file")}${admin()?stat("有效聯絡對象",active,"個",`${state.contacts.filter(r=>r.active&&r.kind!=="user").length} 個群組聊天室`,"users")+(weatherModule()?stat("天氣訂閱",subscribed,"個","發送時檢查最新訂閱狀態","bell"):stat("所屬組織",esc(currentOrgName),"","資料依組織隔離","shield"))+stat("進行中的發送",pending,"筆","結果不明的請求不自動重送","send"):stat("所屬部門",esc(state.session.user?.department||"未指定"),"","只顯示獲授權內容","shield")}</div>
     <div class="dashboard-grid"><div class="stack"><section class="panel"><div class="panel-head"><div><h2>報告焦點</h2><p>先確認內容，再開始下一步</p></div><button class="btn text small" data-view="reports">所有報告 ${icon("arrow")}</button></div>${r?`<div class="feature"><div data-preview="${esc(r.report_id)}">${tile(r)}</div><div>${reportBadge(r)}<h3>${esc(r.title)}</h3><p>最後更新　${when(r.modified_at)}</p><p>${esc(scope(r))}</p>${r.stale?'<p>此報告不是今日更新，發送前請確認。</p>':""}${button(canSend()?"預覽並建立發送 "+icon("arrow"):"開啟報告 "+icon("arrow"),canSend()?"choose-report":"preview","dark",`data-id="${esc(r.report_id)}" ${r.status!=="ready"?"disabled":""}`)}</div></div>`:empty("還沒有可用報告","管理員設定報告來源與權限後，就會顯示在這裡。")}</section>${admin()?`<section class="panel"><div class="panel-head"><h2>最近發送</h2><button class="btn text small" data-view="history">查看全部 ${icon("arrow")}</button></div>${historyList(state.jobs.slice(0,3))}</section>`:""}</div><div class="stack"><section class="panel"><div class="panel-head"><h2>快速前往</h2></div><div class="quick-list">${admin()?quick("聊天對話","查看與回覆 LINE 即時訊息","chat","message"):""}${quick("報告中心","預覽獲授權的模組報告","reports","file")}${admin()?quick("聯絡對象","整理公司、部門與群組","contacts","users")+(weatherModule()?quick("天氣訂閱","管理持續接收通知的對象","subscriptions","bell"):""):""}</div></section><aside class="insight"><h3>${icon("shield")}${admin()?"分對對象，送對報告":"你的資料範圍"}</h3><p>${admin()?"組織報表依公司、部門或個人範圍選擇發送對象。聯絡對象只需在 LINE 收訊，不需後台帳號；需要操作後台的操作人員才須登入授權。":"此處只列出你獲授權的報告。若缺少需要的內容，請聯絡管理員確認公司及部門設定。"}</p></aside></div></div>`;
 }
 function reportsPage(wizard=false){
