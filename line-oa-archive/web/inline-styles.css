@@ -219,3 +219,9 @@
 .icon-button:hover svg {
   transform: scale(1.1);
 }
+.svg-doc-card,
+.svg-doc-card * {
+  stroke: none !important;
+  stroke-width: 0 !important;
+}
+
