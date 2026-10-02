@@ -31,7 +31,17 @@ const paths = {
   video:'<polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>',
   mic:'<path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8"/>',
   star:'<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>',
-  alert:'<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>'
+  alert:'<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>',
+  close:'<path d="M18 6 6 18M6 6l12 12"/>',
+  trash:'<path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6"/>',
+  pin:'<path d="M16 3l1 1-3 5v5l-2 2-2-2V9L7 4l1-1h8zM12 16v5"/>',
+  unpin:'<path d="M16 3l1 1-3 5v5l-2 2-2-2V9L7 4l1-1h8zM12 16v5M2 2l20 20"/>',
+  lock:'<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+  unlock:'<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.5-2"/>',
+  calendar:'<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>',
+  tag:'<path d="m20.59 13.41-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82zM7 7h.01"/>',
+  edit:'<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>',
+  info:'<circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>'
 };
 const solidIcons64 = {
   pdf: `<svg viewBox="0 0 36 42" fill="none" class="svg-doc-card" aria-hidden="true"><path d="M4 2C2.89543 2 2 2.89543 2 4V38C2 39.1046 2.89543 40 4 40H32C33.1046 40 34 39.1046 34 38V14L22 2H4Z" fill="#E53E3E"/><path d="M22 2V12C22 13.1046 22.8954 14 24 14H34L22 2Z" fill="#C53030"/><text x="18" y="31" fill="#FFFFFF" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="14" font-weight="900" text-anchor="middle" letter-spacing="-0.5">PDF</text></svg>`,
@@ -129,7 +139,7 @@ function notice(message, error=false){
     return;
   }
   const toastSvg = error ? solidIcons64.toast_bad : solidIcons64.toast_good;
-  toast.innerHTML = `<span class="toast-icon">${toastSvg}</span><span class="toast-text">${esc(message)}</span><button class="toast-close" type="button" aria-label="關閉通知">✕</button>`;
+  toast.innerHTML = `<span class="toast-icon">${toastSvg}</span><span class="toast-text">${esc(message)}</span><button class="toast-close" type="button" aria-label="關閉通知">${icon("close")}</button>`;
   toast.className = "floating-toast visible" + (error ? " error" : "");
   const closeBtn = toast.querySelector(".toast-close");
   if(closeBtn) closeBtn.onclick = () => toast.classList.remove("visible");
@@ -236,7 +246,7 @@ function renderOnboardingCard(){
   const hasTemplate = true;
   const hasColleagues = (state.settings?.users||[]).filter(u => u.active && u.organization_id === orgId).length > 1;
   if(hasConnectedOA && hasTemplate && hasColleagues) return "";
-  const step = (done, title, detail) => `<li class="onboarding-step ${done?"done":""}"><span class="onboarding-check" aria-hidden="true">${done?"✓":""}</span><div class="onboarding-step-body"><strong>${title}</strong><small>${detail}</small></div><span class="sr-only">${done?"已完成":"未完成"}</span></li>`;
+  const step = (done, title, detail) => `<li class="onboarding-step ${done?"done":""}"><span class="onboarding-check" aria-hidden="true">${done?icon("check"):""}</span><div class="onboarding-step-body"><strong>${title}</strong><small>${detail}</small></div><span class="sr-only">${done?"已完成":"未完成"}</span></li>`;
   return `<section class="panel onboarding-panel" aria-labelledby="onboarding-title">
     <div class="onboarding-head"><h2 id="onboarding-title">開始使用</h2><button type="button" class="btn text small" data-action="dismiss-onboarding">略過</button></div>
     <ul class="onboarding-steps">
@@ -569,7 +579,7 @@ async function caseDetailModal(case_id){
     const timelineHtml=activities.length?activities.map(a=>{
       let desc="";
       if(a.action==="create_case")desc="建立案件";
-      else if(a.action==="status_change")desc=`狀態變更：${caseStatusNames[a.details?.old_status]||a.details?.old_status} ➔ <strong>${caseStatusNames[a.details?.new_status]||a.details?.new_status}</strong>${a.details?.waiting_party?`（等待：${waitingPartyNames[a.details.waiting_party]||a.details.waiting_party}，原因：${esc(a.details.waiting_reason||"")}）`:""}${a.details?.resolution?`（結案說明：${esc(a.details.resolution)}）`:""}`;
+      else if(a.action==="status_change")desc=`狀態變更：${caseStatusNames[a.details?.old_status]||a.details?.old_status} <span class="status-change-arrow" aria-hidden="true">${icon("arrow")}</span> <strong>${caseStatusNames[a.details?.new_status]||a.details?.new_status}</strong>${a.details?.waiting_party?`（等待：${waitingPartyNames[a.details.waiting_party]||a.details.waiting_party}，原因：${esc(a.details.waiting_reason||"")}）`:""}${a.details?.resolution?`（結案說明：${esc(a.details.resolution)}）`:""}`;
       else if(a.action==="add_note")desc=`處理記事：${esc(a.details?.note||"")}`;
       else desc=esc(a.action);
 
@@ -1243,7 +1253,7 @@ function openOaSwitcherModal(){
               <small data-s="sd6859f9">${esc(orgName(c.org_id))}</small>
             </div>
           </div>
-          ${c.channel_id===currentId ? '<span data-s="se6630c1">✓</span>' : ''}
+          ${c.channel_id===currentId ? `<span class="oa-checked-badge" data-s="se6630c1">${icon("check")}</span>` : ''}
         </button>
       `).join("") || '<p class="muted">尚無可切換的 LINE OA。</p>'}
     </div>

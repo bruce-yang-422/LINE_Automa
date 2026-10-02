@@ -147,3 +147,75 @@
 [data-s="sfe3fb0d"] { display:grid !important; gap:12px !important; }
 [data-s="sff2e604"] { display:flex !important; align-items:center !important; gap:8px !important; font-size:13px !important; flex-wrap:wrap !important; }
 [data-s="sffcf89a"] { font-size:13px !important; display:block !important; }
+
+/* 現代 CSS 純向量圖示與微互動設計 */
+.onboarding-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1.5px solid var(--control-border, #71836d);
+  background: var(--surface, #fff);
+  color: #16a34a;
+  flex-shrink: 0;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.onboarding-step.done .onboarding-check {
+  background: #22c55e;
+  border-color: #16a34a;
+  color: #ffffff;
+}
+.onboarding-check svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  stroke-width: 2.5;
+}
+.oa-checked-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #22c55e;
+  color: #ffffff;
+  flex-shrink: 0;
+}
+.oa-checked-badge svg {
+  width: 13px;
+  height: 13px;
+  stroke: #ffffff;
+  stroke-width: 2.5;
+}
+.status-change-arrow {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  margin: 0 4px;
+  color: var(--muted, #4e6353);
+}
+.status-change-arrow svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  stroke-width: 2;
+}
+.toast-close svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  stroke-width: 2;
+}
+.icon-button svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  stroke-width: 2;
+  transition: transform 0.15s ease;
+}
+.icon-button:hover svg {
+  transform: scale(1.1);
+}

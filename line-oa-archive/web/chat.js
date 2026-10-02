@@ -370,7 +370,7 @@ function renderChatInfoContent(r) {
 
   return `<div class="chat-info-header">
     <h3>聯絡資訊與歷程</h3>
-    <button class="icon-button" data-action="toggle-chat-info" aria-label="關閉面板">✕</button>
+    <button class="icon-button" data-action="toggle-chat-info" aria-label="關閉面板">${icon("close")}</button>
   </div>
   <div class="chat-info-body">
     ${person(r)}

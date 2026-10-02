@@ -19,7 +19,7 @@ function workspaceHeader(){
 
 function reportDetailPanel(r){
   if(!r)return "";
-  return `<aside class="detail-panel" id="report-detail" aria-labelledby="report-detail-title" tabindex="-1"><div class="detail-heading"><div><h2 id="report-detail-title">${esc(r.title)}</h2><p class="subtitle">報告詳情</p></div>${button("✕","close-report-detail","icon-button",'aria-label="關閉報告詳情"')}</div><div class="detail-body"><div data-preview="${esc(r.report_id)}">${tile(r)}</div><dl><dt>狀態</dt><dd>${reportBadge(r)}</dd><dt>可見範圍</dt><dd>${esc(scope(r))}</dd><dt>最後更新</dt><dd>${esc(when(r.modified_at))}</dd><dt>檔案大小</dt><dd>${r.size?Math.ceil(r.size/1024)+" KB":"尚無檔案"}</dd></dl><div class="detail-actions">${button("放大預覽","preview","",`data-id="${esc(r.report_id)}" ${r.status!=="ready"?"disabled":""}`)}${canSend()?button("建立發送","choose-report","primary",`data-id="${esc(r.report_id)}" ${r.status!=="ready"?"disabled":""}`):""}</div>${superAdmin()?`<div class="detail-actions">${r.report_id!=="weather"?button("設定來源","edit-report","",`data-id="${esc(r.report_id)}"`):""}${button("移除報告","remove-report","text",`data-id="${esc(r.report_id)}"`)}</div>`:""}</div></aside>`;
+  return `<aside class="detail-panel" id="report-detail" aria-labelledby="report-detail-title" tabindex="-1"><div class="detail-heading"><div><h2 id="report-detail-title">${esc(r.title)}</h2><p class="subtitle">報告詳情</p></div>${button(icon("close"),"close-report-detail","icon-button",'aria-label="關閉報告詳情"')}</div><div class="detail-body"><div data-preview="${esc(r.report_id)}">${tile(r)}</div><dl><dt>狀態</dt><dd>${reportBadge(r)}</dd><dt>可見範圍</dt><dd>${esc(scope(r))}</dd><dt>最後更新</dt><dd>${esc(when(r.modified_at))}</dd><dt>檔案大小</dt><dd>${r.size?Math.ceil(r.size/1024)+" KB":"尚無檔案"}</dd></dl><div class="detail-actions">${button("放大預覽","preview","",`data-id="${esc(r.report_id)}" ${r.status!=="ready"?"disabled":""}`)}${canSend()?button("建立發送","choose-report","primary",`data-id="${esc(r.report_id)}" ${r.status!=="ready"?"disabled":""}`):""}</div>${superAdmin()?`<div class="detail-actions">${r.report_id!=="weather"?button("設定來源","edit-report","",`data-id="${esc(r.report_id)}"`):""}${button("移除報告","remove-report","text",`data-id="${esc(r.report_id)}"`)}</div>`:""}</div></aside>`;
 }
 
 function workspaceReports(wizard=false){
@@ -44,7 +44,7 @@ function contactDetailPanel(){
         <h2 id="contact-detail-title">${esc(label(r))}</h2>
         <p class="subtitle">${r.kind==="user"?"個人聊天室":"LINE 群組"}</p>
       </div>
-      ${button("✕","close-contact-detail","icon-button",'aria-label="關閉聯絡對象詳情"')}
+      ${button(icon("close"),"close-contact-detail","icon-button",'aria-label="關閉聯絡對象詳情"')}
     </div>
     <div class="detail-body">
       ${person(r)}

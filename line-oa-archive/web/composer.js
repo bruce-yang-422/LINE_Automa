@@ -114,12 +114,12 @@ function templatesView(){
       ${filtered.map(t=>`<article class="panel template-card">
         <div class="template-head">
           <div><span class="badge ${t.category==='promotion'?'good':t.category==='announcement'?'warn':''}">${esc(t.badge||t.categoryName||'範本')}</span><h3>${esc(t.title)}</h3></div>
-          ${t.isCustom?button("✕","delete-custom-template","icon-button small",`data-id="${esc(t.id)}" title="刪除自訂範本"`):''}
+          ${t.isCustom?button(icon("trash"),"delete-custom-template","icon-button small",`data-id="${esc(t.id)}" title="刪除自訂範本"`):''}
         </div>
         <p class="template-preview-text">${esc(t.format==='card'?`${t.cardTitle}\n${t.cardText}`:(t.text||t.alt_text))}</p>
         <div class="template-footer">
           <small class="muted">${t.format==='card'?'圖文卡片範本':t.format==='carousel'?'輪播卡片範本':'純文字範本'}</small>
-          ${button("套用此範本 →","apply-template","primary small",`data-id="${esc(t.id)}"`)}
+          ${button("套用此範本 " + icon("arrow"),"apply-template","primary small",`data-id="${esc(t.id)}"`)}
         </div>
       </article>`).join('')}
     </div>
