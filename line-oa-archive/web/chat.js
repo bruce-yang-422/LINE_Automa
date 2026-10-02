@@ -229,6 +229,29 @@ function highlightSearchText(text, q) {
   return parts.map(p => p.toLowerCase() === q.toLowerCase() ? `<mark data-s="se07ba57">${esc(p)}</mark>` : esc(p)).join("").replace(/\n/g, '<br>');
 }
 
+function getFileMeta(fileName) {
+  const parts = (fileName || '').split('.');
+  const ext = parts.length > 1 ? parts.pop().toLowerCase() : '';
+  if (ext === 'pdf') {
+    return { icon: '📕', label: 'PDF 文件', color: '#ef4444', bg: '#fef2f2', border: '#fca5a5' };
+  } else if (['doc', 'docx'].includes(ext)) {
+    return { icon: '📘', label: 'Word 文件', color: '#2563eb', bg: '#eff6ff', border: '#bfdbfe' };
+  } else if (['xls', 'xlsx', 'csv'].includes(ext)) {
+    return { icon: '📊', label: 'Excel 試算表', color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0' };
+  } else if (['ppt', 'pptx'].includes(ext)) {
+    return { icon: '📙', label: '簡報 PPT', color: '#ea580c', bg: '#fff7ed', border: '#fed7aa' };
+  } else if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) {
+    return { icon: '📦', label: '壓縮檔 ZIP', color: '#d97706', bg: '#fffbeb', border: '#fde68a' };
+  } else if (['txt', 'md', 'json', 'log', 'sql'].includes(ext)) {
+    return { icon: '📄', label: '文字檔', color: '#475569', bg: '#f8fafc', border: '#e2e8f0' };
+  } else if (['mp3', 'wav', 'm4a', 'aac', 'ogg'].includes(ext)) {
+    return { icon: '🎵', label: '語音／音訊', color: '#8b5cf6', bg: '#f5f3ff', border: '#ddd6fe' };
+  } else if (['mp4', 'mov', 'avi', 'mkv', 'webm'].includes(ext)) {
+    return { icon: '🎬', label: '影片', color: '#06b6d4', bg: '#ecfeff', border: '#a5f3fc' };
+  }
+  return { icon: '📎', label: ext ? ext.toUpperCase() + ' 檔案' : '檔案', color: '#64748b', bg: '#f1f5f9', border: '#e2e8f0' };
+}
+
 function renderMessageBubbles() {
   if (chatUI.loadingMessages) {
     return `<div class="loading-panel"><span class="spinner"></span><p>讀取訊息歷程…</p></div>`;
@@ -256,30 +279,50 @@ function renderMessageBubbles() {
     const timeStr = formatChatTime(m.sent_at);
     const mediaUrl = id => `/api/chat/media/${encodeURIComponent(id)}${token ? '?token=' + encodeURIComponent(token) : ''}`;
     let bubbleContent = "";
+    let isMediaBubble = false;
+
     if (m.message_type === "image") {
+      isMediaBubble = true;
       const src = mediaUrl(m.message_id);
-      bubbleContent = `<div class="chat-media-image">
-        <a href="${src}" target="_blank" title="點擊在新分頁放大檢視圖片">
-          <img src="${src}" alt="LINE 圖片" class="chat-img-thumb" loading="lazy" onerror="this.onerror=null;this.parentElement.innerHTML='<span class=\\'muted\\' style=\\'font-size:12px;\\'>🖼️ [圖片已過期或無法載入]</span>';">
+      bubbleContent = `<div class="chat-media-image-wrapper">
+        <a href="${src}" target="_blank" title="點擊在新分頁放大檢視原圖" class="chat-media-image-link">
+          <img src="${src}" alt="LINE 圖片" class="chat-img-thumb" loading="lazy" onerror="this.onerror=null;this.parentElement.innerHTML='<span class=\\'muted\\' style=\\'font-size:12px;padding:12px;display:block;\\'>🖼️ [圖片已過期或無法載入]</span>';">
+          <span class="chat-img-overlay">🔍 點擊放大</span>
         </a>
       </div>`;
     } else if (m.message_type === "video") {
+      isMediaBubble = true;
       const src = mediaUrl(m.message_id);
-      bubbleContent = `<div class="chat-media-video">
-        <video src="${src}" controls style="max-width:320px;border-radius:8px;"></video>
-        <div style="margin-top:4px;"><a href="${src}" download="video_${esc(m.message_id)}.mp4" class="btn text small">⬇️ 下載影片</a></div>
+      bubbleContent = `<div class="chat-media-video-card">
+        <video src="${src}" controls preload="metadata" class="chat-video-player"></video>
+        <div class="chat-video-footer">
+          <a href="${src}" download="video_${esc(m.message_id)}.mp4" class="btn small text" style="font-size:11.5px;padding:3px 8px;">⬇️ 下載原始影片</a>
+        </div>
       </div>`;
     } else if (m.message_type === "audio") {
+      isMediaBubble = true;
       const src = mediaUrl(m.message_id);
-      bubbleContent = `<div class="chat-media-audio">
-        <audio src="${src}" controls style="max-width:280px;"></audio>
+      bubbleContent = `<div class="chat-media-audio-card">
+        <span class="chat-audio-icon">🎙️</span>
+        <audio src="${src}" controls class="chat-audio-player"></audio>
       </div>`;
     } else if (m.message_type === "file") {
+      isMediaBubble = true;
       const fileName = (m.text_content || "傳送的檔案").trim();
+      const meta = getFileMeta(fileName);
       const src = mediaUrl(m.message_id);
-      bubbleContent = `<div class="chat-media-file">
-        <a href="${src}" download="${esc(fileName)}" class="btn small" style="display:inline-flex;align-items:center;gap:6px;font-weight:500;">
-          📄 ${esc(fileName)}
+      bubbleContent = `<div class="chat-media-file-card">
+        <a href="${src}" download="${esc(fileName)}" class="chat-file-link" title="點擊下載 ${esc(fileName)}">
+          <div class="chat-file-icon" style="background:${meta.bg};border:1px solid ${meta.border};color:${meta.color};">
+            <span>${meta.icon}</span>
+          </div>
+          <div class="chat-file-info">
+            <div class="chat-file-name" title="${esc(fileName)}">${esc(fileName)}</div>
+            <div class="chat-file-meta">
+              <span class="chat-file-badge" style="color:${meta.color};background:${meta.bg};border:1px solid ${meta.border};">${esc(meta.label)}</span>
+              <span class="chat-file-action">⬇️ 下載檔案</span>
+            </div>
+          </div>
         </a>
       </div>`;
     } else if (m.message_type === "sticker") {
@@ -295,7 +338,7 @@ function renderMessageBubbles() {
           <strong>${esc(m.sender_name || (isOutbound ? '管理員' : '使用者'))}</strong>
           ${isOutbound && m.send_method ? `<small class="method-tag">${m.send_method === 'reply' ? '免費回覆' : 'Push'}</small>` : ''}
         </div>
-        <div class="chat-bubble ${isOutbound ? 'outbound' : 'inbound'} ${m.is_unsent ? 'unsent' : ''}">
+        <div class="chat-bubble ${isOutbound ? 'outbound' : 'inbound'} ${m.is_unsent ? 'unsent' : ''} ${isMediaBubble ? 'has-media' : ''}">
           ${bubbleContent}
         </div>
         <div class="chat-bubble-footer">
