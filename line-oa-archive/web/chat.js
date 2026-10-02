@@ -20,6 +20,18 @@ const chatUI = {
   pollInterval: null
 };
 
+window.handleChatImgError = function(img) {
+  if (!img) return;
+  img.onerror = null;
+  const parent = img.closest('.chat-media-image-wrapper') || img.parentElement;
+  if (parent) {
+    parent.innerHTML = `<div class="chat-media-error" style="padding:12px 16px;font-size:12px;color:var(--muted);display:flex;align-items:center;gap:8px;background:var(--soft);border-radius:10px;border:1px solid var(--line);">
+      <span style="display:inline-flex;color:var(--muted);">${icon('image')}</span>
+      <span>圖片已過期或無法載入</span>
+    </div>`;
+  }
+};
+
 function formatChatTime(val) {
   if (!val) return "";
   const d = new Date(val);
@@ -281,8 +293,8 @@ function renderMessageBubbles() {
       isMediaBubble = true;
       const src = mediaUrl(m.message_id);
       bubbleContent = `<div class="chat-media-image-wrapper">
-        <a href="${src}" target="_blank" title="點擊在新分頁放大檢視原圖" class="chat-media-image-link">
-          <img src="${src}" alt="LINE 圖片" class="chat-img-thumb" loading="lazy" onerror="this.onerror=null;this.parentElement.innerHTML='<span class=\\'muted\\' style=\\'font-size:12px;padding:12px;display:flex;align-items:center;gap:6px;\\'>${icon('image')} [圖片已過期或無法載入]</span>';">
+        <a href="${src}" target="_blank" rel="noopener" title="點擊在新分頁放大檢視原圖" class="chat-media-image-link">
+          <img src="${src}" alt="LINE 圖片" class="chat-img-thumb" loading="lazy" onerror="window.handleChatImgError(this)">
           <span class="chat-img-overlay">${icon('search')} 放大檢視</span>
         </a>
       </div>`;
