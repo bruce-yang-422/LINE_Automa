@@ -10,7 +10,12 @@
 @source "../line-oa-archive/web/login.html";
 @source "../line-oa-archive/web/account-security.js";
 
-:root { font-size:16px; }
+:root {
+  font-size: 16px;
+  --brand: #00B900;
+  --brand-hover: #009900;
+  --brand-light: #e6f8e6;
+}
 body { font-size:14px; letter-spacing:.01em; }
 .sidebar { @apply tw:border-solid tw:border-edge; border-width:0 1px 0 0; width:248px; padding:26px 16px; background:var(--soft); }
 .brand { padding:0 10px 26px; gap:10px; }
@@ -794,20 +799,30 @@ dialog { border-radius:18px; }
   word-break: break-word;
 }
 .chat-bubble.inbound {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  color: var(--ink);
+  background: #ffffff !important;
+  border: 1px solid var(--line, #d8e1d4) !important;
+  color: #1e293b !important;
   border-top-left-radius: 3px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+.chat-bubble.inbound .chat-bubble-text {
+  color: #1e293b !important;
 }
 .chat-bubble.outbound {
-  background: var(--brand);
-  color: #ffffff;
+  background: #00B900 !important;
+  border: none !important;
+  color: #ffffff !important;
   border-top-right-radius: 3px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+.chat-bubble.outbound .chat-bubble-text {
+  color: #ffffff !important;
 }
 .chat-bubble.unsent {
-  background: var(--soft);
-  color: var(--muted);
+  background: var(--soft) !important;
+  color: var(--muted) !important;
   font-style: italic;
+  border: 1px dashed var(--line, #d8e1d4) !important;
 }
 .chat-bubble.has-media {
   padding: 3px;
@@ -1027,24 +1042,7 @@ dialog { border-radius:18px; }
   background: var(--surface);
 }
 .chat-quota-banner {
-  padding: 6px 14px;
-  font-size: 11px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-.chat-quota-banner.free {
-  background: #E8F8EE;
-  color: #166534;
-}
-.chat-quota-banner.free.urgent {
-  background: #FEF3C7;
-  color: #92400E;
-  font-weight: 600;
-}
-.chat-quota-banner.push {
-  background: color-mix(in srgb, var(--line) 40%, var(--surface));
-  color: var(--muted);
+  display: none !important;
 }
 .chat-input-controls {
   padding: 10px 14px;

@@ -182,15 +182,16 @@ function renderConversationView(room) {
 
   <div class="chat-input-wrapper">
     ${state.session?.role === 'collaborator' ? `
-      <div class="callout muted text-center" data-s="s0fe9368">
-        <p data-s="se22915d">ℹ️ <strong>協作人員無法傳送訊息</strong>（具備對話閱讀、記事本與案件管理權限）</p>
+      <div class="callout muted text-center" data-s="s0fe9368" style="display:flex;align-items:center;justify-content:center;gap:6px;">
+        <span style="display:inline-flex;color:var(--muted);">${icon('info')}</span>
+        <p data-s="se22915d" style="margin:0;"><strong>協作人員無法傳送訊息</strong>（具備對話閱讀、記事本與案件管理權限）</p>
       </div>
     ` : state.session?.role === 'platform_admin' ? `
-      <div class="callout muted text-center" data-s="s0fe9368">
-        <p data-s="se22915d">👁️ <strong>平台管理員僅能檢視對話紀錄</strong>（唯讀模式）</p>
+      <div class="callout muted text-center" data-s="s0fe9368" style="display:flex;align-items:center;justify-content:center;gap:6px;">
+        <span style="display:inline-flex;color:var(--muted);">${icon('eye')}</span>
+        <p data-s="se22915d" style="margin:0;"><strong>平台管理員僅能檢視對話紀錄</strong>（唯讀模式）</p>
       </div>
     ` : `
-      ${renderReplyTokenBanner()}
       <form id="chat-send-form" data-id="${esc(room.recipient_id)}">
         <div class="chat-input-controls">
           <textarea id="chat-message-input" rows="3" placeholder="輸入文字訊息（Enter 送出，Shift+Enter 換行）…" required maxlength="5000" ${!room.active ? 'disabled placeholder="此對象已封鎖或停用，無法傳送"' : ''}></textarea>
@@ -211,15 +212,7 @@ function renderConversationView(room) {
 }
 
 function renderReplyTokenBanner() {
-  if (chatUI.activeReplyToken && chatUI.replyExpiresIn > 0) {
-    const isUrgent = chatUI.replyExpiresIn <= 10;
-    return `<div class="chat-quota-banner free ${isUrgent ? 'urgent' : ''}">
-      <span>⚡ 免費回覆機會有效中（剩餘 <strong>${chatUI.replyExpiresIn}</strong> 秒）· 本則以 Reply 送出不耗額度</span>
-    </div>`;
-  }
-  return `<div class="chat-quota-banner push">
-    <span>ℹ️ 本則將以 Push 送出（計入當月訊息額度）。亦可至 <a href="https://manager.line.biz" target="_blank" rel="noopener">LINE 官方後台</a> 免費手動回覆。</span>
-  </div>`;
+  return "";
 }
 
 function highlightSearchText(text, q) {
@@ -339,7 +332,6 @@ function renderMessageBubbles() {
       <div class="chat-bubble-container">
         <div class="chat-bubble-meta">
           <strong>${esc(m.sender_name || (isOutbound ? '管理員' : '使用者'))}</strong>
-          ${isOutbound && m.send_method ? `<small class="method-tag">${m.send_method === 'reply' ? '免費回覆' : 'Push'}</small>` : ''}
         </div>
         <div class="chat-bubble ${isOutbound ? 'outbound' : 'inbound'} ${m.is_unsent ? 'unsent' : ''} ${isMediaBubble ? 'has-media' : ''}">
           ${bubbleContent}
@@ -427,19 +419,9 @@ async function selectChatRoom(recipient_id) {
     chatUI.activeReplyToken = res.active_reply_token;
     chatUI.replyExpiresIn = res.reply_token_expires_in || 0;
     chatUI.loadingMessages = false;
-
-    // Start countdown timer if reply token is valid
-    if (chatUI.timerId) clearInterval(chatUI.timerId);
-    if (chatUI.replyExpiresIn > 0) {
-      chatUI.timerId = setInterval(() => {
-        if (chatUI.replyExpiresIn > 0) {
-          chatUI.replyExpiresIn--;
-          const banner = document.querySelector(".chat-quota-banner");
-          if (banner) banner.outerHTML = renderReplyTokenBanner();
-        } else {
-          clearInterval(chatUI.timerId);
-        }
-      }, 1000);
+    if (chatUI.timerId) {
+      clearInterval(chatUI.timerId);
+      chatUI.timerId = null;
     }
 
     // Mark read
