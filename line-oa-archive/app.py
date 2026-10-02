@@ -101,7 +101,7 @@ def save_events(events: list[dict]) -> list:
                     if not message_id:
                         continue
                     message_type = message.get("type") or "unknown"
-                    text = message.get("text") if message_type == "text" else None
+                    text = message.get("text") if message_type == "text" else (message.get("fileName") if message_type == "file" else None)
                     timestamp = event.get("timestamp")
                     reply_token = event.get("replyToken") or ""
                     sent_at = (

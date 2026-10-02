@@ -411,7 +411,7 @@ class AdminHandler(BaseHTTPRequestHandler):
                     '/api/accounts/save', '/api/organizations/save', '/api/memberships/save',
                     '/api/oa-list', '/api/personnel', '/api/personnel/save', '/api/org-settings/save'}
         registry = self.path.startswith('/api/channels')
-        if registry:
+        if registry or re.fullmatch(r"/api/chat/media/[0-9a-zA-Z_]+", self.path):
             return True
         try:
             if channel_id:
@@ -511,7 +511,10 @@ class AdminHandler(BaseHTTPRequestHandler):
             "/api/chat/rooms", "/api/chat/messages", "/api/chat/canned-replies",
             "/api/chat/response-hours", "/api/chat/media/stats", "/api/chat/export"
         }
-        if self.path not in files and self.path not in read_routes and not re.fullmatch(r"/api/reports/(weather|[0-9a-f]{32})", self.path) and not re.fullmatch(r"/api/cases/[0-9a-f]{32}", self.path):
+        if (self.path not in files and self.path not in read_routes 
+            and not re.fullmatch(r"/api/reports/(weather|[0-9a-f]{32})", self.path) 
+            and not re.fullmatch(r"/api/cases/[0-9a-f]{32}", self.path)
+            and not re.fullmatch(r"/api/chat/media/[0-9a-zA-Z_]+", self.path)):
             if self.user['role'] in {'operator', 'collaborator'} and self.path in {'/api/view-options','/api/settings'}:
                 self.respond(403, {'error':'此功能僅供管理員使用。'})
                 return
@@ -707,8 +710,36 @@ class AdminHandler(BaseHTTPRequestHandler):
             msg_id = self.path.rsplit('/', 1)[1]
             try:
                 with app.database_connection() as conn:
-                    data, content_type = chat.get_chat_media(conn, msg_id)
-                    self.respond(200, data, content_type=content_type)
+                    msg_row = conn.execute(
+                        "SELECT channel_id, message_type, text_content FROM line_messages WHERE message_id=?",
+                        (msg_id,)
+                    ).fetchone()
+                    if not msg_row:
+                        raise ValueError("找不到指定的訊息。")
+                    msg_channel_id, msg_type, msg_text = msg_row[0], msg_row[1], msg_row[2]
+                    channels.authorize(msg_channel_id, self.user)
+                    with channels.use(msg_channel_id):
+                        data, content_type = chat.get_chat_media(conn, msg_id)
+                        from urllib.parse import quote
+                        filename = (msg_text or f"media_{msg_id}").strip()
+                        if msg_type == "file" and "." not in filename:
+                            if "pdf" in content_type: filename += ".pdf"
+                            elif "zip" in content_type: filename += ".zip"
+                        elif msg_type == "image" and not filename.lower().endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
+                            ext = content_type.split("/")[-1] if "/" in content_type else "jpg"
+                            if ext == "jpeg": ext = "jpg"
+                            filename = f"image_{msg_id}.{ext}"
+                        elif msg_type == "video" and not filename.lower().endswith(".mp4"):
+                            filename = f"video_{msg_id}.mp4"
+                        elif msg_type == "audio" and not filename.lower().endswith((".m4a", ".mp3", ".wav")):
+                            filename = f"audio_{msg_id}.m4a"
+
+                        headers = {}
+                        if msg_type == "file":
+                            headers['Content-Disposition'] = f'attachment; filename="{quote(filename)}"; filename*=UTF-8\'\'{quote(filename)}'
+                        else:
+                            headers['Content-Disposition'] = f'inline; filename="{quote(filename)}"; filename*=UTF-8\'\'{quote(filename)}'
+                        self.respond(200, data, content_type=content_type, headers=headers)
             except ValueError as exc:
                 self.respond(404, {"error": str(exc)})
         elif self.path == "/api/jobs":

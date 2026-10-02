@@ -258,22 +258,23 @@ function renderMessageBubbles() {
     if (m.message_type === "image") {
       bubbleContent = `<div class="chat-media-image">
         <a href="/api/chat/media/${esc(m.message_id)}" target="_blank" title="點擊放大檢視圖片">
-          <img src="/api/chat/media/${esc(m.message_id)}" alt="LINE 圖片" data-s="s79041b7" loading="lazy" onerror="this.onerror=null;this.parentElement.innerHTML='<span class=\\'muted\\' style=\\'font-size:12px;\\'>🖼️ [圖片已過期或無法載入]</span>';">
+          <img src="/api/chat/media/${esc(m.message_id)}" alt="LINE 圖片" class="chat-img-thumb" loading="lazy" onerror="this.onerror=null;this.parentElement.innerHTML='<span class=\\'muted\\' style=\\'font-size:12px;\\'>🖼️ [圖片已過期或無法載入]</span>';">
         </a>
       </div>`;
     } else if (m.message_type === "video") {
       bubbleContent = `<div class="chat-media-video">
-        <video src="/api/chat/media/${esc(m.message_id)}" controls data-s="s08d6822"></video>
-        <div data-s="sa3a5568"><a href="/api/chat/media/${esc(m.message_id)}" download="video_${esc(m.message_id)}.mp4" class="btn text small" data-s="sca44a36">⬇️ 下載影片</a></div>
+        <video src="/api/chat/media/${esc(m.message_id)}" controls style="max-width:320px;border-radius:8px;"></video>
+        <div style="margin-top:4px;"><a href="/api/chat/media/${esc(m.message_id)}" download="video_${esc(m.message_id)}.mp4" class="btn text small">⬇️ 下載影片</a></div>
       </div>`;
     } else if (m.message_type === "audio") {
       bubbleContent = `<div class="chat-media-audio">
-        <audio src="/api/chat/media/${esc(m.message_id)}" controls data-s="sbccdd33"></audio>
+        <audio src="/api/chat/media/${esc(m.message_id)}" controls style="max-width:280px;"></audio>
       </div>`;
     } else if (m.message_type === "file") {
+      const fileName = (m.text_content || "傳送的檔案").trim();
       bubbleContent = `<div class="chat-media-file">
-        <a href="/api/chat/media/${esc(m.message_id)}" download class="btn small" data-s="s23fa588">
-          📁 下載傳送的檔案
+        <a href="/api/chat/media/${esc(m.message_id)}" download="${esc(fileName)}" class="btn small" style="display:inline-flex;align-items:center;gap:6px;font-weight:500;">
+          📄 ${esc(fileName)}
         </a>
       </div>`;
     } else if (m.message_type === "sticker") {
