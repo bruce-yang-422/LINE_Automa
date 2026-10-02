@@ -1,4 +1,4 @@
-param([switch]$SmokeTest)
+﻿param([switch]$SmokeTest)
 $ErrorActionPreference = 'Stop'
 # Windows PowerShell hosts do not opt in to DPI awareness by default.
 # Set awareness before creating any WinForms handles so Windows does not stretch a bitmap.
