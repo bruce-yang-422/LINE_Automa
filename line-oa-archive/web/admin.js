@@ -118,7 +118,7 @@ const person=r=>{
   const tags=r.tags||[];
   const isGroup=r.kind!=="user";
   const initial=primary.slice(0,1).toUpperCase();
-  const imgHtml=r.picture_url?`<img src="${esc(r.picture_url)}" class="avatar-img" alt="${esc(primary)}" onerror="this.style.display='none'">`:'';
+  const imgHtml=r.picture_url?`<img src="${esc(r.picture_url)}" class="avatar-img" alt="${esc(primary)}" referrerpolicy="no-referrer" onerror="this.style.display='none'">`:'';
   return `<div class="person"><span class="avatar ${isGroup?"group":""}">${imgHtml}<span class="avatar-text">${esc(initial)}</span></span><div><div class="person-title"><strong>${esc(primary)}</strong>${showLineName?`<span class="line-name muted" data-s="s102ad5b">（LINE: ${esc(r.display_name)}）</span>`:''}</div><div class="person-sub"><small class="muted">${isGroup?"群組聊天室":"個人聊天室"}${!r.active?" · 已停用":""}${truncatedId?` · <span class="line-id-chip">${esc(truncatedId)}</span>`:""}</small></div>${tags.length?`<div class="contact-tags">${tags.map(t=>tagBadge(t)).join("")}</div>`:""}</div></div>`;
 };
 const scope=r=>r.category==="composition"?(r.organization_id?orgName(r.organization_id):"平台個人素材"):r.scope==="module"?"天氣模組（依帳號／組織授權）":r.category==="text"?"自訂文字訊息":r.scope==="all"?"所有登入使用者":r.scope==="personal"?`${orgName(r.organization_id)} · 個人專屬`:r.scope==="department"?`${orgName(r.organization_id)} / ${r.department}`:`${orgName(r.organization_id)} · 全組織`;

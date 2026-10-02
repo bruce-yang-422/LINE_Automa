@@ -169,7 +169,7 @@ function renderChatRoomItems() {
     const timeStr = formatChatTime(r.last_message?.sent_at || r.last_activity_at);
     const unread = r.unread_count > 0;
     const isGroup = r.kind !== 'user';
-    const imgHtml = r.picture_url ? `<img src="${esc(r.picture_url)}" class="avatar-img" alt="${esc(r.name || r.display_name)}" onerror="this.style.display='none'">` : '';
+    const imgHtml = r.picture_url ? `<img src="${esc(r.picture_url)}" class="avatar-img" alt="${esc(r.name || r.display_name)}" referrerpolicy="no-referrer" onerror="this.style.display='none'">` : '';
 
     return `<div class="chat-room-item ${isSelected ? 'active' : ''} ${unread ? 'has-unread' : ''}" data-action="select-chat-room" data-id="${esc(r.recipient_id)}">
       <div class="chat-room-avatar ${isGroup ? 'group' : ''}">${imgHtml}<span class="avatar-text">${esc(initial)}</span></div>
@@ -205,7 +205,7 @@ function renderConversationView(room) {
   const isGroup = room.kind !== "user";
   const title = room.name || room.display_name || "聊天室";
   const initial = title.slice(0, 1).toUpperCase();
-  const imgHtml = room.picture_url ? `<img src="${esc(room.picture_url)}" class="avatar-img" alt="${esc(title)}" onerror="this.style.display='none'">` : '';
+  const imgHtml = room.picture_url ? `<img src="${esc(room.picture_url)}" class="avatar-img" alt="${esc(title)}" referrerpolicy="no-referrer" onerror="this.style.display='none'">` : '';
 
   return `<div class="conversation-header">
     <div class="conversation-header-left">
