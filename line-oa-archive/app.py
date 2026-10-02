@@ -61,6 +61,10 @@ def initialize_database() -> None:
             raise RuntimeError("這是舊版結構的資料庫，請先備份並依安裝說明重建資料庫。")
         conn.execute("PRAGMA journal_mode=WAL")
         conn.executescript((BASE_DIR / "schema.sql").read_text(encoding="utf-8"))
+        try:
+            conn.execute("ALTER TABLE recipients ADD COLUMN picture_url TEXT NOT NULL DEFAULT ''")
+        except Exception:
+            pass
         if version == 0:
             conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 

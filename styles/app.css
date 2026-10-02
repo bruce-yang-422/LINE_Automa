@@ -624,6 +624,7 @@ dialog { border-radius:18px; }
   border-left: 3px solid var(--brand);
 }
 .chat-room-avatar {
+  position: relative;
   width: 42px;
   height: 42px;
   border-radius: 50%;
@@ -635,10 +636,28 @@ dialog { border-radius:18px; }
   font-weight: 600;
   font-size: 16px;
   flex-shrink: 0;
+  overflow: hidden;
 }
 .chat-room-avatar.group {
   border-radius: 12px;
   background: #30B0C7;
+}
+.chat-room-avatar .avatar-img,
+.avatar .avatar-img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+  z-index: 1;
+}
+.chat-room-avatar .avatar-text,
+.avatar .avatar-text {
+  position: relative;
+  z-index: 0;
+  user-select: none;
 }
 .chat-room-body {
   flex: 1;

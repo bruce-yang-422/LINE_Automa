@@ -465,9 +465,9 @@ def assign(payload, user):
         current = {r[0] for r in conn.execute('SELECT recipient_id FROM recipients WHERE channel_id=?', (s['share_id'],))}
         # Copies carry LINE-side state only; custom_name, department and subscriptions belong to the receiving workspace.
         for rid in sorted(wanted - current):
-            conn.execute('''INSERT INTO recipients(channel_id,recipient_id,kind,display_name,active,event_at,
+            conn.execute('''INSERT INTO recipients(channel_id,recipient_id,kind,display_name,picture_url,active,event_at,
                                                    profile_checked_at,profile_next_at,organization_id)
-                            SELECT ?,recipient_id,kind,display_name,active,event_at,profile_checked_at,profile_next_at,?
+                            SELECT ?,recipient_id,kind,display_name,picture_url,active,event_at,profile_checked_at,profile_next_at,?
                             FROM recipients WHERE channel_id=? AND recipient_id=?''',
                          (s['share_id'], s['org_id'], base['channel_id'], rid))
         conn.executemany('DELETE FROM recipients WHERE channel_id=? AND recipient_id=?',

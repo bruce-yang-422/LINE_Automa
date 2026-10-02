@@ -33,6 +33,7 @@ def refresh_profile(recipient_id, *, force=False, now=None):
         path = 'profile/' + recipient_id if row['kind']=='user' else 'group/' + recipient_id + '/summary'
         profile = line_api.request(path)
         name = profile.get('displayName' if row['kind']=='user' else 'groupName')
+        picture_url = profile.get('pictureUrl') or ''
         if not isinstance(name, str) or not name.strip():
             raise ValueError('LINE 未提供名稱。')
     except (ValueError, OSError):
@@ -43,13 +44,13 @@ def refresh_profile(recipient_id, *, force=False, now=None):
                             WHERE recipients.channel_id=current_channel() AND recipient_id=? AND profile_lease_until=?""", (now+delay, failures, recipient_id, lease))
         return 'failed'
     with app.database_connection() as conn:
-        changed = conn.execute("""UPDATE recipients SET display_name=?,profile_checked_at=?,profile_next_at=?,
+        changed = conn.execute("""UPDATE recipients SET display_name=?,picture_url=?,profile_checked_at=?,profile_next_at=?,
                                  profile_failures=0,profile_lease_until=0
                                  WHERE recipients.channel_id=current_channel() AND recipient_id=? AND active=1 AND profile_lease_until=?""",
-                               (name.strip()[:200],now,now+86400,recipient_id,lease)).rowcount
+                               (name.strip()[:200], picture_url.strip()[:500], now, now+86400, recipient_id, lease)).rowcount
         if changed:
-            conn.execute(f'UPDATE recipients SET display_name=?,profile_checked_at=? WHERE recipient_id=? AND channel_id IN ({channels.SHARE_SCOPES})',
-                         (name.strip()[:200], now, recipient_id))
+            conn.execute(f'UPDATE recipients SET display_name=?,picture_url=?,profile_checked_at=? WHERE recipient_id=? AND channel_id IN ({channels.SHARE_SCOPES})',
+                         (name.strip()[:200], picture_url.strip()[:500], now, recipient_id))
     return 'updated' if changed else 'skipped'
 
 
@@ -294,6 +295,7 @@ def list_contacts(conn):
         d["work_phone"] = d.get("work_phone", "")
         d["work_phone_ext"] = d.get("work_phone_ext", "")
         d["work_email"] = d.get("work_email", "")
+        d["picture_url"] = d.get("picture_url", "")
         d["tags"] = tags_by_recipient.get(d["recipient_id"], [])
         result.append(d)
     return result

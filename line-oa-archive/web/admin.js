@@ -116,7 +116,10 @@ const person=r=>{
   const showLineName=hasCustom&&r.display_name&&r.display_name!==primary;
   const truncatedId=r.recipient_id?(r.recipient_id.length>12?r.recipient_id.slice(0,4)+'...'+r.recipient_id.slice(-4):r.recipient_id):'';
   const tags=r.tags||[];
-  return `<div class="person"><span class="avatar ${r.kind!=="user"?"group":""}">${esc(primary.slice(0,1))}</span><div><div class="person-title"><strong>${esc(primary)}</strong>${showLineName?`<span class="line-name muted" data-s="s102ad5b">（LINE: ${esc(r.display_name)}）</span>`:''}</div><div class="person-sub"><small class="muted">${r.kind==="user"?"個人聊天室":"群組聊天室"}${!r.active?" · 已停用":""}${truncatedId?` · <span class="line-id-chip">${esc(truncatedId)}</span>`:""}</small></div>${tags.length?`<div class="contact-tags">${tags.map(t=>tagBadge(t)).join("")}</div>`:""}</div></div>`;
+  const isGroup=r.kind!=="user";
+  const initial=primary.slice(0,1).toUpperCase();
+  const imgHtml=r.picture_url?`<img src="${esc(r.picture_url)}" class="avatar-img" alt="${esc(primary)}" onerror="this.style.display='none'">`:'';
+  return `<div class="person"><span class="avatar ${isGroup?"group":""}">${imgHtml}<span class="avatar-text">${esc(initial)}</span></span><div><div class="person-title"><strong>${esc(primary)}</strong>${showLineName?`<span class="line-name muted" data-s="s102ad5b">（LINE: ${esc(r.display_name)}）</span>`:''}</div><div class="person-sub"><small class="muted">${isGroup?"群組聊天室":"個人聊天室"}${!r.active?" · 已停用":""}${truncatedId?` · <span class="line-id-chip">${esc(truncatedId)}</span>`:""}</small></div>${tags.length?`<div class="contact-tags">${tags.map(t=>tagBadge(t)).join("")}</div>`:""}</div></div>`;
 };
 const scope=r=>r.category==="composition"?(r.organization_id?orgName(r.organization_id):"平台個人素材"):r.scope==="module"?"天氣模組（依帳號／組織授權）":r.category==="text"?"自訂文字訊息":r.scope==="all"?"所有登入使用者":r.scope==="personal"?`${orgName(r.organization_id)} · 個人專屬`:r.scope==="department"?`${orgName(r.organization_id)} / ${r.department}`:`${orgName(r.organization_id)} · 全組織`;
 const reportBadge=r=>r.status!=="ready"?badge(r.status==="missing"?"等待報告":"無法使用","bad"):r.stale?badge("非今日更新","warn"):badge(admin()?"可發送":"可查看","good");

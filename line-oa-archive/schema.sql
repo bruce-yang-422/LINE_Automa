@@ -200,6 +200,7 @@ CREATE TABLE IF NOT EXISTS recipients (
     kind TEXT NOT NULL CHECK (kind IN ('user', 'group', 'room')),
     display_name TEXT NOT NULL DEFAULT '',
     custom_name TEXT NOT NULL DEFAULT '',
+    picture_url TEXT NOT NULL DEFAULT '',
     notes TEXT NOT NULL DEFAULT '',
     contact_type TEXT NOT NULL DEFAULT ''
         CHECK (contact_type IN ('', 'organization', 'person_business', 'person_private')),

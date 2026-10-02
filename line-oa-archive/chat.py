@@ -37,7 +37,7 @@ def list_chat_rooms(conn, status=None, query=None, limit=limits.ROOMS_PAGE_SIZE,
 
     # Fetch all recipients in current channel
     recipients_rows = conn.execute(
-        """SELECT recipient_id, kind, display_name, custom_name, notes, active, last_seen
+        """SELECT recipient_id, kind, display_name, custom_name, notes, active, last_seen, picture_url
            FROM recipients
            WHERE channel_id=current_channel()"""
     ).fetchall()
@@ -147,6 +147,7 @@ def list_chat_rooms(conn, status=None, query=None, limit=limits.ROOMS_PAGE_SIZE,
             "name": primary_name,
             "display_name": display_name,
             "custom_name": custom_name,
+            "picture_url": r[7] if len(r) > 7 and r[7] else "",
             "kind": kind,
             "active": active,
             "tags": tags_by_recipient.get(rid, []),

@@ -22,7 +22,7 @@ class ProfileCacheTests(unittest.TestCase):
             # Another write succeeds while LINE is queried: no database lock held over network.
             with app.database_connection() as conn:
                 conn.execute('UPDATE recipients SET custom_name=custom_name')
-            return {'displayName':'Alice'} if path.startswith('profile/') else {'groupName':'Family'}
+            return {'displayName':'Alice', 'pictureUrl': 'https://profile.line-scdn.net/alice'} if path.startswith('profile/') else {'groupName':'Family', 'pictureUrl': 'https://profile.line-scdn.net/family'}
         with patch.object(line_api,'request',side_effect=lookup) as api:
             self.assertEqual(recipients.refresh_profile(fixtures.USER,now=100),'updated')
             self.assertEqual(recipients.refresh_profile(fixtures.GROUP,now=100),'updated')
@@ -30,7 +30,9 @@ class ProfileCacheTests(unittest.TestCase):
             self.assertEqual(api.call_args_list[0].args,('profile/'+fixtures.USER,))
             self.assertEqual(api.call_args_list[1].args,('group/'+fixtures.GROUP+'/summary',))
         self.assertEqual(self.contact()['display_name'],'Alice')
+        self.assertEqual(self.contact()['picture_url'],'https://profile.line-scdn.net/alice')
         self.assertEqual(self.contact(fixtures.GROUP)['display_name'],'Family')
+        self.assertEqual(self.contact(fixtures.GROUP)['picture_url'],'https://profile.line-scdn.net/family')
         self.assertEqual(self.contact(fixtures.GROUP)['custom_name'],'My family')
 
     def test_failure_backoff_retains_messages_and_last_name(self):

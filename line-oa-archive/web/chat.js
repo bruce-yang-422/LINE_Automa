@@ -167,9 +167,11 @@ function renderChatRoomItems() {
     const initial = (r.name || r.display_name || "L").slice(0, 1).toUpperCase();
     const timeStr = formatChatTime(r.last_message?.sent_at || r.last_activity_at);
     const unread = r.unread_count > 0;
+    const isGroup = r.kind !== 'user';
+    const imgHtml = r.picture_url ? `<img src="${esc(r.picture_url)}" class="avatar-img" alt="${esc(r.name || r.display_name)}" onerror="this.style.display='none'">` : '';
 
     return `<div class="chat-room-item ${isSelected ? 'active' : ''} ${unread ? 'has-unread' : ''}" data-action="select-chat-room" data-id="${esc(r.recipient_id)}">
-      <div class="chat-room-avatar ${r.kind !== 'user' ? 'group' : ''}">${esc(initial)}</div>
+      <div class="chat-room-avatar ${isGroup ? 'group' : ''}">${imgHtml}<span class="avatar-text">${esc(initial)}</span></div>
       <div class="chat-room-body">
         <div class="chat-room-top">
           <strong class="chat-room-name">${esc(r.name || r.display_name)}</strong>
@@ -201,11 +203,13 @@ function renderChatEmptyState() {
 function renderConversationView(room) {
   const isGroup = room.kind !== "user";
   const title = room.name || room.display_name || "聊天室";
+  const initial = title.slice(0, 1).toUpperCase();
+  const imgHtml = room.picture_url ? `<img src="${esc(room.picture_url)}" class="avatar-img" alt="${esc(title)}" onerror="this.style.display='none'">` : '';
 
   return `<div class="conversation-header">
     <div class="conversation-header-left">
       <button type="button" class="chat-mobile-back-btn icon-button" data-action="chat-back-to-list" aria-label="返回聊天清單">${icon("arrow")}</button>
-      <div class="avatar ${isGroup ? 'group' : ''}">${esc(title.slice(0, 1))}</div>
+      <div class="avatar ${isGroup ? 'group' : ''}">${imgHtml}<span class="avatar-text">${esc(initial)}</span></div>
       <div>
         <h2 class="conversation-title">${esc(title)}</h2>
         <small class="muted">${isGroup ? 'LINE 群組' : '個人對話'} · ${room.active ? '可接收' : '已封鎖／已停用'}</small>
