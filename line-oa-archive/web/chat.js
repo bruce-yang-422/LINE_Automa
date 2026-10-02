@@ -231,7 +231,10 @@ function highlightSearchText(text, q) {
 
 function getFileMeta(fileName) {
   const parts = (fileName || '').split('.');
-  const ext = parts.length > 1 ? parts.pop().toLowerCase() : '';
+  let ext = parts.length > 1 ? parts.pop().toLowerCase() : '';
+  if (!ext || ext === '檔案' || ext === '傳送的檔案') {
+    ext = 'pdf';
+  }
   if (ext === 'pdf') {
     return { icon: '📕', label: 'PDF 文件', color: '#ef4444', bg: '#fef2f2', border: '#fca5a5' };
   } else if (['doc', 'docx'].includes(ext)) {

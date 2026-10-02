@@ -262,13 +262,30 @@ def list_messages(conn, chat_id, limit=limits.MESSAGES_PAGE_SIZE, before_id=None
             except Exception:
                 pass
 
+        display_text = text
+        if m_type == "file" and not is_unsent:
+            if not display_text or not display_text.strip() or display_text == "傳送的檔案":
+                channel_id = channels.current_id()
+                meta_file = MEDIA_CACHE_DIR / f"{channel_id}_{msg_id}.json"
+                ext = "pdf"
+                if meta_file.exists():
+                    try:
+                        m_info = json.loads(meta_file.read_text(encoding="utf-8"))
+                        ctype = m_info.get("content_type", "")
+                        if "zip" in ctype: ext = "zip"
+                        elif "word" in ctype or "docx" in ctype: ext = "docx"
+                        elif "excel" in ctype or "sheet" in ctype: ext = "xlsx"
+                    except Exception:
+                        pass
+                display_text = f"傳送的文件.{ext}"
+
         messages.append({
             "message_id": msg_id,
             "direction": direction,
             "sender_user_id": sender_uid,
             "sender_name": sender_name,
             "message_type": m_type,
-            "text_content": "[對方已收回訊息]" if is_unsent else text,
+            "text_content": "[對方已收回訊息]" if is_unsent else display_text,
             "sent_at": msg_time,
             "is_unsent": is_unsent,
             "sent_by": sent_by,
