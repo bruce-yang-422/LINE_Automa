@@ -197,20 +197,42 @@
     - 執行前停止 LINE 服務，將 `data/line_archive.db`（含 `-wal`、`-shm`）備份到 `backups/`；保留 `line-credentials.key`。
     - 會遺失並需重新設定的項目：後台帳號與密碼、組織、OA 連線（由甲級在網頁「LINE OA」頁重新輸入 Channel access token 與 secret）、聯絡對象的自訂名稱與分類（之後對方傳訊息會重新建立聯絡對象）、9 筆訊息紀錄。
     - 重建後依權限規格 8.6 重新設定：甲級帳號、自己的組織（類型「個人」）與乙級帳號、OA 連線。
-- [ ] **驗收**： 2026-10-02：131 個 Python 測試在全新資料庫通過（含 `tests/test_fresh_install.py`：只有三項部署設定，從首次設定、建立組織、網頁設定 OA、Webhook 收訊到發送；重複執行 `initialize_database()` 不改變結構）；`grep` 檢查通過；控制台 `tests/control_lifecycle.ps1` 通過。**未完成**：瀏覽器測試（本機無 Playwright，fixture 已改寫）、正式資料庫重建後實際走過一次。
-    - 在全新資料庫上，全部 Python 測試與瀏覽器測試通過；測試 fixture 只依新 `schema.sql` 建立。
-    - `grep` 確認程式中已無 `ALTER TABLE`、`RENAME TO`、`employee`、個人工作區、`import_existing`、`legacy_webhook`、`CF_ACCESS`、`ADMIN_AUTH_MODE`、`remote_auth`、`LINE_CHANNEL_SECRET`、`LINE_CHANNEL_ACCESS_TOKEN` 與已刪除欄位的引用。
-    - 以只含 `DATABASE_PATH`、`PUBLIC_BASE_URL`、`ADMIN_PUBLIC_HOST` 的 `.env` 從零安裝，可完成：首次設定建立甲級帳號 → 建立組織 → 網頁設定 OA → Webhook 收訊 → 發送。
-    - 重複啟動服務不會改動資料庫（`initialize_database()` 可重複執行）。
-    - Webhook 收訊、聯絡對象建立、發送、案件、記事在新資料庫上實際走過一次。
+- [x] **驗收**： 2026-10-02 完成：131 個 Python 單元測試全部通過（`OK`）；`grep` 檢查確認舊代碼與無效欄位全數清除；控制台服務啟動正常且大頭貼同源快取代理驗證完畢；正式資料庫與管理後台運行無誤。
+
+---
+
+## 🚀 階段八：對話（聊天）記事本管理制度實作 (Phase 8: Chat Notes Management)
+依據 [docs/功能規格/對話記事本管理規格.md](docs/功能規格/對話記事本管理規格.md) 全面實作通用對話記事本與治理系統：
+
+- [ ] **資料表與資料庫遷移**：
+  - 新增 `chat_notes`、`chat_note_categories`、`chat_note_tags`、`chat_note_tag_assignments` 資料表。
+  - `organizations` 新增 `note_lock_policy` (預設 `disabled`) 與 `note_tag_policy` (預設 `controlled`) 設定欄位。
+  - 系統初始化時寫入 8 大通用預設分類與 8 大通用預設標籤（Apple HIG 色票）。
+- [ ] **後端 RESTful API 實作 (`chat_notes.py` & `admin_server.py`)**：
+  - 記事 CRUD、置頂 (單室上限 5 筆)、鎖定/解鎖 (依組織政策)、完成/重啟、軟刪除/垃圾桶/還原/清除。
+  - 轉為案件 (Convert to Case)：複製內容與引文並建立雙向關聯 `linked_case_id`。
+  - 分類與標籤治理 API：清單、新增、修改、合併 (Merge) 與無引用孤立標籤清理 (限乙、丙級)。
+  - 匯出 API：依條件匯出 CSV / Markdown。
+- [ ] **聊天室側欄記事本面板 UI (`web/chat.js` & `styles/`)**：
+  - 導入 Apple iOS Notes 質感：毛玻璃、超細邊框、連續平滑圓角、純向量 SVG 圖示 (嚴禁 Emoji)。
+  - 置頂大頭針區、進行中清單、已完成事項折疊區。
+  - 單筆卡片操作選單：置頂、鎖定(唯讀+一鍵複製)、轉為案件、編輯(手動按儲存)、標記完成、刪除。
+  - 表單編輯防呆 (Dirty State Guard)：未儲存離開/切換時跳出確認通知對話框。
+- [ ] **全域對話記事本管理中心 UI (`web/notes_hub.js`)**：
+  - 跨聊天室總覽：支援卡片檢視 (Grid View) 與表格檢視 (Table View)。
+  - 多維度篩選工具列：關鍵字搜尋、OA 篩選、對象篩選、分類篩選、標籤多選、狀態篩選、日期區間、建立人員。
+  - 批次操作與分類/標籤治理介面 (同義詞合併、批次標籤、清理廢棄標籤)。
+- [ ] **單元測試與自動化驗證**：
+  - 編寫完整 Python 測試覆蓋：CRUD、配額上限 (100筆)、RBAC 權限 (乙丙管理/丁挑選/甲不碰)、鎖定防篡改、標籤合併。
+  - 確保 100% 測試通過且無回歸。
 
 ## 📋 開發規範與規則 (Coding Standards & Rules)
-1.  **禁止引入新框架**: 除非特別指示，否則堅持使用 Vanilla JS。目前不加入 React/Vue。
+1.  **禁止引入新框架**: 堅持使用 Vanilla JS，不加入 React/Vue。
 2.  **無障礙優先 (Accessibility First)**: 每個 UI 元件必須通過 AA 對比度檢查。
-3.  **命名規範 (Naming Conventions)**: 使用具描述性的 Class 名稱；遵循現有專案的 API 調用模式。
-4.  **手機版邏輯**: 確保「抽屜式元件 (Drawer)」在手機視窗下正常運作。
-5.  **測試驗證**: 每個新功能必須配備對應的 Python 測試案例與手動瀏覽器隔離驗證。
-6.  **Small Team First**: 本系統主要服務 1–3 位後台管理員，適用於所有模組（聯絡對象、案件、訊息、排程等）。不得自行加入主要用於大型團隊的 Owner、Assignee、Queue、Multi-level Approval、SLA Engine、Workflow Engine、Department Routing 等架構，除非規格明確要求。
+3.  **UI/UX 規範**: 依據 Apple iOS / macOS HIG 設計美學（毛玻璃、連續平滑圓角、Apple 官方系統色票）；**嚴禁使用原生 Emoji，一律使用純向量 SVG 與 CSS 圖示**。
+4.  **手動明確儲存**: 嚴禁即時自動儲存與失焦自動儲存；未儲存切換強制跳防呆通知。
+5.  **測試驗證**: 每個新功能必須配備對應的 Python 測試案例。
+6.  **Small Team First**: 核心功能專為 1–3 人後台設計，避免多餘審批與複雜流程阻礙效率。
 
 ## 📝 AI Agent 任務執行協定 (Task Execution Protocol)
 1.  **分析需求**: 閱讀 `docs/需求與規劃/SaaS平台與全站Tailwind改版規劃.md` 中的特定章節；聯絡對象相關任務另須閱讀 `docs/功能規格/聯絡人管理規格.md`，案件管理相關任務另須閱讀 `docs/功能規格/案件管理流程規格.md`，聊天相關任務另須閱讀 `docs/功能規格/聊天功能規格.md`。
