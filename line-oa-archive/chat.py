@@ -655,14 +655,14 @@ def cleanup_expired_media(max_age_days=limits.MEDIA_RETENTION_DAYS) -> dict:
 
 def get_recipient_avatar(conn, recipient_id: str) -> tuple[bytes, str] | None:
     """Fetch and locally cache LINE recipient profile avatar."""
-    channel_id = channels.current_id()
     row = conn.execute(
-        "SELECT picture_url FROM recipients WHERE channel_id=current_channel() AND recipient_id=?",
+        "SELECT picture_url, channel_id FROM recipients WHERE recipient_id=? LIMIT 1",
         (recipient_id,)
     ).fetchone()
     if not row or not row[0]:
         return None
     picture_url = str(row[0]).strip()
+    channel_id = str(row[1]) if len(row) > 1 and row[1] else "default"
     if not picture_url:
         return None
 

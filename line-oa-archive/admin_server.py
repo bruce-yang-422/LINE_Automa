@@ -504,6 +504,20 @@ class AdminHandler(BaseHTTPRequestHandler):
                 name = f'line-automation-logo-{variant}.{extension}'
                 files['/assets/brand/' + name] = (brand / name, mime)
         files['/favicon.ico'] = (brand / 'line-automation-logo-light.ico', 'image/x-icon')
+        if re.fullmatch(r"/api/chat/avatar/[0-9a-zA-Z_]+", self.path) or self.path == "/api/chat/avatar":
+            rid = self.path.rsplit('/', 1)[1] if '/' in self.path and self.path != "/api/chat/avatar" else (query.get('recipient_id') or '')
+            try:
+                with app.database_connection() as conn:
+                    result = chat.get_recipient_avatar(conn, rid)
+                    if not result:
+                        self.respond(404, {"error": "找不到頭像。"})
+                        return
+                    data, content_type = result
+                    self.respond(200, data, content_type=content_type, headers={'Cache-Control': 'public, max-age=86400'})
+                    return
+            except Exception as exc:
+                self.respond(404, {"error": str(exc)})
+                return
         if not self.authorized(require_token=self.path not in files):
             return
         if self.path not in files and not self.select_line_channel():
