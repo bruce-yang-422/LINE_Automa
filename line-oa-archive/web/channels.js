@@ -127,7 +127,21 @@ document.addEventListener('click',async event=>{
       if(!active&&!window.confirm('暫停後對方工作區暫時不能使用這個 OA，已指派的聯絡對象、報告與紀錄會保留。是否暫停？'))return;
       await api('/api/channels/share',{channel_id:id,workspace_id:el.dataset.workspace,active});await load();render();notice(active?'已恢復共用。':'已暫停共用。');
     }
-    if(action==='verify'){const r=await api('/api/channels/verify',{channel_id:id});await load();render();notice(r.note);}
+    if(action==='verify'){
+      el.textContent = '驗證中...';
+      el.disabled = true;
+      try {
+        const r = await api('/api/channels/verify', {channel_id: id});
+        await load();
+        render();
+        notice(`✅ 連線成功！OA：${r.name || 'LINE 官方帳號'}（${r.note}）`);
+      } catch(err) {
+        notice(`❌ 連線驗證失敗：${err.message}`, true);
+      } finally {
+        el.disabled = false;
+      }
+      return;
+    }
     if(action==='active'){
       if(c.active&&!window.confirm(`停用「${c.name}」後將停止收訊與未執行的發送，資料仍保留。是否停用？`))return;
       await api('/api/channels/active',{channel_id:id,active:!c.active});await load();render();notice('OA 狀態已更新。');

@@ -60,7 +60,34 @@ const person=r=>{
 };
 const scope=r=>r.category==="composition"?(r.organization_id?orgName(r.organization_id):"平台個人素材"):r.scope==="module"?"天氣模組（依帳號／組織授權）":r.category==="text"?"自訂文字訊息":r.scope==="all"?"所有登入使用者":r.scope==="personal"?`${orgName(r.organization_id)} · 個人專屬`:r.scope==="department"?`${orgName(r.organization_id)} / ${r.department}`:`${orgName(r.organization_id)} · 全組織`;
 const reportBadge=r=>r.status!=="ready"?badge(r.status==="missing"?"等待報告":"無法使用","bad"):r.stale?badge("非今日更新","warn"):badge(admin()?"可發送":"可查看","good");
-function notice(message,error=false){$("notice").textContent=message;$("notice").className="notice"+(error?" error":"");$("notice").hidden=!message;}
+let noticeTimeout = null;
+function notice(message, error=false){
+  const el = $("notice");
+  if(el){
+    el.textContent = message;
+    el.className = "notice" + (error ? " error" : "");
+    el.hidden = !message;
+  }
+  let toast = $("floating-toast");
+  if(!toast){
+    toast = document.createElement("div");
+    toast.id = "floating-toast";
+    toast.className = "floating-toast";
+    document.body.appendChild(toast);
+  }
+  if(!message){
+    toast.classList.remove("visible");
+    return;
+  }
+  toast.innerHTML = `<span class="toast-icon">${error ? "⚠️" : "✅"}</span><span class="toast-text">${esc(message)}</span><button class="toast-close" type="button" aria-label="關閉通知">✕</button>`;
+  toast.className = "floating-toast visible" + (error ? " error" : "");
+  const closeBtn = toast.querySelector(".toast-close");
+  if(closeBtn) closeBtn.onclick = () => toast.classList.remove("visible");
+  if(noticeTimeout) clearTimeout(noticeTimeout);
+  noticeTimeout = setTimeout(() => {
+    toast.classList.remove("visible");
+  }, 4500);
+}
 async function api(path,payload,original=false,root=false){
   const headers={"Content-Type":"application/json"};if(!remote)headers.Authorization=`Bearer ${token}`;
   if(payload!==undefined&&authCsrf)headers['X-CSRF-Token']=authCsrf;
