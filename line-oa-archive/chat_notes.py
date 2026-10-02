@@ -114,7 +114,7 @@ def save_chat_note(conn: sqlite3.Connection, payload: dict, actor: str) -> dict:
         
         # Check lock
         if note['is_locked']:
-            raise ValueError('此記事已鎖定，請先解除 🔒 鎖定後再修改。')
+            raise ValueError('此記事已鎖定，請先解除鎖定後再修改。')
 
         # Conflict check
         expected_ts = payload.get('expected_updated_at') or payload.get('last_updated_at')
@@ -228,7 +228,7 @@ def delete_chat_note(conn: sqlite3.Connection, note_id: str) -> bool:
     if not note:
         return False
     if note[0]:
-        raise ValueError('此記事已鎖定，請先解除 🔒 鎖定後再刪除。')
+        raise ValueError('此記事已鎖定，請先解除鎖定後再刪除。')
 
     # Soft delete
     ts = now_iso()
@@ -247,7 +247,7 @@ def toggle_note_completed(conn: sqlite3.Connection, note_id: str) -> dict:
     if not note:
         raise ValueError('找不到此記事。')
     if note[1]:
-        raise ValueError('此記事已鎖定，請先解除 🔒 鎖定後再修改。')
+        raise ValueError('此記事已鎖定，請先解除鎖定後再修改。')
     new_completed = 0 if note[0] else 1
     ts = now_iso()
     conn.execute(

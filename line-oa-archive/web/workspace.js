@@ -105,7 +105,7 @@ function contactDetailPanel(){
 
 function renderChatNotesList(recipient_id){
   const notes = state.chatNotes?.get(recipient_id) || [];
-  if(!notes.length) return `<div class="chat-notes-empty"><p class="muted" data-s="sf6951cb">目前尚無對話記事，可點選上方「新增記事」記錄重要事項。</p><button class="btn text small" data-action="view-chat-notes-trash" data-recipient="${esc(recipient_id)}" data-s="sca44a36">🗑️ 查看最近刪除 (30 天內可還原)</button></div>`;
+  if(!notes.length) return `<div class="chat-notes-empty"><p class="muted" data-s="sf6951cb">目前尚無對話記事，可點選上方「新增記事」記錄重要事項。</p><button class="btn text small" data-action="view-chat-notes-trash" data-recipient="${esc(recipient_id)}" data-s="sca44a36">查看最近刪除 (30 天內可還原)</button></div>`;
   
   const pinned = notes.filter(n => n.is_pinned);
   const normal = notes.filter(n => !n.is_pinned);
@@ -114,19 +114,19 @@ function renderChatNotesList(recipient_id){
   return `<div class="chat-notes-container">
     <div class="chat-notes-toolbar" data-s="sa42388f">
       <small class="muted">共 ${notes.length} 筆（置頂 ${pinned.length}/5）</small>
-      <button class="btn text small" data-action="view-chat-notes-trash" data-recipient="${esc(recipient_id)}" data-s="sab936e1">🗑️ 回收筒</button>
+      <button class="btn text small" data-action="view-chat-notes-trash" data-recipient="${esc(recipient_id)}" data-s="sab936e1">回收筒</button>
     </div>
     ${ordered.map(n=>`
       <div class="chat-note-item ${n.is_pinned?'pinned':''} ${n.is_locked?'locked':''}" style="border:1px solid var(--line, #e2e8f0);border-radius:8px;padding:8px 10px;margin-bottom:8px;background:${n.is_pinned?'rgba(254, 240, 138, 0.2)':'var(--card-bg, #fff)'};">
         <div class="chat-note-meta" data-s="sa7a6f11">
           <span>
-            ${n.is_pinned?'<span title="已置頂">📌</span> ':''}
-            ${n.is_locked?'<span title="防誤觸鎖定中">🔒</span> ':''}
+            ${n.is_pinned?'<span class="badge" style="font-size:10px;">置頂</span> ':''}
+            ${n.is_locked?'<span class="badge warn" style="font-size:10px;">已鎖定</span> ':''}
             <strong>${esc(n.title||n.author||"記事")}</strong> · <span class="muted">${when(n.created_at)}</span>
           </span>
           <div class="note-actions" data-s="s597636a">
-            <button class="btn text small" data-action="toggle-chat-note-pin" data-id="${esc(n.note_id)}" data-recipient="${esc(recipient_id)}" title="${n.is_pinned?'取消置頂':'置頂'}">${n.is_pinned?'取消置頂':'📌 置頂'}</button>
-            <button class="btn text small" data-action="toggle-chat-note-lock" data-id="${esc(n.note_id)}" data-recipient="${esc(recipient_id)}" title="${n.is_locked?'解除鎖定':'鎖定'}">${n.is_locked?'🔓':'🔒'}</button>
+            <button class="btn text small" data-action="toggle-chat-note-pin" data-id="${esc(n.note_id)}" data-recipient="${esc(recipient_id)}" title="${n.is_pinned?'取消置頂':'置頂'}">${n.is_pinned?'取消置頂':'置頂'}</button>
+            <button class="btn text small" data-action="toggle-chat-note-lock" data-id="${esc(n.note_id)}" data-recipient="${esc(recipient_id)}" title="${n.is_locked?'解除鎖定':'鎖定'}">${n.is_locked?'解鎖':'鎖定'}</button>
             ${!n.is_locked ? `<button class="btn text small" data-action="edit-chat-note" data-id="${esc(n.note_id)}" data-recipient="${esc(recipient_id)}">編輯</button>` : ''}
             <button class="btn text small" data-action="convert-note-to-case" data-id="${esc(n.note_id)}" data-recipient="${esc(recipient_id)}" title="轉為案件">轉為案件</button>
             ${!n.is_locked ? `<button class="btn text small danger" data-action="delete-chat-note" data-id="${esc(n.note_id)}" data-recipient="${esc(recipient_id)}">刪除</button>` : ''}
@@ -137,7 +137,7 @@ function renderChatNotesList(recipient_id){
         ${(n.tags && n.tags.length) || n.due_date ? `
           <div class="chat-note-footer" data-s="sa451b52">
             ${(n.tags || []).map(t => `<span class="badge" data-s="s0c8a27e">${esc(t)}</span>`).join(" ")}
-            ${n.due_date ? `<span class="muted">📅 期限：${esc(n.due_date)}</span>` : ''}
+            ${n.due_date ? `<span class="muted">期限：${esc(n.due_date)}</span>` : ''}
           </div>
         ` : ''}
       </div>
@@ -153,7 +153,7 @@ function renderContactCases(recipient_id){
       <div class="case-title-row">
         <span class="case-no-badge">${esc(c.case_no)}</span>
         <strong>${esc(c.title)}</strong>
-        ${c.is_locked ? '<span title="防誤觸鎖定">🔒</span>' : ''}
+        ${c.is_locked ? '<span class="badge warn" style="font-size:10px;">已鎖定</span>' : ''}
         ${badge(caseStatusNames[c.status]||c.status, caseStatusTones[c.status]||"")}
       </div>
       <div data-s="s1ba4dce">

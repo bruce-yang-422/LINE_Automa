@@ -381,11 +381,11 @@ function contactToolbar(){
     <select id="contact-company" aria-label="篩選公司">${options([["","所有組織"],...organization_ids.map(c=>[c,orgName(c)])],state.organization_id)}</select>
     <select id="contact-department" aria-label="篩選部門">${options([["","所有部門"],...depts.map(c=>[c,c])],state.department)}</select>
     ${state.savedFilters?.length?`<select id="apply-saved-filter" aria-label="套用自訂篩選">${options(filterOpts,"")}</select>`:""}
-    ${canSend()&&state.view==="contacts"?button("📨 對篩選對象發送 ("+filteredContacts().length+")","send-to-filtered","small primary"):""}
-    ${manager()&&state.view==="contacts"?button("💾 儲存篩選","open-save-filter-modal","small")+button(icon("settings")+"標籤管理","manage-tags","small"):""}
+    ${canSend()&&state.view==="contacts"?button(icon("send")+"對篩選對象發送 ("+filteredContacts().length+")","send-to-filtered","small primary"):""}
+    ${manager()&&state.view==="contacts"?button("儲存篩選","open-save-filter-modal","small")+button(icon("settings")+"標籤管理","manage-tags","small"):""}
   </div>`;
 }
-function contactList(){const rows=filteredContacts(),pages=Math.max(1,Math.ceil(rows.length/10));state.page=Math.min(state.page,pages);const visible=rows.slice((state.page-1)*10,state.page*10);const isSendAudience=state.view==="send"&&state.audience==="selected";const isContactsView=state.view==="contacts"&&manager();const showCheckboxes=isSendAudience||isContactsView;const selectedCount=state.selected.size;let bulkBar="";if(isContactsView&&selectedCount>0){bulkBar=`<div class="bulk-toolbar"><div><strong>已選取 ${selectedCount} 個聯絡對象</strong></div><div class="bulk-actions">${canSend()?button("📨 對已選對象發送","send-to-selected","small primary"):""}${button("🏷️ 批次加標籤","bulk-add-tags","small")}${button("✂️ 批次移除標籤","bulk-remove-tags","small")}${weatherModule()?button("🔔 批次開啟訂閱","bulk-sub-on","small")+button("🔕 批次取消訂閱","bulk-sub-off","small"):""}${button("清除勾選","clear-selection","text small")}</div></div>`;}else if(isSendAudience){bulkBar=`<div class="toolbar">${button("勾選本頁","select-page","small")}${button("清除勾選","clear-selection","text small")}<small class="muted">共 ${rows.length} 個符合報告範圍的聊天室</small></div>`;}return `${bulkBar}<div class="table-scroll"><table class="contacts-table"><thead><tr><th class="select-cell">${showCheckboxes?`<input type="checkbox" id="select-all-visible" aria-label="全選本頁" ${visible.length&&visible.every(r=>state.selected.has(r.recipient_id))?"checked":""}>`:""}</th><th>聯絡對象</th><th>組織／部門</th>${weatherModule()?"<th>天氣訂閱</th>":""}<th>操作</th></tr></thead><tbody>${visible.map(r=>`<tr><td class="select-cell">${showCheckboxes?`<input type="checkbox" data-select="${esc(r.recipient_id)}" aria-label="選取 ${esc(label(r))}" ${state.selected.has(r.recipient_id)?"checked":""}>`:""}</td><td class="person-cell">${state.view==="contacts"?`<button class="contact-open" data-action="contact-detail" data-id="${esc(r.recipient_id)}" aria-label="查看 ${esc(label(r))} 詳情">${person(r)}</button>`:person(r)}</td><td class="meta-cell">${esc(r.organization_id?orgName(r.organization_id):"尚未分類")}<small class="muted">${r.department?" / "+esc(r.department):""}</small></td>${weatherModule()?`<td class="sub-cell">${badge(r.weather_subscribed?"已訂閱":"未訂閱",r.weather_subscribed?"good":"")}</td>`:""}<td class="action-cell">${manager()?button("管理","edit-contact","small",`data-id="${esc(r.recipient_id)}"`):badge("已授權")}</td></tr>`).join("")}</tbody></table></div>${!rows.length?empty("沒有符合的聯絡對象",state.view==="send"?"請確認聯絡對象的組織／部門分類符合報告範圍，並已與 Bot 互動。":"調整篩選條件，或請使用者向 Bot 傳送訊息以建立名單。"):""}<div class="pagination"><span>共 ${rows.length} 個聊天室</span><div>${button("上一頁","prev-page","small",state.page<=1?"disabled":"")}<span>${state.page} / ${pages}</span>${button("下一頁","next-page","small",state.page>=pages?"disabled":"")}</div></div>`;}
+function contactList(){const rows=filteredContacts(),pages=Math.max(1,Math.ceil(rows.length/10));state.page=Math.min(state.page,pages);const visible=rows.slice((state.page-1)*10,state.page*10);const isSendAudience=state.view==="send"&&state.audience==="selected";const isContactsView=state.view==="contacts"&&manager();const showCheckboxes=isSendAudience||isContactsView;const selectedCount=state.selected.size;let bulkBar="";if(isContactsView&&selectedCount>0){bulkBar=`<div class="bulk-toolbar"><div><strong>已選取 ${selectedCount} 個聯絡對象</strong></div><div class="bulk-actions">${canSend()?button(icon("send")+"對已選對象發送","send-to-selected","small primary"):""}${button("批次加標籤","bulk-add-tags","small")}${button("批次移除標籤","bulk-remove-tags","small")}${weatherModule()?button("批次開啟訂閱","bulk-sub-on","small")+button("批次取消訂閱","bulk-sub-off","small"):""}${button("清除勾選","clear-selection","text small")}</div></div>`;}else if(isSendAudience){bulkBar=`<div class="toolbar">${button("勾選本頁","select-page","small")}${button("清除勾選","clear-selection","text small")}<small class="muted">共 ${rows.length} 個符合報告範圍的聊天室</small></div>`;}return `${bulkBar}<div class="table-scroll"><table class="contacts-table"><thead><tr><th class="select-cell">${showCheckboxes?`<input type="checkbox" id="select-all-visible" aria-label="全選本頁" ${visible.length&&visible.every(r=>state.selected.has(r.recipient_id))?"checked":""}>`:""}</th><th>聯絡對象</th><th>組織／部門</th>${weatherModule()?"<th>天氣訂閱</th>":""}<th>操作</th></tr></thead><tbody>${visible.map(r=>`<tr><td class="select-cell">${showCheckboxes?`<input type="checkbox" data-select="${esc(r.recipient_id)}" aria-label="選取 ${esc(label(r))}" ${state.selected.has(r.recipient_id)?"checked":""}>`:""}</td><td class="person-cell">${state.view==="contacts"?`<button class="contact-open" data-action="contact-detail" data-id="${esc(r.recipient_id)}" aria-label="查看 ${esc(label(r))} 詳情">${person(r)}</button>`:person(r)}</td><td class="meta-cell">${esc(r.organization_id?orgName(r.organization_id):"尚未分類")}<small class="muted">${r.department?" / "+esc(r.department):""}</small></td>${weatherModule()?`<td class="sub-cell">${badge(r.weather_subscribed?"已訂閱":"未訂閱",r.weather_subscribed?"good":"")}</td>`:""}<td class="action-cell">${manager()?button("管理","edit-contact","small",`data-id="${esc(r.recipient_id)}"`):badge("已授權")}</td></tr>`).join("")}</tbody></table></div>${!rows.length?empty("沒有符合的聯絡對象",state.view==="send"?"請確認聯絡對象的組織／部門分類符合報告範圍，並已與 Bot 互動。":"調整篩選條件，或請使用者向 Bot 傳送訊息以建立名單。"):""}<div class="pagination"><span>共 ${rows.length} 個聊天室</span><div>${button("上一頁","prev-page","small",state.page<=1?"disabled":"")}<span>${state.page} / ${pages}</span>${button("下一頁","next-page","small",state.page>=pages?"disabled":"")}</div></div>`;}
 function contactsPage(subscriptions=false){return heading(subscriptions?"天氣訂閱":"聯絡對象",subscriptions?"訂閱決定持續接收通知的對象；每次發送仍由管理員確認。":"依公司與部門整理個人、群組，自訂名稱與筆記，讓報告送到正確的地方。",(manager()?button(icon("refresh")+"更新 LINE 名稱","profiles"):""),subscriptions?"SUBSCRIPTIONS":"CONTACT DIRECTORY")+(subscriptions?`<div class="insight"><h3>${icon("bell")}個人自行訂閱，群組由管理員設定</h3><p>私訊 Bot「訂閱天氣」「取消訂閱」「我的訂閱」即可管理個人訂閱。目前由管理員發送，可指定單次傳送時間，尚未啟用每日循環排程。</p></div><div class="segmented section-space">${[["all","全部"],["on","已訂閱"],["off","未訂閱"]].map(([id,t])=>`<button data-action="sub-filter" data-id="${id}" class="${state.subFilter===id?"active":""}">${t}</button>`).join("")}</div>`:"")+`<div class="library-split section-space ${!subscriptions&&workspaceUI.contactDetail?"has-detail":""}"><section class="panel">${contactToolbar()}<div id="contact-list">${contactList()}</div></section>${subscriptions?"":contactDetailPanel()}</div>`;}
 function selectedRows(){return state.contacts.filter(r=>r.active&&eligible(r)&&(state.audience==="subscribers"?r.weather_subscribed:state.selected.has(r.recipient_id)));}
 function selectionSummary(){const rows=selectedRows();return `<div class="panel selection-summary"><div class="panel-body">${tile(state.report)}<p class="eyebrow section-space">THIS DELIVERY</p><h3>${esc(state.report.title)}</h3><p class="subtitle">${esc(scope(state.report))}</p><div class="count-big">${rows.length}<small>個聊天室</small></div><div class="summary-list">${rows.map(r=>`<span>${esc(label(r))}</span>`).join("")||'<small class="muted">請從名單選擇發送對象</small>'}</div><p class="callout">每個聊天室會收到這次確認的內容。一次性勾選不會改變訂閱設定。</p></div></div>`;}
@@ -409,7 +409,7 @@ function sendPage(){
 function confirmation(){
   const r=state.report,rows=selectedRows();
   const audienceText=state.audience==="subscribers"?"天氣訂閱名單":state.audience==="by-tags"?"依標籤傳訊":state.audience==="by-filter"?"依自訂篩選條件":"手動選擇";
-  return `<section class="panel"><div class="panel-head"><h2>確認這次的發送內容</h2>${reportBadge(r)}</div><div class="panel-body confirm-grid"><div>${["text","composition"].includes(r.category)?tile(r):`<img class="confirm-preview" src="${r.preview}" alt="${esc(r.title)} 完整預覽"><p class="subtitle">內容更新時間：${when(r.modified_at)}</p>`}</div><div><p class="eyebrow">DELIVERY SUMMARY</p><h2>${esc(r.title)}</h2><div class="detail-row"><span>發送方式</span><strong>${audienceText}</strong></div><div class="detail-row"><span>發送 OA</span><strong>${esc(selectedOA()?.name||"既有 OA")}</strong></div><div class="detail-row"><span>工作區</span><strong>${esc(selectedWorkspace()?.name||"目前工作區")}</strong></div><div class="detail-row"><span>收件聊天室</span><strong>${rows.length} 個（${rows.filter(x=>x.kind==="user").length} 個人／${rows.filter(x=>x.kind!=="user").length} 群組）</strong></div><div class="detail-row"><span>操作人</span><strong>${esc(state.session.identity)}</strong></div><div class="summary-list">${rows.map(x=>`<span>${esc(label(x))}</span>`).join("")}</div><p class="callout warn" data-s="se9d9bb6">⚠️ 此類訊息一律計入當月訊息額度（預估使用 <strong>${rows.length} 則</strong>額度，群組聊天室依實際人數計扣）。</p><p class="callout">送出前會再次檢查報告版本與收件範圍。LINE 已接受代表 API 受理，不代表對方已讀。</p>${scheduleFields()}${r.stale?'<p class="callout warn">這份報告不是今天更新。請確認日期與內容適用於這次發送。</p><label class="check-label"><input id="allow-stale" type="checkbox">我已確認，可以發送這份較早的報告</label>':""}<div class="form-actions">${button("上一步","back-recipients")}${button(icon("send")+`確認發送給 ${rows.length} 個聊天室`,"submit-send","primary",`id="submit-send" ${state.busy||!rows.length?"disabled":""}`)}</div></div></div></section>`;
+  return `<section class="panel"><div class="panel-head"><h2>確認這次的發送內容</h2>${reportBadge(r)}</div><div class="panel-body confirm-grid"><div>${["text","composition"].includes(r.category)?tile(r):`<img class="confirm-preview" src="${r.preview}" alt="${esc(r.title)} 完整預覽"><p class="subtitle">內容更新時間：${when(r.modified_at)}</p>`}</div><div><p class="eyebrow">DELIVERY SUMMARY</p><h2>${esc(r.title)}</h2><div class="detail-row"><span>發送方式</span><strong>${audienceText}</strong></div><div class="detail-row"><span>發送 OA</span><strong>${esc(selectedOA()?.name||"既有 OA")}</strong></div><div class="detail-row"><span>工作區</span><strong>${esc(selectedWorkspace()?.name||"目前工作區")}</strong></div><div class="detail-row"><span>收件聊天室</span><strong>${rows.length} 個（${rows.filter(x=>x.kind==="user").length} 個人／${rows.filter(x=>x.kind!=="user").length} 群組）</strong></div><div class="detail-row"><span>操作人</span><strong>${esc(state.session.identity)}</strong></div><div class="summary-list">${rows.map(x=>`<span>${esc(label(x))}</span>`).join("")}</div><p class="callout warn" data-s="se9d9bb6">此類訊息一律計入當月訊息額度（預估使用 <strong>${rows.length} 則</strong>額度，群組聊天室依實際人數計扣）。</p><p class="callout">送出前會再次檢查報告版本與收件範圍。LINE 已接受代表 API 受理，不代表對方已讀。</p>${scheduleFields()}${r.stale?'<p class="callout warn">這份報告不是今天更新。請確認日期與內容適用於這次發送。</p><label class="check-label"><input id="allow-stale" type="checkbox">我已確認，可以發送這份較早的報告</label>':""}<div class="form-actions">${button("上一步","back-recipients")}${button(icon("send")+`確認發送給 ${rows.length} 個聊天室`,"submit-send","primary",`id="submit-send" ${state.busy||!rows.length?"disabled":""}`)}</div></div></div></section>`;
 }
 const statusNames={scheduled:"已預約",missed:"預約逾期／未發送",queued:"排隊中",running:"發送中",finished:"工作完成",interrupted:"工作中斷",pending:"等待發送",sending:"正在發送",accepted:"LINE 已接受",failed:"發送失敗",unknown:"狀態不明",cancelled:"未發送／已取消"};
 function jobTone(job){return job.deliveries.some(d=>["failed","unknown"].includes(d.status))?"bad":job.status==="finished"?"good":"warn";}
@@ -436,7 +436,7 @@ function caseCard(c){
       <div class="case-card-main-title">
         <span class="case-no-badge">${esc(c.case_no)}</span>
         <h3 class="case-title">${esc(c.title)}</h3>
-        ${c.is_locked?'<span title="防誤觸鎖定中">🔒</span>':''}
+        ${c.is_locked?'<span class="badge warn" style="font-size:10px;">已鎖定</span>':''}
       </div>
       <div class="case-card-badges">
         ${c.category?`<span class="badge">${esc(c.category)}</span>`:""}
@@ -452,15 +452,15 @@ function caseCard(c){
       <span><strong>建立：</strong>${when(c.created_at)}</span>
       <span><strong>更新：</strong>${when(c.updated_at)}</span>
     </div>
-    ${c.status==="waiting"?`<div class="case-waiting-info"><p><strong>⏳ 等待對象：</strong>${waitingPartyNames[c.waiting_party]||c.waiting_party||"未指定"}（自 ${when(c.waiting_since)}）</p><p><strong>原因：</strong>${esc(c.waiting_reason||"無")}</p></div>`:""}
-    ${c.status==="closed"?`<div class="case-closed-info"><p><strong>✅ 結案說明：</strong>${esc(c.resolution||"已結案")}（結案於 ${when(c.closed_at)}）</p></div>`:""}
+    ${c.status==="waiting"?`<div class="case-waiting-info"><p><strong>等待對象：</strong>${waitingPartyNames[c.waiting_party]||c.waiting_party||"未指定"}（自 ${when(c.waiting_since)}）</p><p><strong>原因：</strong>${esc(c.waiting_reason||"無")}</p></div>`:""}
+    ${c.status==="closed"?`<div class="case-closed-info"><p><strong>結案說明：</strong>${esc(c.resolution||"已結案")}（結案於 ${when(c.closed_at)}）</p></div>`:""}
     <div class="case-card-actions">
       ${c.status==="pending"?button("開始處理","case-to-processing","primary small",`data-id="${esc(c.case_id)}"`):""}
       ${c.status==="processing"?button("進入等待","open-case-waiting-modal","small",`data-id="${esc(c.case_id)}"`)+button("進入待結案","case-to-ready","primary small",`data-id="${esc(c.case_id)}"`):""}
       ${c.status==="waiting"?button("恢復處理","case-resume-processing","primary small",`data-id="${esc(c.case_id)}"`):""}
       ${c.status==="ready_to_close"?button("退回處理","case-back-processing","small",`data-id="${esc(c.case_id)}"`)+button("執行結案","open-case-close-modal","good primary small",`data-id="${esc(c.case_id)}"`):""}
       ${c.status==="closed"?badge("已完成結案","good"):""}
-      <button class="btn text small" data-action="toggle-case-lock" data-id="${esc(c.case_id)}">${c.is_locked?'🔓 解鎖':'🔒 鎖定'}</button>
+      <button class="btn text small" data-action="toggle-case-lock" data-id="${esc(c.case_id)}">${c.is_locked?'解鎖':'鎖定'}</button>
       <button class="btn text small" data-action="create-continuation-case" data-id="${esc(c.case_id)}">+ 延續案件</button>
       ${button("完整歷程","open-case-detail","small",`data-id="${esc(c.case_id)}"`)}
     </div>
@@ -513,10 +513,10 @@ function createCaseModal(subject_id="", prefill={}){
   const continuedFrom = prefill.continued_from_id || "";
 
   modal(continuedFrom ? "建立延續案件" : "建立新案件", `<form id="case-create-form">
-    ${continuedFrom ? `<input type="hidden" name="continued_from_id" value="${esc(continuedFrom)}"><div class="callout" data-s="s3ef1fa1">🔗 此案件將作為延續案件關聯至前案歷程。</div>` : ''}
+    ${continuedFrom ? `<input type="hidden" name="continued_from_id" value="${esc(continuedFrom)}"><div class="callout" data-s="s3ef1fa1">此案件將作為延續案件關聯至前案歷程。</div>` : ''}
     <div data-s="s40eee6f">
       <span class="muted" data-s="s9e6595f">填寫案件需求或從範本包帶入</span>
-      <button type="button" class="btn text small" data-action="open-template-picker" data-subject="${esc(subject_id)}">📋 從範本帶入</button>
+      <button type="button" class="btn text small" data-action="open-template-picker" data-subject="${esc(subject_id)}">從範本帶入</button>
     </div>
     <div class="form-grid">
       <div class="full">${field("案件標題","title",title,'required maxlength="100" placeholder="例如：詢問 10 月發票開立方式、報表格式問題"')}</div>
@@ -587,7 +587,7 @@ async function caseDetailModal(case_id){
         <div>
           <span class="case-no-badge">${esc(c.case_no)}</span>
           <h2>${esc(c.title)}</h2>
-          ${c.is_locked?'<span title="防誤觸鎖定中">🔒 已鎖定</span>':''}
+          ${c.is_locked?'<span class="badge warn" style="font-size:10px;">已鎖定</span>':''}
         </div>
         <div data-s="sbabd711">
           ${c.category?`<span class="badge">${esc(c.category)}</span>`:""}
@@ -607,8 +607,8 @@ async function caseDetailModal(case_id){
       ${c.description?`<div class="section-space"><h4>需求描述</h4><p class="case-desc-box">${esc(c.description)}</p></div>`:""}
       
       <div class="section-space" data-s="s78cead6">
-        ${canSend() && c.status !== "closed" ? `<button class="btn primary small" data-action="open-case-notify-modal" data-id="${esc(c.case_id)}">💬 通知案件對象</button>` : ''}
-        <button class="btn small" data-action="save-case-as-template" data-id="${esc(c.case_id)}">📋 存為案件範本</button>
+        ${canSend() && c.status !== "closed" ? `<button class="btn primary small" data-action="open-case-notify-modal" data-id="${esc(c.case_id)}">通知案件對象</button>` : ''}
+        <button class="btn small" data-action="save-case-as-template" data-id="${esc(c.case_id)}">存為案件範本</button>
       </div>
 
       <div class="section-space">
@@ -653,7 +653,7 @@ function chatNoteModal(recipient_id,note_id="",prefill={}){
     ${updated_at ? `<input type="hidden" name="expected_updated_at" value="${esc(updated_at)}">` : ''}
     <div data-s="s40eee6f">
       <span class="muted" data-s="s9e6595f">填寫對話重要記事或從範本包帶入</span>
-      <button type="button" class="btn text small" data-action="open-note-template-picker" data-recipient="${esc(recipient_id)}">📋 從範本帶入</button>
+      <button type="button" class="btn text small" data-action="open-note-template-picker" data-recipient="${esc(recipient_id)}">從範本帶入</button>
     </div>
     <div class="form-grid">
       <div class="full">${field("記事標題（選填）", "title", title, 'maxlength="50" placeholder="例如：客戶詢問保固條件、確認發票開立"')}</div>
@@ -684,7 +684,7 @@ async function templatePickerModal(subject_id="", target_type="case"){
     const html = `<div class="template-picker-container" data-s="s2940a45">
       ${groups.map(g => `
         <div class="template-pack-group" data-s="s79a1c5a">
-          <h4 data-s="s86a940d">📦 範本包：${esc(g.pack_name)}</h4>
+          <h4 data-s="s86a940d">範本包：${esc(g.pack_name)}</h4>
           <div data-s="sed54c91">
             ${(g.templates || []).map(t => {
               const title = t.rendered_title || t.title || "";
@@ -751,7 +751,7 @@ function caseNotifyModal(case_id){
   const subject = state.contacts.find(x=>x.recipient_id===c.case_subject_id);
   const subjectName = subject ? label(subject) : (c.case_subject_id || "案件對象");
 
-  modal(`💬 通知案件對象：${esc(c.case_no)}`, `<form id="case-notify-form" data-id="${esc(case_id)}">
+  modal(`通知案件對象：${esc(c.case_no)}`, `<form id="case-notify-form" data-id="${esc(case_id)}">
     <div class="form-grid">
       <div class="full">
         <label class="field">接收對象（案件主體）
@@ -765,7 +765,7 @@ function caseNotifyModal(case_id){
       </div>
     </div>
     <div class="callout warn" data-s="sd8a81ea">
-      📢 <strong>額度提醒：</strong>此訊息將透過 LINE 官方帳號以推播 (Push) 發送給 ${esc(subjectName)}，並計入本月發送額度。送出後將自動寫入案件處理紀錄。
+      <strong>額度提醒：</strong>此訊息將透過 LINE 官方帳號以推播 (Push) 發送給 ${esc(subjectName)}，並計入本月發送額度。送出後將自動寫入案件處理紀錄。
     </div>
     <div class="form-actions">
       <button class="btn primary" type="submit">確認發送通知</button>
@@ -812,9 +812,9 @@ async function templatesAndCategoriesPage(){
   const container = `<div class="templates-management-container">
     ${heading("範本與分類管理", "管理此 OA 啟用的範本包、自訂案件/記事範本與分類項目。", manager() ? `<div data-s="sb9bbe54"><button class="btn primary small" data-action="new-custom-pack">+ 新增自訂範本包</button></div>` : "", "TEMPLATES & CATEGORIES")}
     <div class="segmented toolbar section-space">
-      <button data-action="templates-tab" data-id="packs" class="${templatesTab==='packs'?'active':''}">📦 範本包與範本</button>
-      <button data-action="templates-tab" data-id="note_types" class="${templatesTab==='note_types'?'active':''}">📝 記事類型清單</button>
-      <button data-action="templates-tab" data-id="case_categories" class="${templatesTab==='case_categories'?'active':''}">📁 案件類別清單</button>
+      <button data-action="templates-tab" data-id="packs" class="${templatesTab==='packs'?'active':''}">範本包與範本</button>
+      <button data-action="templates-tab" data-id="note_types" class="${templatesTab==='note_types'?'active':''}">記事類型清單</button>
+      <button data-action="templates-tab" data-id="case_categories" class="${templatesTab==='case_categories'?'active':''}">案件類別清單</button>
     </div>
     <div id="templates-tab-content">
       <div class="loading-panel"><span class="spinner"></span><p>讀取範本與分類資料…</p></div>
@@ -845,7 +845,7 @@ async function loadTemplatesTabContent(){
                 <div data-s="s692a5e9" data-action="select-template-pack" data-id="${esc(p.pack_id||p.key)}">
                   <strong>${esc(p.name)}</strong>
                   ${p.is_preset ? '<span class="badge" data-s="s2de18ee">預設</span>' : '<span class="badge primary" data-s="s2de18ee">自訂</span>'}
-                  ${p.is_locked ? ' 🔒' : ''}
+                  ${p.is_locked ? ' <span class="badge warn" style="font-size:10px;">已鎖定</span>' : ''}
                   <div data-s="s0fc87c1">${esc(p.description||"無說明")}</div>
                 </div>
                 <label data-s="sf086b8f">
@@ -910,14 +910,14 @@ function renderPackDetailSection(p){
   return `<div>
     <div data-s="s60ad40f">
       <div>
-        <h2 data-s="sa353e69">${esc(p.name)} ${isLocked?'🔒':''}</h2>
+        <h2 data-s="sa353e69">${esc(p.name)} ${isLocked?'<span class="badge warn" style="font-size:12px;vertical-align:middle;">已鎖定</span>':''}</h2>
         <p class="subtitle" data-s="s1da9fac">${esc(p.description||"無說明")}</p>
       </div>
       <div data-s="s1d8943f">
         <button class="btn small" data-action="preview-apply-categories" data-id="${esc(p.pack_id||p.key)}">套用此分類組合至 OA</button>
         <button class="btn small" data-action="copy-pack-modal" data-id="${esc(p.pack_id||p.key)}">複製為新範本包</button>
         ${!isPreset && manager() ? `
-          <button class="btn small" data-action="toggle-pack-lock-btn" data-id="${esc(p.pack_id)}" data-locked="${isLocked?1:0}">${isLocked?'🔓 解鎖':'🔒 鎖定'}</button>
+          <button class="btn small" data-action="toggle-pack-lock-btn" data-id="${esc(p.pack_id)}" data-locked="${isLocked?1:0}">${isLocked?'解鎖':'鎖定'}</button>
           ${!isLocked ? `<button class="btn small danger" data-action="delete-pack-btn" data-id="${esc(p.pack_id)}">刪除</button>` : ''}
         ` : ''}
       </div>
@@ -926,7 +926,7 @@ function renderPackDetailSection(p){
     <!-- Case templates -->
     <div class="section-space">
       <div data-s="s40eee6f">
-        <h3 data-s="s5a9a6de">📁 案件範本 (${caseTemplates.length}/20)</h3>
+        <h3 data-s="s5a9a6de">案件範本 (${caseTemplates.length}/20)</h3>
         ${!isPreset && !isLocked && manager() && caseTemplates.length < 20 ? `<button class="btn small" data-action="new-template-modal" data-pack="${esc(p.pack_id)}" data-type="case">+ 新增案件範本</button>` : ''}
       </div>
       <div data-s="s53ab7d6">
@@ -951,7 +951,7 @@ function renderPackDetailSection(p){
     <!-- Note templates -->
     <div class="section-space" data-s="s9eb125f">
       <div data-s="s40eee6f">
-        <h3 data-s="s5a9a6de">📝 記事範本 (${noteTemplates.length}/20)</h3>
+        <h3 data-s="s5a9a6de">記事範本 (${noteTemplates.length}/20)</h3>
         ${!isPreset && !isLocked && manager() && noteTemplates.length < 20 ? `<button class="btn small" data-action="new-template-modal" data-pack="${esc(p.pack_id)}" data-type="note">+ 新增記事範本</button>` : ''}
       </div>
       <div data-s="s53ab7d6">
@@ -1231,7 +1231,7 @@ function openOaSwitcherModal(){
   modal("切換 LINE OA", `<div class="oa-switcher-modal">
     <div data-s="s7142fa2">
       <input type="search" id="oa-switcher-filter" placeholder="搜尋 LINE OA 名稱或組織…" data-s="sb48bce0">
-      <button type="button" class="btn" data-action="go-oa-list-from-switcher">📋 OA 一覽</button>
+      <button type="button" class="btn" data-action="go-oa-list-from-switcher">OA 一覽</button>
     </div>
     <div id="oa-switcher-items" data-s="s1666731">
       ${allOas.map(c => `

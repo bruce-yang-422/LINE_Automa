@@ -24,7 +24,7 @@ const builtinTemplates=[
     categoryName:"活動促銷",
     format:"card",
     alt_text:"本季限時尊榮特惠活動",
-    cardTitle:"✨ 本季限時尊榮特惠",
+    cardTitle:"本季限時尊榮特惠",
     cardText:"感謝您一直以來的支持！即日起至本月底，全館指定商品享專屬 85 折優惠，數量有限，售完為止。",
     cardLabel:"立即領取優惠",
     cardUrl:"https://line.me/R/ti/p/@example",
@@ -37,7 +37,7 @@ const builtinTemplates=[
     categoryName:"會議活動",
     format:"text",
     alt_text:"線上交流會即將開始提醒",
-    text:"【活動即將開始提醒】\n您好！提醒您報名的「LINE 商業自動化交流會」將於明日 14:00 準時開始。\n📍 會議連結：https://meet.google.com/abc-defg-hij\n建議提早 5 分鐘進入會議室測試設備，期待您的參與！",
+    text:"【活動即將開始提醒】\n您好！提醒您報名的「LINE 商業自動化交流會」將於明日 14:00 準時開始。\n會議連結：https://meet.google.com/abc-defg-hij\n建議提早 5 分鐘進入會議室測試設備，期待您的參與！",
     badge:"活動提醒"
   },
   {
@@ -47,7 +47,7 @@ const builtinTemplates=[
     categoryName:"客戶關懷",
     format:"text",
     alt_text:"新週問候與客戶關懷",
-    text:"【週一問候】\n早安！新的一週開始了，祝福您工作順利、事事順心！\n若有任何需要協助的地方，歡迎隨時透過此官方帳號與我們聯繫 ✨",
+    text:"【週一問候】\n早安！新的一週開始了，祝福您工作順利、事事順心！\n若有任何需要協助的地方，歡迎隨時透過此官方帳號與我們聯繫。",
     badge:"日常關懷"
   },
   {

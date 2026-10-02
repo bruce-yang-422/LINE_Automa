@@ -134,9 +134,9 @@ document.addEventListener('click',async event=>{
         const r = await api('/api/channels/verify', {channel_id: id});
         await load();
         render();
-        notice(`✅ 連線成功！OA：${r.name || 'LINE 官方帳號'}（${r.note}）`);
+        notice(`連線成功！OA：${r.name || 'LINE 官方帳號'}（${r.note}）`);
       } catch(err) {
-        notice(`❌ 連線驗證失敗：${err.message}`, true);
+        notice(`連線驗證失敗：${err.message}`, true);
       } finally {
         el.disabled = false;
       }

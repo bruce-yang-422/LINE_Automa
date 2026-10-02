@@ -80,7 +80,7 @@ function chatPage() {
           `).join("")}
         </div>
         ${canSend() ? `<div data-s="s13a7212">
-          <button type="button" class="btn text small" data-action="send-to-chat-filtered" data-s="s839adf8">📨 對目前篩選對象發送</button>
+          <button type="button" class="btn text small" data-action="send-to-chat-filtered" data-s="s839adf8">${icon("send")} 對目前篩選對象發送</button>
         </div>` : ""}
       </div>
       <div class="chat-room-list" id="chat-room-list">
@@ -729,7 +729,7 @@ async function openChatSettingsModal() {
         </div>
         <div data-s="sb463249">
           <span>已使用 <strong>${stats.total_mb} MB</strong> / ${stats.limit_gb} GB (${stats.percent}%) · 共 ${stats.file_count} 個媒體檔</span>
-          <button type="button" class="btn small" data-action="cleanup-expired-media">🧹 清理過期媒體</button>
+          <button type="button" class="btn small" data-action="cleanup-expired-media">清理過期媒體</button>
         </div>
       </div>
     </div>`);

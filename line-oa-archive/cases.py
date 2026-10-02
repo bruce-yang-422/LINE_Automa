@@ -258,7 +258,7 @@ def update_case(conn: sqlite3.Connection, case_id: str, payload: dict, actor: st
     if not c:
         raise ValueError('找不到該案件。')
     if c['is_locked']:
-        raise ValueError('此案件已鎖定，請先按 🔒 解鎖後再進行編輯。')
+        raise ValueError('此案件已鎖定，請先解除鎖定後再進行編輯。')
     if c['status'] == 'closed':
         raise ValueError('已結案的案件無法修改內容。')
 
