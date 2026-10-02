@@ -12,23 +12,10 @@ import uuid
 from datetime import datetime, timezone
 import app
 import channels
+import limits
 import line_api
 
 MEDIA_CACHE_DIR = app.BASE_DIR / "data" / "media_cache"
-SINGLE_MEDIA_MAX_BYTES = 20 * 1024 * 1024        # 20 MB max per single media
-TOTAL_MEDIA_MAX_BYTES = 10 * 1024 * 1024 * 1024   # 10 GB total media storage
-MEDIA_RETENTION_DAYS = 365                       # 1 year retention for media files
-
-LIMITS = {
-    "canned_replies_per_oa": 100,
-    "scheduled_messages_per_oa": 50,
-    "messages_page_size": 50,
-    "rooms_page_size": 50,
-    "text_max_length": 5000,
-    "single_media_max_bytes": SINGLE_MEDIA_MAX_BYTES,
-    "total_media_max_bytes": TOTAL_MEDIA_MAX_BYTES,
-    "media_retention_days": MEDIA_RETENTION_DAYS,
-}
 
 
 def _parse_ts(val):
@@ -43,7 +30,7 @@ def _parse_ts(val):
         return 0.0
 
 
-def list_chat_rooms(conn, status=None, query=None, limit=50, offset=0):
+def list_chat_rooms(conn, status=None, query=None, limit=limits.ROOMS_PAGE_SIZE, offset=0):
     """List chat rooms for the current channel with unread count and latest message preview."""
     limit = min(max(1, int(limit or 50)), 100)
     offset = max(0, int(offset or 0))
@@ -181,7 +168,7 @@ def list_chat_rooms(conn, status=None, query=None, limit=50, offset=0):
     }
 
 
-def list_messages(conn, chat_id, limit=50, before_id=None):
+def list_messages(conn, chat_id, limit=limits.MESSAGES_PAGE_SIZE, before_id=None):
     """List messages in a chat room, ordered chronologically for rendering."""
     limit = min(max(1, int(limit or 50)), 100)
 
@@ -340,8 +327,8 @@ def send_chat_message(conn, chat_id, text, actor, use_reply_token=True):
     text = (text or "").strip()
     if not text:
         raise ValueError("訊息內容不可為空。")
-    if len(text) > LIMITS["text_max_length"]:
-        raise ValueError(f"文字訊息超過上限 {LIMITS['text_max_length']} 字。")
+    if len(text) > limits.TEXT_MESSAGE_MAX:
+        raise ValueError(f"文字訊息超過上限 {limits.TEXT_MESSAGE_MAX} 字。")
 
     # Verify recipient exists and is active
     rec_row = conn.execute(
@@ -458,7 +445,7 @@ def list_canned_replies(conn, category=None, search=None):
             for r in rows
         ],
         "count": len(rows),
-        "limit": LIMITS["canned_replies_per_oa"],
+        "limit": limits.CANNED_REPLIES_PER_OA,
     }
 
 
@@ -471,8 +458,8 @@ def save_canned_reply(conn, data, actor):
 
     if not title or len(title) > 40:
         raise ValueError("預設訊息標題請填寫 1 至 40 字。")
-    if not content or len(content) > LIMITS["text_max_length"]:
-        raise ValueError(f"預設訊息內容請填寫 1 至 {LIMITS['text_max_length']} 字。")
+    if not content or len(content) > limits.TEXT_MESSAGE_MAX:
+        raise ValueError(f"預設訊息內容請填寫 1 至 {limits.TEXT_MESSAGE_MAX} 字。")
     if len(category) > 20:
         raise ValueError("分類名稱請限制在 20 字以內。")
 
@@ -496,8 +483,8 @@ def save_canned_reply(conn, data, actor):
         count = conn.execute(
             "SELECT COUNT(*) FROM canned_replies WHERE channel_id=current_channel()"
         ).fetchone()[0]
-        if count >= LIMITS["canned_replies_per_oa"]:
-            raise ValueError(f"每個 LINE OA 最多建立 {LIMITS['canned_replies_per_oa']} 則預設訊息。")
+        if count >= limits.CANNED_REPLIES_PER_OA:
+            raise ValueError(f"每個 LINE OA 最多建立 {limits.CANNED_REPLIES_PER_OA} 則預設訊息。")
 
         new_id = "canned_" + uuid.uuid4().hex[:12]
         conn.execute(
@@ -542,8 +529,28 @@ def save_response_hours(conn, data):
     """Save response hours configuration."""
     enabled = int(bool(data.get("enabled")))
     tz = (data.get("timezone") or "Asia/Taipei").strip()
-    weekly = json.dumps(data.get("weekly") or {})
-    holidays = json.dumps(data.get("holidays") or [])
+    # weekly：{"0"(週日)…"6": {"start": "HH:MM", "end": "HH:MM"}}，沒有的星期即非回應時間
+    weekly_in = data.get("weekly") or {}
+    if not isinstance(weekly_in, dict):
+        raise ValueError("回應時段格式錯誤。")
+    weekly_clean = {}
+    for day, slot in weekly_in.items():
+        if str(day) not in {"0", "1", "2", "3", "4", "5", "6"} or not isinstance(slot, dict):
+            raise ValueError("回應時段格式錯誤。")
+        start, end = str(slot.get("start", "")), str(slot.get("end", ""))
+        if not (re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", start) and re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", end)):
+            raise ValueError("回應時段請輸入 HH:MM 格式的時間。")
+        weekly_clean[str(day)] = {"start": start, "end": end}
+    holidays_in = data.get("holidays") or []
+    if not isinstance(holidays_in, list) or len(holidays_in) > limits.RESPONSE_HOLIDAYS_MAX:
+        raise ValueError(f"例假日最多 {limits.RESPONSE_HOLIDAYS_MAX} 天。")
+    for h in holidays_in:
+        try:
+            datetime.strptime(str(h), "%Y-%m-%d")
+        except ValueError:
+            raise ValueError(f"例假日日期格式錯誤：{h}（請用 YYYY-MM-DD）")
+    weekly = json.dumps(weekly_clean)
+    holidays = json.dumps(sorted(set(str(h) for h in holidays_in)))
     now_iso = datetime.now(timezone.utc).isoformat()
 
     conn.execute(
@@ -582,23 +589,23 @@ def get_media_storage_stats(conn=None) -> dict:
         except Exception:
             pass
 
-    limit_bytes = TOTAL_MEDIA_MAX_BYTES
+    limit_bytes = limits.TOTAL_MEDIA_MAX_BYTES
     percent = round((total_bytes / limit_bytes) * 100, 2) if limit_bytes > 0 else 0.0
 
     return {
         "total_bytes": total_bytes,
         "total_mb": round(total_bytes / (1024 * 1024), 2),
         "limit_bytes": limit_bytes,
-        "limit_gb": 10,
+        "limit_gb": limit_bytes // 1024 ** 3,
         "file_count": file_count,
         "percent": percent,
-        "retention_days": MEDIA_RETENTION_DAYS,
-        "single_limit_mb": 20,
+        "retention_days": limits.MEDIA_RETENTION_DAYS,
+        "single_limit_mb": limits.SINGLE_MEDIA_MAX_BYTES // 1024 ** 2,
         "warning": total_bytes >= (limit_bytes * 0.9),
     }
 
 
-def cleanup_expired_media(max_age_days=MEDIA_RETENTION_DAYS) -> dict:
+def cleanup_expired_media(max_age_days=limits.MEDIA_RETENTION_DAYS) -> dict:
     """Remove media files older than max_age_days (default 365 days)."""
     MEDIA_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     now_ts = time.time()
@@ -640,7 +647,7 @@ def get_chat_media(conn, message_id: str) -> tuple[bytes, str]:
         try:
             # Check 1-year retention limit
             mtime = cache_file.stat().st_mtime
-            if time.time() - mtime > (MEDIA_RETENTION_DAYS * 86400):
+            if time.time() - mtime > (limits.MEDIA_RETENTION_DAYS * 86400):
                 cache_file.unlink(missing_ok=True)
                 meta_file.unlink(missing_ok=True)
                 raise ValueError("此媒體檔案已超過 1 年保存期限，無法讀取原始內容。")
@@ -654,15 +661,15 @@ def get_chat_media(conn, message_id: str) -> tuple[bytes, str]:
 
     # Check total storage limit before fetching new media
     stats = get_media_storage_stats(conn)
-    if stats["total_bytes"] >= TOTAL_MEDIA_MAX_BYTES:
-        raise ValueError("媒體儲存容量已達 10 GB 上限，系統已停止下載新媒體，請清理過期媒體。")
+    if stats["total_bytes"] >= limits.TOTAL_MEDIA_MAX_BYTES:
+        raise ValueError(f"媒體儲存容量已達 {limits.TOTAL_MEDIA_MAX_BYTES // 1024 ** 3} GB 上限，系統已停止下載新媒體，請清理過期媒體。")
 
     # Download from LINE API
     data, content_type = line_api.get_message_content(message_id)
 
     # Check single file 20 MB limit
-    if len(data) > SINGLE_MEDIA_MAX_BYTES:
-        raise ValueError("單一媒體檔案超過 20 MB 上限，系統不予保存。")
+    if len(data) > limits.SINGLE_MEDIA_MAX_BYTES:
+        raise ValueError(f"單一媒體檔案超過 {limits.SINGLE_MEDIA_MAX_BYTES // 1024 ** 2} MB 上限，系統不予保存。")
 
     try:
         cache_file.write_bytes(data)

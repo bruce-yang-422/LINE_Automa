@@ -59,7 +59,13 @@ def module_enabled(user, module):
     if user['role']=='administrator' or channels.personal_owner(user):
         return True
     org=next((o for o in organizations() if o['org_id']==user.get('company') and o['active']),None)
-    return bool(org and org.get(module+'_enabled') and (user['role']!='sender' or grant(user).get(module)))
+    if not org or not org.get(module+'_enabled'):
+        return False
+    if user['role'] == 'sender':
+        if module in ('messaging', 'reports'):
+            return True
+        return bool(grant(user).get(module))
+    return True
 
 
 def scoped_users(user):
@@ -126,7 +132,7 @@ def operator(user):
 
 
 def can_send(user):
-    return bool(user) and user['role'] in {'company_admin', 'sender'}
+    return bool(user) and user['role'] in {'administrator', 'company_admin', 'sender'}
 
 
 def login_account(email, company=None):
@@ -160,12 +166,7 @@ def grant(user):
 def allowed_contact(user, row):
     if not same_company(user, row.get('company')):
         return False
-    if user['role'] != 'sender' or channels.personal_owner(user):
-        return operator(user)
-    ids = set(grant(user)['scope_ids'])
-    return any(s['scope_id'] in ids and s['active'] and s['company'] == user['company'] and
-               ((s['kind'] == 'department' and bool(s['department']) and row.get('department') == s['department']) or
-                (s['kind'] in {'project', 'group'} and row['recipient_id'] in s['recipient_ids'])) for s in dispatch_scopes())
+    return operator(user)
 
 
 def string_list(payload, key):
@@ -336,17 +337,17 @@ def save_user(payload, actor):
 def can_view(source, user):
     if user["role"] == "administrator" or channels.personal_owner(user):
         return True
-    if user['role']=='sender':
-        return (source['report_id'] in grant(user)['report_ids'] and module_enabled(user, 'weather' if source['report_id']=='weather' else 'reports')
-                and (source['report_id']=='weather' or same_company(user,source.get('company'))))
+    if not user.get("company"):
+        return False
     if source["report_id"] == "weather":
-        return module_enabled(user,'weather') or (bool(source.get("owner_email")) and source["owner_email"] == user["email"])
-    if not module_enabled(user,'reports'):
+        if user["role"] == "sender":
+            return bool(grant(user).get("weather")) and module_enabled(user, "weather")
+        return module_enabled(user, "weather") or (bool(source.get("owner_email")) and source["owner_email"] == user["email"])
+    if not module_enabled(user, "reports"):
         return False
-    if not user.get("company") or source.get("company") != user["company"]:
+    if source.get("company") != user["company"]:
         return False
-    # Only operator roles remain; report scope limits delivery targets, not company-admin visibility.
-    return user['role'] == 'company_admin'
+    return user["role"] in {"company_admin", "sender"}
 
 
 def validate_targets(source, selected):

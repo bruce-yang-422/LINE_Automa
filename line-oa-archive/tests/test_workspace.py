@@ -91,7 +91,8 @@ class WorkspaceTests(unittest.TestCase):
         self.company_admins()
         server = self.server()
         for email, expected in [('a-admin@example.com', {company['report_id'], department['report_id'], personal['report_id']}),
-                                ('b-admin@example.com', {other['report_id']}), ('alice@example.com', set())]:
+                                ('b-admin@example.com', {other['report_id']}),
+                                ('alice@example.com', {company['report_id'], department['report_id'], personal['report_id']})]:
             status, data = self.request(server, '/api/reports', 'admin@example.com', view_as=email)
             self.assertEqual(status, 200)
             self.assertEqual({r['report_id'] for r in data['reports']}, expected)
@@ -171,9 +172,9 @@ class WorkspaceTests(unittest.TestCase):
         self.assertEqual(session['principal'], 'admin@example.com')
         self.assertEqual(session['identity'], 'alice@example.com')
         self.assertEqual(session['role'], 'sender')
-        # A sender sees only granted reports; none are granted here.
-        self.assertEqual({r['report_id'] for r in preview('/api/reports')[1]['reports']}, set())
-        self.assertEqual(preview('/api/reports/' + mine['report_id'])[0], 404)
+        # A sender sees org reports (mine is in org A, other is in org B).
+        self.assertEqual({r['report_id'] for r in preview('/api/reports')[1]['reports']}, {mine['report_id']})
+        self.assertEqual(preview('/api/reports/' + mine['report_id'])[0], 200)
         self.assertEqual(preview('/api/reports/' + other['report_id'])[0], 404)
         # Senders may read their scoped contacts and jobs; admin pages stay closed and the preview never writes.
         for path in ('/api/settings', '/api/view-options'):
@@ -241,7 +242,7 @@ class WorkspaceTests(unittest.TestCase):
         self.assertEqual(get('/api/reports/'+own['report_id'],'B')[0],403)
         self.assertEqual(get('/api/contacts','B')[0],403)
         self.assertEqual(get('/api/session','not-a-member')[0],403)
-        self.assertEqual(self.request(server,'/api/memberships/save','a-admin@example.com',{},organization='A')[0],403)
+        self.assertEqual(self.request(server,'/api/organizations/save','a-admin@example.com',{},organization='A')[0],403)
         reports.save_membership({'email':'a-admin@example.com','org_id':'B','role':'company_admin','active':True},'admin@example.com')
         payload=self.scheduled_text();payload['ids']=[OTHER]
         with patch.object(admin_server,'load_settings'):
@@ -411,7 +412,7 @@ class WorkspaceTests(unittest.TestCase):
             revoked = self.scheduled_text()
             dispatcher.submit(revoked, 'admin@example.com')
             reports.save_user({'email':'admin2@example.com','role':'administrator','active':True},'本機管理員')
-            reports.save_user({'email':'admin@example.com','role':'sender','company':'A','active':True},'本機管理員')
+            reports.save_user({'email':'admin@example.com','role':'assistant','company':'A','active':True},'本機管理員')
             dispatcher.tick(datetime.fromisoformat(revoked['scheduled_at'])+timedelta(seconds=1))
             with patch.object(admin_server, 'send_push') as push:
                 dispatcher.run(revoked['job_id'])

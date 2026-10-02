@@ -6,6 +6,7 @@ import os
 import re
 import threading
 import channels
+import limits
 
 COMMANDS = {"訂閱天氣", "取消訂閱", "取消訂閱天氣", "我的訂閱", "幫助"}
 
@@ -178,8 +179,8 @@ def save_tag(conn, name, color=None, tag_id=None):
         if existing:
             return existing[0]
         count = conn.execute("SELECT COUNT(*) FROM contact_tags WHERE channel_id=current_channel()").fetchone()[0]
-        if count >= 100:
-            raise ValueError("每個 LINE OA 最多建立 100 個標籤，請刪除不用的標籤後再新增。")
+        if count >= limits.TAGS_PER_OA:
+            raise ValueError(f"每個 LINE OA 最多建立 {limits.TAGS_PER_OA} 個標籤，請刪除不用的標籤後再新增。")
         from uuid import uuid4
         new_id = "tag_" + str(uuid4().hex[:12])
         conn.execute("INSERT INTO contact_tags (tag_id, name, color, channel_id) VALUES (?, ?, ?, current_channel())", (new_id, name, color))
@@ -194,8 +195,7 @@ def delete_tag(conn, tag_id):
 def set_contact_tags(conn, recipient_id, tag_ids):
     conn.execute("DELETE FROM contact_tag_assignments WHERE channel_id=current_channel() AND recipient_id=?", (recipient_id,))
     if tag_ids:
-        # Limit to 10 tags per contact
-        tag_ids = tag_ids[:10]
+        tag_ids = tag_ids[:limits.TAGS_PER_CONTACT]
         for tid in tag_ids:
             if conn.execute("SELECT 1 FROM contact_tags WHERE channel_id=current_channel() AND tag_id=?", (tid,)).fetchone():
                 conn.execute("INSERT OR IGNORE INTO contact_tag_assignments (channel_id, recipient_id, tag_id) VALUES (current_channel(), ?, ?)", (recipient_id, tid))
@@ -204,8 +204,8 @@ def set_contact_tags(conn, recipient_id, tag_ids):
 def bulk_update_tags(conn, recipient_ids, tag_ids, action="add"):
     if not isinstance(recipient_ids, list) or not isinstance(tag_ids, list):
         raise ValueError("參數格式不正確。")
-    if len(recipient_ids) > 200:
-        raise ValueError("單次批次操作上限為 200 個聯絡對象，請分批操作。")
+    if len(recipient_ids) > limits.BULK_CONTACTS:
+        raise ValueError(f"單次批次操作上限為 {limits.BULK_CONTACTS} 個聯絡對象，請分批操作。")
 
     # Verify contacts belong to current channel
     valid_ids = {r[0] for r in conn.execute(
@@ -224,10 +224,10 @@ def bulk_update_tags(conn, recipient_ids, tag_ids, action="add"):
                 "SELECT COUNT(*) FROM contact_tag_assignments WHERE channel_id=current_channel() AND recipient_id=?",
                 (rid,)
             ).fetchone()[0]
-            if current_tags >= 10:
+            if current_tags >= limits.TAGS_PER_CONTACT:
                 skipped += 1
                 continue
-            available_slots = 10 - current_tags
+            available_slots = limits.TAGS_PER_CONTACT - current_tags
             assigned_this = 0
             for tid in tag_ids[:available_slots]:
                 if conn.execute("SELECT 1 FROM contact_tags WHERE channel_id=current_channel() AND tag_id=?", (tid,)).fetchone():

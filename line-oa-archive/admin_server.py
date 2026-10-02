@@ -17,6 +17,7 @@ from urllib.parse import urlsplit, parse_qs
 
 import app
 import channels
+import limits
 from control_runtime import load_settings
 import line_api
 import recipients
@@ -166,12 +167,17 @@ class Dispatcher:
             elif scheduled_at not in ("", None):
                 raise ValueError("預約時間格式不正確。")
             scheduled_at = scheduled_at or ""
+            if scheduled_at:
+                with app.database_connection() as conn:
+                    pending = conn.execute("SELECT COUNT(*) FROM send_jobs WHERE send_jobs.channel_id=current_channel() AND status='scheduled'").fetchone()[0]
+                if pending >= limits.SCHEDULED_MESSAGES_PER_OA:
+                    raise ValueError(f"此 LINE OA 同時預約中的訊息已達上限（{limits.SCHEDULED_MESSAGES_PER_OA} 則），請等待送出或取消部分預約。")
             message_text = payload.get("message_text", "")
             composition = payload.get('composition')
             if 'composition' in payload and (not isinstance(composition, dict) or message_text or payload.get('report_id') or payload.get('image_path') or payload.get('audience') != 'selected'):
                 raise ValueError('自訂訊息請選擇發送對象，且不能混合文字或報告來源。')
-            if not isinstance(message_text, str) or ("message_text" in payload and not message_text.strip()) or len(message_text.encode('utf-16-le')) // 2 > 5000:
-                raise ValueError("文字訊息請填入 1 至 5000 字（表情符號可能佔兩字）。")
+            if not isinstance(message_text, str) or ("message_text" in payload and not message_text.strip()) or len(message_text.encode('utf-16-le')) // 2 > limits.TEXT_MESSAGE_MAX:
+                raise ValueError(f"文字訊息請填入 1 至 {limits.TEXT_MESSAGE_MAX} 字（表情符號可能佔兩字）。")
             if message_text and (payload.get("report_id") or payload.get("image_path") or payload.get("audience") != "selected"):
                 raise ValueError("文字訊息請使用手動選擇對象，且不能混合報告來源。")
             if not channels.access_token():
@@ -274,7 +280,7 @@ class Dispatcher:
                             skip = True
                     if job["actor"] and job["actor"] != "本機管理員":
                         actor = reports.actor_user(job["actor"],job['company'])
-                        if not reports.operator(actor) or not reports.module_enabled(actor,'messaging'):
+                        if not reports.can_send(actor) or not reports.module_enabled(actor,'messaging'):
                             skip = True
                         elif actor['role'] != 'administrator':
                             contact = conn.execute('SELECT * FROM recipients WHERE recipients.channel_id=current_channel() AND recipient_id=?', (recipient_id,)).fetchone()
@@ -533,7 +539,8 @@ class AdminHandler(BaseHTTPRequestHandler):
             self.respond(200, {"identity": self.identity, "user": self.user, "role": self.user["role"],
                                "principal": self.principal, "preview": self.preview, "auth": site_auth.status(self),
                                "memberships": [m for m in reports.memberships(self.identity) if m['active'] and m['org_active'] and m['role'] in {'company_admin','sender','assistant'}] if not self.preview and self.server.workspace_ready else [],
-                               "modules": {m:reports.module_enabled(self.user,m) for m in ('reports','messaging','weather')}})
+                               "modules": {m:reports.module_enabled(self.user,m) for m in ('reports','messaging','weather')},
+                               "limits": limits.as_dict()})
         elif self.path == '/api/organizations':
             self.respond(200,{'organizations':[o for o in reports.organizations() if self.user['role']=='administrator' or reports.same_company(self.user,o['org_id'])],
                               'memberships':reports.memberships() if self.user['role']=='administrator' else []})
@@ -608,6 +615,9 @@ class AdminHandler(BaseHTTPRequestHandler):
         elif self.path == "/api/categories":
             with app.database_connection() as conn:
                 self.respond(200, template_packs.list_oa_categories(conn, channels.current_id()))
+        elif self.path == "/api/chat-notes/tags":
+            with app.database_connection() as conn:
+                self.respond(200, chat_notes.list_note_tags(conn))
         elif self.path == "/api/chat/rooms":
             with app.database_connection() as conn:
                 res = chat.list_chat_rooms(conn, status=query.get('status'), query=query.get('q'), limit=query.get('limit'), offset=query.get('offset'))
@@ -730,9 +740,14 @@ class AdminHandler(BaseHTTPRequestHandler):
             '/api/contacts/bulk', '/api/contact', '/api/tags/save', '/api/tags/delete',
             '/api/chat-notes', '/api/chat-notes/save', '/api/chat-notes/delete',
             '/api/chat-notes/pin', '/api/chat-notes/lock', '/api/chat-notes/restore', '/api/chat-notes/convert-to-case',
+            '/api/chat-notes/complete', '/api/chat-notes/tags/save', '/api/chat-notes/tags/delete',
             '/api/saved-filters', '/api/saved-filters/save', '/api/saved-filters/delete',
             '/api/cases', '/api/cases/save', '/api/cases/transition', '/api/cases/activity',
+            '/api/template-packs/save', '/api/template-packs/delete', '/api/template-packs/copy', '/api/template-packs/lock',
+            '/api/templates/save', '/api/templates/delete', '/api/templates/copy', '/api/templates/move',
+            '/api/templates/lock', '/api/templates/create-from-source',
             '/api/template-packs/toggle', '/api/categories/preview', '/api/categories/apply',
+            '/api/categories/save', '/api/categories/delete', '/api/categories/reorder',
             '/api/chat/mark-read', '/api/chat/status', '/api/chat/media/cleanup'
         }
         allowed_sender_posts = allowed_assistant_posts | {
@@ -745,13 +760,18 @@ class AdminHandler(BaseHTTPRequestHandler):
             self.respond(403, {'error': '協助人員無法傳送訊息或變更系統發送設定。'})
             return
 
-        if self.user['role'] == 'sender' and (self.path not in allowed_sender_posts and not re.fullmatch(r'/api/cases/[0-9a-f]{32}(/lock)?', self.path)):
+        if self.user['role'] == 'sender' and (self.path not in allowed_sender_posts and not re.fullmatch(r'/api/cases/[0-9a-f]{32}(/(lock|notify))?', self.path)):
             self.respond(403, {'error': '營運人員不能修改聯絡對象分類、來源或帳號授權。'})
             return
 
-        admin_only_posts = {'/api/reports/save', '/api/reports/remove', '/api/reports/restore-weather', '/api/organizations/save', '/api/memberships/save', '/api/dispatch-scopes/save', '/api/sender-grants/save'}
+        admin_only_posts = {'/api/reports/save', '/api/reports/remove', '/api/reports/restore-weather', '/api/organizations/save'}
         if self.path in admin_only_posts and self.user['role'] != 'administrator':
             self.respond(403, {'error': '模組歸屬及來源設定由平台管理員管理。'})
+            return
+
+        org_admin_only_posts = {'/api/memberships/save', '/api/accounts/save', '/api/dispatch-scopes/save', '/api/sender-grants/save'}
+        if self.path in org_admin_only_posts and self.user['role'] not in {'administrator', 'company_admin'}:
+            self.respond(403, {'error': '管理員才能變更成員與授權設定。'})
             return
 
         # 平台管理員對客戶營運內容只有閱讀權，禁止傳送訊息與建立/修改客戶案件/記事/聯絡人
@@ -759,12 +779,16 @@ class AdminHandler(BaseHTTPRequestHandler):
             '/api/chat/send', '/api/send', '/api/jobs/cancel', '/api/contact', '/api/contacts/bulk',
             '/api/tags/save', '/api/tags/delete', '/api/chat-notes', '/api/chat-notes/save',
             '/api/chat-notes/delete', '/api/chat-notes/pin', '/api/chat-notes/lock', '/api/chat-notes/restore',
-            '/api/chat-notes/convert-to-case', '/api/saved-filters', '/api/saved-filters/save',
-            '/api/saved-filters/delete', '/api/cases', '/api/cases/save', '/api/cases/transition',
-            '/api/cases/activity', '/api/categories/apply', '/api/chat/canned-replies/save',
-            '/api/chat/canned-replies/delete', '/api/chat/response-hours/save', '/api/chat/status'
+            '/api/chat-notes/convert-to-case', '/api/chat-notes/complete', '/api/chat-notes/tags/save', '/api/chat-notes/tags/delete',
+            '/api/saved-filters', '/api/saved-filters/save', '/api/saved-filters/delete',
+            '/api/cases', '/api/cases/save', '/api/cases/transition', '/api/cases/activity',
+            '/api/template-packs/save', '/api/template-packs/delete', '/api/template-packs/copy', '/api/template-packs/lock',
+            '/api/templates/save', '/api/templates/delete', '/api/templates/copy', '/api/templates/move',
+            '/api/templates/lock', '/api/templates/create-from-source',
+            '/api/categories/apply', '/api/categories/save', '/api/categories/delete', '/api/categories/reorder',
+            '/api/chat/canned-replies/save', '/api/chat/canned-replies/delete', '/api/chat/response-hours/save', '/api/chat/status'
         }
-        if self.user['role'] == 'administrator' and (self.path in customer_write_paths or re.fullmatch(r'/api/cases/[0-9a-f]{32}(/lock)?', self.path)):
+        if self.user['role'] == 'administrator' and (self.path in customer_write_paths or re.fullmatch(r'/api/cases/[0-9a-f]{32}(/(lock|notify))?', self.path)):
             self.respond(403, {'error': '平台管理員對客戶營運內容只有閱讀權，無法修改或傳送。'})
             return
 
@@ -855,6 +879,18 @@ class AdminHandler(BaseHTTPRequestHandler):
                     new_case = chat_notes.convert_note_to_case(conn, payload.get('note_id') or payload.get('id'), actor_label)
                     reports.audit(conn, actor_label, "chat_note.convert_to_case", new_case.get('case_id', ''), f"記事轉為案件 {new_case.get('case_no')}", self.user.get('company', ''))
                     self.respond(200, {'ok': True, 'case': new_case})
+            elif self.path == '/api/chat-notes/complete':
+                with app.database_connection() as conn:
+                    res = chat_notes.toggle_note_completed(conn, payload.get('note_id') or payload.get('id'))
+                    self.respond(200, {'ok': True, **res})
+            elif self.path == '/api/chat-notes/tags/save':
+                with app.database_connection() as conn:
+                    res = chat_notes.save_note_tag(conn, payload.get('name'), payload.get('old_name', ''))
+                    self.respond(200, {'ok': True, **res})
+            elif self.path == '/api/chat-notes/tags/delete':
+                with app.database_connection() as conn:
+                    res = chat_notes.delete_note_tag(conn, payload.get('name'))
+                    self.respond(200, {'ok': True, **res})
             elif self.path in ('/api/saved-filters', '/api/saved-filters/save'):
                 action = payload.get('action', 'save')
                 with app.database_connection() as conn:
@@ -892,6 +928,13 @@ class AdminHandler(BaseHTTPRequestHandler):
                 with app.database_connection() as conn:
                     res = cases.toggle_case_lock(conn, case_id, actor_label)
                 self.respond(200, {'ok': True, 'case': res})
+            elif re.fullmatch(r'/api/cases/[0-9a-f]{32}/notify', self.path):
+                case_id = self.path.split('/')[3]
+                if self.user['role'] not in {'company_admin', 'sender'}:
+                    raise ValueError('只有組織管理員與營運人員可以傳送進度通知。')
+                with app.database_connection() as conn:
+                    res = cases.notify_case_subject(conn, case_id, payload.get('message_text') or payload.get('text', ''), actor_label)
+                self.respond(200, {'ok': True, 'case': res})
             elif re.fullmatch(r'/api/cases/[0-9a-f]{32}', self.path):
                 case_id = self.path.rsplit('/', 1)[1]
                 action = payload.get('action')
@@ -924,6 +967,58 @@ class AdminHandler(BaseHTTPRequestHandler):
                     res = cases.add_activity(conn, case_id, activity_type, actor_label, content)
                     reports.audit(conn, actor_label, "case.activity", case_id, "新增案件處理紀錄", self.user.get('company', ''))
                 self.respond(200, {'ok': True, 'activity': res})
+            elif self.path == '/api/template-packs/save':
+                with app.database_connection() as conn:
+                    res = template_packs.save_custom_pack(conn, self.user.get('company', ''), payload, actor_label)
+                self.respond(200, {'ok': True, **res})
+            elif self.path == '/api/template-packs/delete':
+                with app.database_connection() as conn:
+                    template_packs.delete_custom_pack(conn, self.user.get('company', ''), payload.get('pack_id'), actor_label)
+                self.respond(200, {'ok': True})
+            elif self.path == '/api/template-packs/copy':
+                with app.database_connection() as conn:
+                    res = template_packs.copy_pack(conn, self.user.get('company', ''), payload.get('source_pack_key'), payload.get('name', ''), actor_label)
+                self.respond(200, {'ok': True, **res})
+            elif self.path == '/api/template-packs/lock':
+                with app.database_connection() as conn:
+                    template_packs.toggle_pack_lock(conn, self.user.get('company', ''), payload.get('pack_id'), bool(payload.get('is_locked')), actor_label)
+                self.respond(200, {'ok': True})
+            elif self.path == '/api/templates/save':
+                with app.database_connection() as conn:
+                    res = template_packs.save_template(conn, self.user.get('company', ''), payload.get('template_type', 'case'), payload, actor_label)
+                self.respond(200, {'ok': True, **res})
+            elif self.path == '/api/templates/delete':
+                with app.database_connection() as conn:
+                    template_packs.delete_template(conn, self.user.get('company', ''), payload.get('template_type', 'case'), payload.get('template_id'), actor_label)
+                self.respond(200, {'ok': True})
+            elif self.path == '/api/templates/copy':
+                with app.database_connection() as conn:
+                    res = template_packs.copy_template(conn, self.user.get('company', ''), payload.get('template_type', 'case'), payload.get('source_id'), payload.get('target_pack_id'), payload.get('name', ''), actor_label)
+                self.respond(200, {'ok': True, **res})
+            elif self.path == '/api/templates/move':
+                with app.database_connection() as conn:
+                    template_packs.move_template(conn, self.user.get('company', ''), payload.get('template_type', 'case'), payload.get('template_id'), payload.get('target_pack_id'), actor_label)
+                self.respond(200, {'ok': True})
+            elif self.path == '/api/templates/lock':
+                with app.database_connection() as conn:
+                    template_packs.toggle_template_lock(conn, self.user.get('company', ''), payload.get('template_type', 'case'), payload.get('template_id'), bool(payload.get('is_locked')), actor_label)
+                self.respond(200, {'ok': True})
+            elif self.path == '/api/templates/create-from-source':
+                with app.database_connection() as conn:
+                    res = template_packs.create_template_from_source(conn, self.user.get('company', ''), payload.get('source_type', 'case'), payload.get('source_id'), payload.get('target_pack_id'), payload.get('name', ''), actor_label)
+                self.respond(200, {'ok': True, **res})
+            elif self.path == '/api/categories/save':
+                with app.database_connection() as conn:
+                    res = template_packs.save_single_category(conn, channels.current_id(), payload.get('category_type', 'case'), payload.get('name', ''), payload.get('old_name', ''), actor_label)
+                self.respond(200, {'ok': True, 'categories': res})
+            elif self.path == '/api/categories/delete':
+                with app.database_connection() as conn:
+                    res = template_packs.delete_single_category(conn, channels.current_id(), payload.get('category_type', 'case'), payload.get('name', ''), actor_label)
+                self.respond(200, {'ok': True, 'categories': res})
+            elif self.path == '/api/categories/reorder':
+                with app.database_connection() as conn:
+                    res = template_packs.reorder_categories(conn, channels.current_id(), payload.get('category_type', 'case'), payload.get('names', []), actor_label)
+                self.respond(200, {'ok': True, 'categories': res})
             elif self.path == '/api/template-packs/toggle':
                 with app.database_connection() as conn:
                     ok = template_packs.toggle_oa_pack(conn, channels.current_id(), payload.get('pack_key'), bool(payload.get('enabled')))
@@ -973,7 +1068,7 @@ class AdminHandler(BaseHTTPRequestHandler):
                     reports.audit(conn, actor_label, "response_hours.save", "", "儲存回應時間設定", self.user.get('company', ''))
                 self.respond(200, res)
             elif self.path == '/api/chat/media/cleanup':
-                res = chat.cleanup_expired_media(max_age_days=int(payload.get('days') or chat.MEDIA_RETENTION_DAYS))
+                res = chat.cleanup_expired_media(max_age_days=int(payload.get('days') or limits.MEDIA_RETENTION_DAYS))
                 with app.database_connection() as conn:
                     reports.audit(conn, actor_label, "media.cleanup", "", f"清理過期媒體（刪除 {res.get('deleted_count')} 筆，釋放 {res.get('freed_mb')} MB）", self.user.get('company', ''))
                 self.respond(200, res)

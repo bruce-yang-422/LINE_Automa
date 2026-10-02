@@ -9,6 +9,7 @@ import uuid
 import zipfile
 from datetime import datetime, timezone, timedelta
 import channels
+import limits
 
 ALLOWED_STATUSES = {'pending', 'processing', 'waiting', 'ready_to_close', 'closed'}
 ALLOWED_PRIORITIES = {'low', 'medium', 'high', 'urgent'}
@@ -473,7 +474,7 @@ def get_case(conn: sqlite3.Connection, case_id: str) -> dict | None:
 
 
 def list_cases(conn: sqlite3.Connection, status: str = None, subject_id: str = None, query: str = None,
-               category: str = None, start_date: str = None, end_date: str = None, limit: int = 5000) -> list:
+               category: str = None, start_date: str = None, end_date: str = None, limit: int = limits.CASE_EXPORT_MAX) -> list:
     conn.row_factory = sqlite3.Row
     sql = """
         SELECT c.*, r.display_name as subject_display_name, r.alias as subject_alias, r.kind as subject_kind,
@@ -485,7 +486,11 @@ def list_cases(conn: sqlite3.Connection, status: str = None, subject_id: str = N
         WHERE c.channel_id=current_channel()
     """
     params = []
-    if status and status != 'all':
+    if status == 'overdue':
+        today_str = get_taipei_now().strftime('%Y-%m-%d')
+        sql += " AND c.due_date <> '' AND c.due_date < ? AND c.status <> 'closed'"
+        params.append(today_str)
+    elif status and status != 'all':
         sql += " AND c.status=?"
         params.append(status)
     if category and category != 'all':
@@ -524,6 +529,51 @@ def list_cases(conn: sqlite3.Connection, status: str = None, subject_id: str = N
         d['is_overdue'] = bool(d.get('due_date') and d['due_date'] < today_str and d['status'] != 'closed')
         res.append(d)
     return res
+
+
+def notify_case_subject(conn: sqlite3.Connection, case_id: str, message_text: str, actor: str) -> dict:
+    """Send progress notification message to case subject and record activity (Section 17.6)."""
+    c = get_case(conn, case_id)
+    if not c:
+        raise ValueError('找不到指定案件。')
+    
+    message_text = (message_text or '').strip()
+    if not message_text or len(message_text) > 1000:
+        raise ValueError('通知訊息內容請填寫 1 至 1,000 字以內。')
+
+    subject_id = c['case_subject_id']
+    if not subject_id:
+        raise ValueError('此案件沒有關聯的對象。')
+
+    # Send push notification via Line OA
+    import admin_server
+    token = channels.access_token()
+    if not token:
+        raise ValueError('OA 連線尚未設定，無法傳送訊息。')
+
+    retry_key = str(uuid.uuid4())
+    admin_server.send_push(token, subject_id, '', retry_key=retry_key, text=message_text)
+
+    # Record message to line_messages
+    mid = uuid.uuid4().hex
+    now = now_iso()
+    channel_id = channels.current_id()
+    conn.execute(
+        """INSERT INTO line_messages (
+            channel_id, message_id, conversation_type, conversation_id, sender_user_id,
+            message_type, text_content, sent_at, received_at, direction, sent_by, send_method, delivery_status
+        ) VALUES (?, ?, 'user', ?, ?, 'text', ?, ?, ?, 'outbound', ?, 'push', 'delivered')""",
+        (channel_id, mid, subject_id, subject_id, message_text, now, now, actor)
+    )
+
+    # Record activity in case
+    add_activity(conn, case_id, 'notify', actor, f"已傳送進度通知給對象：\n{message_text}")
+
+    import reports
+    reports.audit(conn, actor, 'case.notify_subject', case_id, f"傳送案件「{c['title']}」進度通知給對象")
+
+    return get_case(conn, case_id)
+
 
 
 # ----------------- Export CSV / XLSX -----------------
@@ -709,7 +759,7 @@ def export_cases(conn: sqlite3.Connection, filters: dict, fmt: str, include_acti
         query=filters.get('query') or filters.get('search'),
         start_date=filters.get('start_date'),
         end_date=filters.get('end_date'),
-        limit=5000
+        limit=limits.CASE_EXPORT_MAX
     )
     
     # Populate activities for all returned cases if needed

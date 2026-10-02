@@ -49,18 +49,15 @@ class SenderTests(unittest.TestCase):
 
     def test_sender_default_deny_and_union_of_scopes(self):
         user = self.setup_sender()
-        reports.save_grant({**self.grant,'scope_ids':[],'report_ids':[],'messaging':False},'admin@example.com')
         server = self.server()
-        self.assertEqual(self.request(server,'/api/contacts',SENDER)[1]['contacts'],[])
-        self.assertEqual(self.request(server,'/api/reports',SENDER)[1]['reports'],[])
-        with patch.object(admin_server,'load_settings'):
-            self.assertEqual(self.request(server,'/api/send',SENDER,self.scheduled_text())[0],400)
-        project = reports.save_dispatch_scope({'company':'A','name':'Project','kind':'project','recipient_ids':[THIRD],'active':True},'admin@example.com')['scope_id']
-        group = reports.save_dispatch_scope({'company':'A','name':'Group','kind':'group','recipient_ids':[GROUP],'active':True},'admin@example.com')['scope_id']
-        reports.save_grant({**self.grant,'scope_ids':[self.scope,project,group]},'admin@example.com')
-        rows = self.request(server,'/api/contacts',SENDER)[1]['contacts']
-        self.assertEqual({r['recipient_id'] for r in rows},{USER,THIRD,GROUP})
-        for invalid in (OTHER, USER):
+        # 丙級可直接看見所屬組織/OA 的聯絡對象
+        rows = self.request(server, '/api/contacts', SENDER)[1]['contacts']
+        self.assertEqual({r['recipient_id'] for r in rows}, {USER, THIRD, GROUP})
+        # 丙級可直接發送所屬組織的文字訊息
+        with patch.object(admin_server, 'load_settings'):
+            self.assertEqual(self.request(server, '/api/send', SENDER, self.scheduled_text())[0], 202)
+        # 發送範圍建立驗證
+        for invalid in (OTHER,):
             with self.assertRaises(ValueError):
                 reports.save_dispatch_scope({'company':'A','name':'Bad','kind':'group','recipient_ids':[invalid],'active':True},'admin@example.com')
 
@@ -69,15 +66,17 @@ class SenderTests(unittest.TestCase):
         other = self.add_report(company='B')
         ungranted = self.add_report()
         server = self.server()
-        self.assertEqual({r['report_id'] for r in self.request(server,'/api/reports',SENDER)[1]['reports']},{self.source['report_id']})
-        for rid in (other['report_id'],ungranted['report_id'],'weather'):
+        # 丙級可查看本組織的報告
+        self.assertEqual({r['report_id'] for r in self.request(server,'/api/reports',SENDER)[1]['reports']},{self.source['report_id'], ungranted['report_id']})
+        # 丙級無法查看其他組織報告或未授權的客製模組（weather）
+        for rid in (other['report_id'], 'weather'):
             self.assertEqual(self.request(server,'/api/reports/'+rid,SENDER)[0],404)
         for route in ('/api/settings','/api/view-options'):
             self.assertEqual(self.request(server,route,SENDER)[0],403)
         for route in ('/api/accounts/save','/api/memberships/save','/api/sender-grants/save','/api/dispatch-scopes/save','/api/reports/save'):
             self.assertEqual(self.request(server,route,SENDER,{})[0],403)
         with patch.object(admin_server,'load_settings'):
-            for ids in ([OTHER],[THIRD],[USER,THIRD]):
+            for ids in ([OTHER],):
                 self.assertEqual(self.request(server,'/api/send',SENDER,{**self.scheduled_text(),'ids':ids})[0],400)
             self.assertEqual(self.request(server,'/api/send',SENDER,{**self.scheduled_text(),'image_path':str(self.image)})[0],400)
             self.assertEqual(self.request(server,'/api/send',SENDER,self.scheduled_text())[0],202)
@@ -87,18 +86,17 @@ class SenderTests(unittest.TestCase):
         server = self.server()
         self.assertEqual(self.request(server,'/api/session','admin@example.com',view_as=SENDER)[1]['role'],'sender')
         self.assertEqual(self.request(server,'/api/send','admin@example.com',self.scheduled_text(),view_as=SENDER)[0],403)
-        reports.save_grant({**self.grant,'report_ids':[]},'admin@example.com')
+        with app.database_connection() as conn:
+            conn.execute("UPDATE organizations SET reports_enabled=0 WHERE org_id='A'")
         self.assertEqual(self.request(server,'/api/reports','admin@example.com',view_as=SENDER)[1]['reports'],[])
 
     def test_schedule_revocation_and_recipient_move_cancel_before_send(self):
         self.setup_sender()
         dispatcher = admin_server.Dispatcher();self.addCleanup(dispatcher.close)
-        for change in ('grant','scope','department','module','membership'):
+        for change in ('module','membership','recipient_company'):
             with self.subTest(change=change):
-                reports.save_grant(self.grant,'admin@example.com')
                 with app.database_connection() as conn:
-                    conn.execute("UPDATE recipients SET department='Sales' WHERE recipient_id=?",(USER,))
-                    conn.execute('UPDATE dispatch_scopes SET active=1')
+                    conn.execute("UPDATE recipients SET company='A' WHERE recipient_id=?",(USER,))
                     conn.execute('UPDATE organizations SET messaging_enabled=1')
                     conn.execute("UPDATE organization_members SET active=1 WHERE email=?",(SENDER,))
                 payload = self.scheduled_text()
@@ -106,9 +104,7 @@ class SenderTests(unittest.TestCase):
                     dispatcher.submit(payload,SENDER,'A')
                     dispatcher.tick(datetime.fromisoformat(payload['scheduled_at'])+timedelta(seconds=1))
                 with app.database_connection() as conn:
-                    if change=='grant':conn.execute("UPDATE sender_grants SET scopes_json='[]'")
-                    if change=='scope':conn.execute('UPDATE dispatch_scopes SET active=0')
-                    if change=='department':conn.execute("UPDATE recipients SET department='Finance' WHERE recipient_id=?",(USER,))
+                    if change=='recipient_company':conn.execute("UPDATE recipients SET company='B' WHERE recipient_id=?",(USER,))
                     if change=='module':conn.execute('UPDATE organizations SET messaging_enabled=0')
                     if change=='membership':conn.execute('UPDATE organization_members SET active=0 WHERE email=?',(SENDER,))
                 with patch.object(admin_server,'send_push') as push:
@@ -155,7 +151,9 @@ class SenderTests(unittest.TestCase):
             with patch.object(admin_server,'load_settings'),patch.object(admin_server,'publish_image',return_value=('https://test.invalid/snapshot.png',PNG)),patch.object(admin_server,'verify_public_image'),patch.object(dispatcher.pool,'submit'):
                 dispatcher.submit(payload,SENDER,'A')
                 dispatcher.tick(datetime.fromisoformat(payload['scheduled_at'])+timedelta(seconds=1))
-            if revoke:reports.save_grant({**self.grant,'report_ids':[]},'admin@example.com')
+            if revoke:
+                with app.database_connection() as conn:
+                    conn.execute("UPDATE organizations SET reports_enabled=0 WHERE org_id='A'")
             with patch.object(admin_server,'send_push',return_value='mock-request') as push:
                 dispatcher.run(payload['job_id'])
                 self.assertEqual(push.call_count,0 if revoke else 1)

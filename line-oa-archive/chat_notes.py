@@ -5,17 +5,7 @@ import sqlite3
 import uuid
 from datetime import datetime, timezone, timedelta
 import channels
-
-# Central Quantity Limits definition (集中定義數量上限)
-LIMITS = {
-    'MAX_TAGS_PER_OA': 100,
-    'MAX_TAGS_PER_CONTACT': 10,
-    'MAX_BULK_CONTACTS': 200,
-    'MAX_CHAT_NOTES_PER_ROOM': 100,
-    'MAX_PINNED_NOTES_PER_ROOM': 5,
-    'MAX_TAGS_PER_NOTE': 5,
-    'MAX_SAVED_FILTERS_PER_OA': 10
-}
+import limits
 
 
 def now_iso() -> str:
@@ -32,7 +22,7 @@ def get_taipei_now() -> datetime:
 def list_chat_notes(conn: sqlite3.Connection, recipient_id: str, include_completed: bool = True) -> dict:
     conn.row_factory = sqlite3.Row
     # Purge old trash notes (> 30 days)
-    thirty_days_ago = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+    thirty_days_ago = (datetime.now(timezone.utc) - timedelta(days=limits.NOTE_TRASH_DAYS)).isoformat()
     conn.execute(
         "DELETE FROM chat_notes WHERE channel_id=current_channel() AND deleted_at<>'' AND deleted_at < ?",
         (thirty_days_ago,)
@@ -63,8 +53,8 @@ def list_chat_notes(conn: sqlite3.Connection, recipient_id: str, include_complet
         'notes': notes,
         'count': len(notes),
         'trash_count': trash_count,
-        'limit': LIMITS['MAX_CHAT_NOTES_PER_ROOM'],
-        'pinned_limit': LIMITS['MAX_PINNED_NOTES_PER_ROOM']
+        'limit': limits.NOTES_PER_ROOM,
+        'pinned_limit': limits.PINNED_NOTES_PER_ROOM
     }
 
 
@@ -96,13 +86,17 @@ def save_chat_note(conn: sqlite3.Connection, payload: dict, actor: str) -> dict:
     
     tags = payload.get('tags', [])
     if isinstance(tags, list):
-        tags = [str(t).strip() for t in tags if str(t).strip()][:LIMITS['MAX_TAGS_PER_NOTE']]
+        tags = [str(t).strip() for t in tags if str(t).strip()][:limits.TAGS_PER_NOTE]
     else:
         tags = []
     tags_json = json.dumps(tags, ensure_ascii=False)
+    if tags:
+        existing = set(t['name'] for t in list_note_tags(conn)['tags'])
+        if len(existing | set(tags)) > limits.NOTE_TAGS_PER_OA and set(tags) - existing:
+            raise ValueError(f'此 OA 的記事標籤已達上限（{limits.NOTE_TAGS_PER_OA} 個），請沿用既有標籤或先刪除不用的標籤。')
 
-    if not content or len(content) > 1000:
-        raise ValueError('記事內容必須在 1 至 1000 字之間。')
+    if not content or len(content) > limits.NOTE_CONTENT_MAX:
+        raise ValueError(f'記事內容必須在 1 至 {limits.NOTE_CONTENT_MAX} 字之間。')
 
     if not recipient_id:
         raise ValueError('缺少聯絡對象聊天室識別碼。')
@@ -110,6 +104,7 @@ def save_chat_note(conn: sqlite3.Connection, payload: dict, actor: str) -> dict:
     ts = now_iso()
     if note_id:
         # Edit existing note
+        conn.row_factory = sqlite3.Row
         note = conn.execute(
             "SELECT * FROM chat_notes WHERE channel_id=current_channel() AND note_id=?",
             (note_id,)
@@ -152,8 +147,8 @@ def save_chat_note(conn: sqlite3.Connection, payload: dict, actor: str) -> dict:
             "SELECT COUNT(*) FROM chat_notes WHERE channel_id=current_channel() AND recipient_id=? AND (deleted_at='' OR deleted_at IS NULL)",
             (recipient_id,)
         ).fetchone()[0]
-        if count >= LIMITS['MAX_CHAT_NOTES_PER_ROOM']:
-            raise ValueError(f'此聊天室的記事本已達上限（{LIMITS["MAX_CHAT_NOTES_PER_ROOM"]} 筆），請刪除舊記事後再新增。')
+        if count >= limits.NOTES_PER_ROOM:
+            raise ValueError(f'此聊天室的記事本已達上限（{limits.NOTES_PER_ROOM} 筆），請刪除舊記事後再新增。')
 
         new_id = uuid.uuid4().hex
         conn.execute(
@@ -197,8 +192,8 @@ def toggle_note_pin(conn: sqlite3.Connection, note_id: str) -> dict:
             "SELECT COUNT(*) FROM chat_notes WHERE channel_id=current_channel() AND recipient_id=? AND is_pinned=1 AND (deleted_at='' OR deleted_at IS NULL)",
             (recipient_id,)
         ).fetchone()[0]
-        if pinned_count >= LIMITS['MAX_PINNED_NOTES_PER_ROOM']:
-            raise ValueError(f'此聊天室置頂記事已達上限（{LIMITS["MAX_PINNED_NOTES_PER_ROOM"]} 筆）。')
+        if pinned_count >= limits.PINNED_NOTES_PER_ROOM:
+            raise ValueError(f'此聊天室置頂記事已達上限（{limits.PINNED_NOTES_PER_ROOM} 筆）。')
 
     new_pin = 0 if is_pinned else 1
     ts = now_iso()
@@ -242,6 +237,83 @@ def delete_chat_note(conn: sqlite3.Connection, note_id: str) -> bool:
         (ts, ts, note_id)
     )
     return res.rowcount > 0
+
+
+def toggle_note_completed(conn: sqlite3.Connection, note_id: str) -> dict:
+    note = conn.execute(
+        "SELECT is_completed, is_locked FROM chat_notes WHERE channel_id=current_channel() AND note_id=?",
+        (note_id,)
+    ).fetchone()
+    if not note:
+        raise ValueError('找不到此記事。')
+    if note[1]:
+        raise ValueError('此記事已鎖定，請先解除 🔒 鎖定後再修改。')
+    new_completed = 0 if note[0] else 1
+    ts = now_iso()
+    conn.execute(
+        "UPDATE chat_notes SET is_completed=?, updated_at=? WHERE channel_id=current_channel() AND note_id=?",
+        (new_completed, ts, note_id)
+    )
+    return {'note_id': note_id, 'is_completed': new_completed}
+
+
+def list_note_tags(conn: sqlite3.Connection) -> dict:
+    """List all unique note tags and their usage count in current OA (max 30 tags limit)."""
+    rows = conn.execute(
+        "SELECT tags_json FROM chat_notes WHERE channel_id=current_channel() AND (deleted_at='' OR deleted_at IS NULL)"
+    ).fetchall()
+    tag_counts = {}
+    for r in rows:
+        tags = json.loads(r[0] or '[]')
+        for t in tags:
+            tag_counts[t] = tag_counts.get(t, 0) + 1
+    
+    tags_list = [{'name': k, 'count': v} for k, v in sorted(tag_counts.items(), key=lambda x: (-x[1], x[0]))]
+    return {
+        'tags': tags_list,
+        'count': len(tags_list),
+        'limit': limits.NOTE_TAGS_PER_OA
+    }
+
+
+def save_note_tag(conn: sqlite3.Connection, name: str, old_name: str = '') -> dict:
+    name = str(name).strip()
+    if not name or len(name) > 30:
+        raise ValueError('記事標籤名稱需在 1 至 30 字以內。')
+    
+    rows = conn.execute(
+        "SELECT note_id, tags_json FROM chat_notes WHERE channel_id=current_channel() AND (deleted_at='' OR deleted_at IS NULL)"
+    ).fetchall()
+
+    if old_name and old_name != name:
+        for nid, tj in rows:
+            tags = json.loads(tj or '[]')
+            if old_name in tags:
+                new_tags = [name if t == old_name else t for t in tags]
+                # remove duplicates while preserving order
+                seen = set()
+                deduped = [x for x in new_tags if not (x in seen or seen.add(x))]
+                conn.execute(
+                    "UPDATE chat_notes SET tags_json=? WHERE channel_id=current_channel() AND note_id=?",
+                    (json.dumps(deduped, ensure_ascii=False), nid)
+                )
+    return list_note_tags(conn)
+
+
+def delete_note_tag(conn: sqlite3.Connection, name: str) -> dict:
+    name = str(name).strip()
+    rows = conn.execute(
+        "SELECT note_id, tags_json FROM chat_notes WHERE channel_id=current_channel() AND (deleted_at='' OR deleted_at IS NULL)"
+    ).fetchall()
+    for nid, tj in rows:
+        tags = json.loads(tj or '[]')
+        if name in tags:
+            new_tags = [t for t in tags if t != name]
+            conn.execute(
+                "UPDATE chat_notes SET tags_json=? WHERE channel_id=current_channel() AND note_id=?",
+                (json.dumps(new_tags, ensure_ascii=False), nid)
+            )
+    return list_note_tags(conn)
 
 
 def restore_chat_note(conn: sqlite3.Connection, note_id: str) -> bool:
@@ -296,7 +368,7 @@ def list_saved_filters(conn: sqlite3.Connection) -> dict:
     return {
         'filters': filters,
         'count': len(filters),
-        'limit': LIMITS['MAX_SAVED_FILTERS_PER_OA']
+        'limit': limits.SAVED_FILTERS_PER_OA
     }
 
 
@@ -320,8 +392,8 @@ def save_saved_filter(conn: sqlite3.Connection, payload: dict) -> dict:
         count = conn.execute(
             "SELECT COUNT(*) FROM saved_filters WHERE channel_id=current_channel()"
         ).fetchone()[0]
-        if count >= LIMITS['MAX_SAVED_FILTERS_PER_OA']:
-            raise ValueError(f'此 OA 的自訂篩選條件已達上限（{LIMITS["MAX_SAVED_FILTERS_PER_OA"]} 組），請刪除不用的篩選後再新增。')
+        if count >= limits.SAVED_FILTERS_PER_OA:
+            raise ValueError(f'此 OA 的自訂篩選條件已達上限（{limits.SAVED_FILTERS_PER_OA} 組），請刪除不用的篩選後再新增。')
 
         # check duplicate name in same OA
         dup = conn.execute(

@@ -14,7 +14,8 @@ const chatUI = {
   cannedReplies: [],
   loadingMessages: false,
   sending: false,
-  infoOpen: true,
+  // 規格 4.3：桌面寬度不足 1280px 時資訊面板預設收合
+  infoOpen: window.innerWidth >= 1280,
   timerId: null,
   pollInterval: null
 };
@@ -63,6 +64,9 @@ function chatPage() {
             <button data-action="chat-filter" data-id="${id}" class="${chatUI.filter === id ? 'active' : ''}">${t}</button>
           `).join("")}
         </div>
+        ${canSend() ? `<div style="margin-top:8px;display:flex;justify-content:flex-end;">
+          <button type="button" class="btn text small" data-action="send-to-chat-filtered" style="font-size:12px;padding:2px 8px;color:var(--primary,#00B900);">📨 對目前篩選對象發送</button>
+        </div>` : ""}
       </div>
       <div class="chat-room-list" id="chat-room-list">
         ${renderChatRoomItems()}
@@ -449,7 +453,7 @@ async function cannedRepliesModal() {
     modal("預設訊息範本庫", `<div>
       <div class="canned-replies-list">${listHtml}</div>
       ${manager() ? `
-        <h3 class="section-space">新增預設訊息（每 OA 上限 100 則）</h3>
+        <h3 class="section-space">新增預設訊息（每 OA 上限 ${cap("CANNED_REPLIES_PER_OA")} 則）</h3>
         <form id="canned-reply-create-form">
           <div class="form-grid">
             <div class="full">${field("範本標題", "title", "", 'required maxlength="40" placeholder="例如：問候語、匯款帳號通知"')}</div>
@@ -567,6 +571,8 @@ function chatAction(action, id, target) {
         category: note.note_type || "一般"
       });
     }
+    return true;
+  }
   if (action === "toggle-chat-search") {
     chatUI.searchOpen = !chatUI.searchOpen;
     if (!chatUI.searchOpen) chatUI.searchQuery = "";
@@ -621,11 +627,13 @@ async function openChatSettingsModal() {
       api("/api/chat/response-hours"),
       api("/api/chat/media/stats")
     ]);
+    chatNotify.responseHours = hoursRes;
     const stats = statsRes || { total_mb: 0, percent: 0, file_count: 0 };
     modal("聊天設定與容量管理", `<div>
       <div class="card" style="margin-bottom:16px;">
         <h3 style="margin-top:0;">提醒偏好設定</h3>
         <p class="muted" style="font-size:13px;margin:4px 0 12px;">有新訊息時的提醒方式（依目前瀏覽器本機儲存）：</p>
+        <p class="callout" id="chat-notify-permission" style="font-size:12px;margin:0 0 10px;">${esc(notificationPermissionText())}</p>
         <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:14px;cursor:pointer;">
           <input type="checkbox" id="chat-pref-notify" ${localStorage.getItem("chat_pref_notify") !== "0" ? "checked" : ""}>
           顯示瀏覽器桌面通知
@@ -651,6 +659,10 @@ async function openChatSettingsModal() {
           <div class="form-grid">
             <div>${field("時區", "timezone", hoursRes.timezone || "Asia/Taipei", 'readonly')}</div>
           </div>
+          ${renderResponseWeekly(hoursRes.weekly || {})}
+          <label class="field" style="margin-top:12px;">例假日（每行一個日期，例如 2026-10-10；當天整天不通知）
+            <textarea name="holidays" rows="3" placeholder="2026-10-10">${esc((hoursRes.holidays || []).join("\n"))}</textarea>
+          </label>
           <div class="form-actions" style="margin-top:12px;">
             <button class="btn primary small" type="submit">儲存回應時間設定</button>
           </div>
@@ -659,12 +671,12 @@ async function openChatSettingsModal() {
 
       <div class="card">
         <h3 style="margin-top:0;">媒體儲存容量與保存期限</h3>
-        <p class="muted" style="font-size:13px;margin:4px 0 12px;">單台主機儲存上限：10 GB（單一檔案上限 20 MB，文字保存 5 年，媒體檔案保存 1 年）</p>
+        <p class="muted" style="font-size:13px;margin:4px 0 12px;">單台主機儲存上限：${stats.limit_gb} GB（單一檔案上限 ${stats.single_limit_mb} MB，媒體檔案保存 ${Math.round(stats.retention_days / 365)} 年）</p>
         <div style="background:var(--line,#e2e8f0);height:10px;border-radius:5px;overflow:hidden;margin-bottom:8px;">
           <div style="background:${stats.warning ? '#ef4444' : 'var(--accent,#00b900)'};width:${Math.min(100, Math.max(2, stats.percent))}%;height:100%;"></div>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;font-size:13px;">
-          <span>已使用 <strong>${stats.total_mb} MB</strong> / 10 GB (${stats.percent}%) · 共 ${stats.file_count} 個媒體檔</span>
+          <span>已使用 <strong>${stats.total_mb} MB</strong> / ${stats.limit_gb} GB (${stats.percent}%) · 共 ${stats.file_count} 個媒體檔</span>
           <button type="button" class="btn small" data-action="cleanup-expired-media">🧹 清理過期媒體</button>
         </div>
       </div>
@@ -675,7 +687,7 @@ async function openChatSettingsModal() {
 }
 
 async function viewChatNotesTrashModal(recipient_id) {
-  modal("最近刪除的記事（30 天內可還原）", '<div class="loading-panel"><span class="spinner"></span><p>讀取回收筒…</p></div>');
+  modal(`最近刪除的記事（${cap("NOTE_TRASH_DAYS")} 天內可還原）`, '<div class="loading-panel"><span class="spinner"></span><p>讀取回收筒…</p></div>');
   try {
     const res = await api(`/api/chat-notes/trash?recipient_id=${encodeURIComponent(recipient_id)}`);
     const trashed = res.trash || [];
@@ -692,9 +704,188 @@ async function viewChatNotesTrashModal(recipient_id) {
         <div style="font-size:13px;margin-top:4px;color:var(--text-subtle,#64748b);">${esc(n.content)}</div>
       </div>
     `).join("");
-    modal("最近刪除的記事（30 天內可還原）", `<div>${html}</div>`);
+    modal(`最近刪除的記事（${cap("NOTE_TRASH_DAYS")} 天內可還原）`, `<div>${html}</div>`);
   } catch (e) {
     modal("載入失敗", `<p class="callout warn">${esc(e.message)}</p>`);
   }
 }
+
+// ----------------- 新訊息輪詢與瀏覽器通知（規格 4.3、12.1、12.4） -----------------
+// 多個分頁只由一頁（leader）輪詢並通知；leader 每次輪詢更新心跳，逾時由其他分頁接手。
+const CHAT_POLL_MS = 10000;
+const CHAT_LEADER_KEY = "chat_poll_leader";
+const CHAT_LEADER_STALE_MS = CHAT_POLL_MS * 3;
+const CHAT_WEEKDAYS = [["1", "週一"], ["2", "週二"], ["3", "週三"], ["4", "週四"], ["5", "週五"], ["6", "週六"], ["0", "週日"]];
+const chatNotify = {
+  tabId: Math.random().toString(36).slice(2),
+  seen: null,          // recipient_id → 最後一則訊息 ID；null 表示尚未建立基準
+  channel: "",
+  responseHours: null,
+  polling: false
+};
+
+function chatPref(name, fallback) {
+  try {
+    const v = localStorage.getItem(`chat_pref_${name}`);
+    return v === null ? fallback : v === "1";
+  } catch (_) { return fallback; }
+}
+
+function setChatPref(name, on) {
+  try { localStorage.setItem(`chat_pref_${name}`, on ? "1" : "0"); } catch (_) {}
+}
+
+function notificationPermissionText() {
+  if (!("Notification" in window)) return "此瀏覽器不支援桌面通知。";
+  if (Notification.permission === "granted") return "瀏覽器已允許通知。";
+  if (Notification.permission === "denied") return "瀏覽器已封鎖通知：請點網址列左側的網站設定，將「通知」改為允許後重新整理。";
+  return "尚未授權通知：勾選「顯示瀏覽器桌面通知」時瀏覽器會詢問是否允許。";
+}
+
+function renderResponseWeekly(weekly) {
+  return `<div class="response-weekly" style="display:grid;gap:6px;margin-top:12px;">
+    ${CHAT_WEEKDAYS.map(([d, name]) => {
+      const slot = weekly[d];
+      return `<div style="display:flex;align-items:center;gap:8px;font-size:13px;flex-wrap:wrap;">
+        <label class="check-label" style="min-width:72px;"><input type="checkbox" name="day_${d}" ${slot ? "checked" : ""}>${name}</label>
+        <input type="time" name="start_${d}" value="${esc(slot?.start || "09:00")}" aria-label="${name}開始時間">
+        <span>至</span>
+        <input type="time" name="end_${d}" value="${esc(slot?.end || "18:00")}" aria-label="${name}結束時間">
+      </div>`;
+    }).join("")}
+  </div>`;
+}
+
+// 由回應時間表單讀出 weekly 與 holidays（admin.js 送出時使用）
+function readResponseHoursForm(form) {
+  const weekly = {};
+  CHAT_WEEKDAYS.forEach(([d]) => {
+    if (form.elements[`day_${d}`]?.checked) {
+      weekly[d] = { start: form.elements[`start_${d}`].value || "00:00", end: form.elements[`end_${d}`].value || "23:59" };
+    }
+  });
+  const holidays = (form.elements.holidays?.value || "").split(/\s+/).map(s => s.trim()).filter(Boolean);
+  return { weekly, holidays };
+}
+
+// 未啟用回應時間 → 隨時通知；啟用後只在當天時段內、且非例假日通知。
+function withinResponseHours(cfg, now = new Date()) {
+  if (!cfg || !cfg.enabled) return true;
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", {
+    timeZone: cfg.timezone || "Asia/Taipei", year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hourCycle: "h23", weekday: "short"
+  }).formatToParts(now).map(p => [p.type, p.value]));
+  const date = `${parts.year}-${parts.month}-${parts.day}`;
+  if ((cfg.holidays || []).includes(date)) return false;
+  const day = String(["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(parts.weekday));
+  const slot = (cfg.weekly || {})[day];
+  if (!slot) return false;
+  const time = `${parts.hour}:${parts.minute}`;
+  return slot.start <= slot.end ? time >= slot.start && time < slot.end : time >= slot.start || time < slot.end;
+}
+
+function isChatPollLeader() {
+  try {
+    const cur = JSON.parse(localStorage.getItem(CHAT_LEADER_KEY) || "null");
+    if (cur && cur.id !== chatNotify.tabId && Date.now() - cur.ts < CHAT_LEADER_STALE_MS) return false;
+    localStorage.setItem(CHAT_LEADER_KEY, JSON.stringify({ id: chatNotify.tabId, ts: Date.now() }));
+    return true;
+  } catch (_) {
+    return true;
+  }
+}
+
+window.addEventListener("beforeunload", () => {
+  try {
+    const cur = JSON.parse(localStorage.getItem(CHAT_LEADER_KEY) || "null");
+    if (cur && cur.id === chatNotify.tabId) localStorage.removeItem(CHAT_LEADER_KEY);
+  } catch (_) {}
+});
+
+function notifyNewMessage(room) {
+  if (!chatPref("notify", true) || !("Notification" in window) || Notification.permission !== "granted") return;
+  if (!withinResponseHours(chatNotify.responseHours)) return;
+  const name = room.name || room.display_name || "LINE 聊天室";
+  const m = room.last_message || {};
+  const body = chatPref("preview", true) ? (m.text_content || `[${m.message_type || "訊息"}]`) : "有新訊息";
+  try {
+    const n = new Notification(`LINE 新訊息：${name}`, { body, icon: "/assets/brand/line-automation-logo-light.png", tag: room.recipient_id });
+    n.onclick = () => {
+      window.focus();
+      if (typeof navigate === "function") navigate("chat");
+      selectChatRoom(room.recipient_id);
+      n.close();
+    };
+  } catch (e) {
+    console.warn("Desktop notification failed:", e);
+  }
+  if (chatPref("sound", false)) {
+    try {
+      new Audio("data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbqWE2Mmih2uOxYjg4bKLZ5LhkOjpupdznvWc9PW6o3unBaD9Ccazg6sRtQURxrOHrxXFEQ3St4evGcklFda7i68d1Skd3r+PryHhMR3mw5O3KfVBKfbHm782CUlCA").play().catch(() => {});
+    } catch (_) {}
+  }
+}
+
+// 比對各聊天室最後一則訊息；第一次輪詢或切換 OA 時只建立基準，不通知舊訊息。
+function detectNewInbound(rooms) {
+  const fresh = [];
+  const next = new Map();
+  rooms.forEach(r => {
+    const id = r.last_message?.message_id || "";
+    next.set(r.recipient_id, id);
+    if (chatNotify.seen && id && chatNotify.seen.get(r.recipient_id) !== id && r.last_message.direction === "inbound") fresh.push(r);
+  });
+  chatNotify.seen = next;
+  return fresh;
+}
+
+async function pollChat() {
+  if (chatNotify.polling || typeof state === "undefined" || !state.loaded || !admin() || !lineDataReady() || state.authLost) return;
+  const leader = isChatPollLeader();
+  const viewingChat = state.view === "chat" && !document.hidden;
+  if (!leader && !viewingChat) return;
+  chatNotify.polling = true;
+  try {
+    if (chatNotify.channel !== lineUI.channel) {
+      chatNotify.channel = lineUI.channel;
+      chatNotify.seen = null;
+      chatNotify.responseHours = await api("/api/chat/response-hours").catch(() => null);
+    }
+    const before = JSON.stringify(chatUI.rooms.map(r => [r.recipient_id, r.last_message?.message_id, r.unread_count, r.status]));
+    await loadChatRooms();
+    const fresh = detectNewInbound(chatUI.rooms);
+    if (leader) {
+      fresh.filter(r => !(viewingChat && r.recipient_id === chatUI.selectedId)).forEach(notifyNewMessage);
+    }
+    // 正在看的聊天室有新訊息時重新載入對話
+    if (viewingChat && chatUI.selectedId && fresh.some(r => r.recipient_id === chatUI.selectedId) && !$("modal").open) {
+      const typed = $("chat-message-input")?.value || "";
+      await selectChatRoom(chatUI.selectedId);
+      if (typed && $("chat-message-input")) $("chat-message-input").value = typed;
+    } else if (before !== JSON.stringify(chatUI.rooms.map(r => [r.recipient_id, r.last_message?.message_id, r.unread_count, r.status])) && state.view === "overview" && !$("modal").open) {
+      render();
+    }
+  } catch (e) {
+    console.warn("Chat polling failed:", e);
+  } finally {
+    chatNotify.polling = false;
+  }
+}
+
+setInterval(pollChat, CHAT_POLL_MS);
+
+// 聊天設定的提醒偏好：勾選即存；開啟通知時向瀏覽器要求授權（需在使用者操作中呼叫）。
+document.addEventListener("change", event => {
+  const prefs = { "chat-pref-notify": "notify", "chat-pref-sound": "sound", "chat-pref-preview": "preview" };
+  const name = prefs[event.target.id];
+  if (!name) return;
+  setChatPref(name, event.target.checked);
+  if (name === "notify" && event.target.checked && "Notification" in window && Notification.permission === "default") {
+    Notification.requestPermission().then(() => {
+      const el = $("chat-notify-permission");
+      if (el) el.textContent = notificationPermissionText();
+    });
+  }
+});
+
 

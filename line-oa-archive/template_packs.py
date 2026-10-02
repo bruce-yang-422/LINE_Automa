@@ -6,6 +6,7 @@ import sqlite3
 import uuid
 from datetime import datetime, timezone, timedelta
 import channels
+import limits
 
 PRESET_PACKS = {
     'universal': {
@@ -582,11 +583,11 @@ def preview_apply_category_set(conn: sqlite3.Connection, channel_id: str, pack_k
                 else:
                     result_items.append({'name': name, 'action': 'remove', 'usage': 0})
 
-        # Cap at 20 items
+        # 每個 OA 的分類上限
         final_list = []
         for idx, it in enumerate(result_items):
             if it['action'] != 'remove':
-                if len([x for x in final_list if x['action'] != 'remove']) >= 20:
+                if len([x for x in final_list if x['action'] != 'remove']) >= limits.CATEGORIES_PER_OA:
                     it['action'] = 'exceeded'
             final_list.append(it)
         return final_list
@@ -721,3 +722,465 @@ def get_oa_enabled_templates(conn: sqlite3.Connection, channel_id: str, contact_
         'case_template_groups': case_groups,
         'note_template_groups': note_groups
     }
+
+
+# ==========================================
+# 自訂範本包與範本管理 (Section 17.2 - 17.4)
+# ==========================================
+
+def save_custom_pack(conn: sqlite3.Connection, workspace_id: str, payload: dict, actor: str) -> dict:
+    name = str(payload.get('name', '')).strip()
+    if not name or len(name) > 30:
+        raise ValueError('範本包名稱需在 1 至 30 字以內。')
+    desc = str(payload.get('description', '')).strip()
+    if len(desc) > 100:
+        raise ValueError('範本包說明請在 100 字以內。')
+
+    note_types = payload.get('note_types', ['一般'])
+    if not isinstance(note_types, list) or len(note_types) > limits.CATEGORIES_PER_OA:
+        raise ValueError(f'記事類型最多 {limits.CATEGORIES_PER_OA} 項。')
+    if '一般' not in note_types:
+        note_types.insert(0, '一般')
+
+    case_categories = payload.get('case_categories', ['一般'])
+    if not isinstance(case_categories, list) or len(case_categories) > limits.CATEGORIES_PER_OA:
+        raise ValueError(f'案件類別最多 {limits.CATEGORIES_PER_OA} 項。')
+    if '一般' not in case_categories:
+        case_categories.insert(0, '一般')
+
+    pack_id = payload.get('pack_id')
+    now = now_iso()
+
+    if pack_id:
+        row = conn.execute("SELECT * FROM template_packs WHERE pack_id=? AND workspace_id=?", (pack_id, workspace_id)).fetchone()
+        if not row:
+            raise ValueError('找不到要修改的範本包。')
+        if row[6] == 1 and not payload.get('unlock'):  # is_locked
+            raise ValueError('範本包已鎖定，請先解鎖後再修改。')
+        
+        # Check duplicate name in workspace
+        dup = conn.execute("SELECT 1 FROM template_packs WHERE workspace_id=? AND name=? AND pack_id!=?", (workspace_id, name, pack_id)).fetchone()
+        if dup:
+            raise ValueError('同工作區已有同名的範本包。')
+
+        conn.execute(
+            """UPDATE template_packs SET name=?, description=?, note_types_json=?, case_categories_json=?, updated_by=?, updated_at=?
+               WHERE pack_id=? AND workspace_id=?""",
+            (name, desc, json.dumps(note_types, ensure_ascii=False), json.dumps(case_categories, ensure_ascii=False), actor, now, pack_id, workspace_id)
+        )
+    else:
+        # 每個工作區的自訂範本包上限
+        cnt = conn.execute("SELECT COUNT(*) FROM template_packs WHERE workspace_id=?", (workspace_id,)).fetchone()[0]
+        if cnt >= limits.CUSTOM_PACKS_PER_WORKSPACE:
+            raise ValueError(f'每個工作區最多建立 {limits.CUSTOM_PACKS_PER_WORKSPACE} 個自訂範本包。')
+        dup = conn.execute("SELECT 1 FROM template_packs WHERE workspace_id=? AND name=?", (workspace_id, name)).fetchone()
+        if dup:
+            raise ValueError('同工作區已有同名的範本包。')
+
+        pack_id = uuid.uuid4().hex
+        conn.execute(
+            """INSERT INTO template_packs (pack_id, workspace_id, name, description, note_types_json, case_categories_json, is_locked, created_by, updated_by, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)""",
+            (pack_id, workspace_id, name, desc, json.dumps(note_types, ensure_ascii=False), json.dumps(case_categories, ensure_ascii=False), actor, actor, now, now)
+        )
+
+    import reports
+    reports.audit(conn, actor, 'template_pack.save', pack_id, f"儲存自訂範本包「{name}」")
+    return {'pack_id': pack_id, 'name': name}
+
+
+def delete_custom_pack(conn: sqlite3.Connection, workspace_id: str, pack_id: str, actor: str) -> bool:
+    if pack_id in PRESET_PACKS:
+        raise ValueError('預設範本包不可刪除。')
+    row = conn.execute("SELECT name, is_locked FROM template_packs WHERE pack_id=? AND workspace_id=?", (pack_id, workspace_id)).fetchone()
+    if not row:
+        raise ValueError('找不到範本包。')
+    if row[1] == 1:
+        raise ValueError('範本包已鎖定，請先解鎖後再刪除。')
+
+    name = row[0]
+    conn.execute("DELETE FROM case_templates WHERE pack_id=?", (pack_id,))
+    conn.execute("DELETE FROM note_templates WHERE pack_id=?", (pack_id,))
+    conn.execute("DELETE FROM oa_enabled_packs WHERE pack_key=?", (pack_id,))
+    conn.execute("DELETE FROM template_packs WHERE pack_id=? AND workspace_id=?", (pack_id, workspace_id))
+
+    import reports
+    reports.audit(conn, actor, 'template_pack.delete', pack_id, f"刪除自訂範本包「{name}」")
+    return True
+
+
+def copy_pack(conn: sqlite3.Connection, workspace_id: str, source_pack_key: str, new_name: str, actor: str) -> dict:
+    new_name = new_name.strip()
+    if not new_name or len(new_name) > 30:
+        raise ValueError('新範本包名稱需在 1 至 30 字以內。')
+    
+    cnt = conn.execute("SELECT COUNT(*) FROM template_packs WHERE workspace_id=?", (workspace_id,)).fetchone()[0]
+    if cnt >= limits.CUSTOM_PACKS_PER_WORKSPACE:
+        raise ValueError(f'每個工作區最多建立 {limits.CUSTOM_PACKS_PER_WORKSPACE} 個自訂範本包。')
+    dup = conn.execute("SELECT 1 FROM template_packs WHERE workspace_id=? AND name=?", (workspace_id, new_name)).fetchone()
+    if dup:
+        raise ValueError('同工作區已有同名的範本包。')
+
+    now = now_iso()
+    new_pack_id = uuid.uuid4().hex
+
+    if source_pack_key in PRESET_PACKS:
+        src = PRESET_PACKS[source_pack_key]
+        desc = src.get('description', '')
+        note_types = src.get('note_types', ['一般'])
+        case_cats = src.get('case_categories', ['一般'])
+        case_tmpls = src.get('case_templates', [])
+        note_tmpls = src.get('note_templates', [])
+    else:
+        conn.row_factory = sqlite3.Row
+        src_row = conn.execute("SELECT * FROM template_packs WHERE pack_id=?", (source_pack_key,)).fetchone()
+        if not src_row:
+            raise ValueError('找不到來源範本包。')
+        desc = src_row['description']
+        note_types = json.loads(src_row['note_types_json'] or '[]')
+        case_cats = json.loads(src_row['case_categories_json'] or '[]')
+        case_tmpls = [dict(r) for r in conn.execute("SELECT * FROM case_templates WHERE pack_id=?", (source_pack_key,)).fetchall()]
+        note_tmpls = [dict(r) for r in conn.execute("SELECT * FROM note_templates WHERE pack_id=?", (source_pack_key,)).fetchall()]
+
+    conn.execute(
+        """INSERT INTO template_packs (pack_id, workspace_id, name, description, note_types_json, case_categories_json, is_locked, created_by, updated_by, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)""",
+        (new_pack_id, workspace_id, new_name, desc, json.dumps(note_types, ensure_ascii=False), json.dumps(case_cats, ensure_ascii=False), actor, actor, now, now)
+    )
+
+    for idx, ct in enumerate(case_tmpls):
+        tid = uuid.uuid4().hex
+        d_json = json.dumps(ct.get('defaults', {}) if isinstance(ct.get('defaults'), dict) else json.loads(ct.get('defaults_json') or '{}'), ensure_ascii=False)
+        conn.execute(
+            """INSERT INTO case_templates (template_id, pack_id, name, category_name, title, body, defaults_json, sort_order, is_locked, created_by, updated_by, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)""",
+            (tid, new_pack_id, ct.get('name', ''), ct.get('category_name', '一般'), ct.get('title', ''), ct.get('body', ''), d_json, idx, actor, actor, now, now)
+        )
+
+    for idx, nt in enumerate(note_tmpls):
+        tid = uuid.uuid4().hex
+        d_json = json.dumps(nt.get('defaults', {}) if isinstance(nt.get('defaults'), dict) else json.loads(nt.get('defaults_json') or '{}'), ensure_ascii=False)
+        conn.execute(
+            """INSERT INTO note_templates (template_id, pack_id, name, category_name, title, body, defaults_json, sort_order, is_locked, created_by, updated_by, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)""",
+            (tid, new_pack_id, nt.get('name', ''), nt.get('category_name', '一般'), nt.get('title', ''), nt.get('body', ''), d_json, idx, actor, actor, now, now)
+        )
+
+    import reports
+    reports.audit(conn, actor, 'template_pack.copy', new_pack_id, f"複製範本包為「{new_name}」")
+    return {'pack_id': new_pack_id, 'name': new_name}
+
+
+def toggle_pack_lock(conn: sqlite3.Connection, workspace_id: str, pack_id: str, is_locked: bool, actor: str) -> bool:
+    if pack_id in PRESET_PACKS:
+        raise ValueError('預設範本包不可修改鎖定狀態。')
+    row = conn.execute("SELECT name FROM template_packs WHERE pack_id=? AND workspace_id=?", (pack_id, workspace_id)).fetchone()
+    if not row:
+        raise ValueError('找不到範本包。')
+    conn.execute("UPDATE template_packs SET is_locked=?, updated_by=?, updated_at=? WHERE pack_id=?", (1 if is_locked else 0, actor, now_iso(), pack_id))
+    import reports
+    reports.audit(conn, actor, 'template_pack.lock', pack_id, f"{'鎖定' if is_locked else '解鎖'}範本包「{row[0]}」")
+    return True
+
+
+# ==========================================
+# 範本 CRUD 與存成範本
+# ==========================================
+
+def save_template(conn: sqlite3.Connection, workspace_id: str, template_type: str, payload: dict, actor: str) -> dict:
+    if template_type not in ('case', 'note'):
+        raise ValueError('範本類型不正確。')
+    table = 'case_templates' if template_type == 'case' else 'note_templates'
+    
+    pack_id = payload.get('pack_id')
+    if not pack_id or pack_id in PRESET_PACKS:
+        raise ValueError('請選擇有效的自訂範本包。')
+    
+    pack = conn.execute("SELECT is_locked FROM template_packs WHERE pack_id=? AND workspace_id=?", (pack_id, workspace_id)).fetchone()
+    if not pack:
+        raise ValueError('找不到所屬範本包。')
+    if pack[0] == 1 and not payload.get('unlock'):
+        raise ValueError('範本包已鎖定，無法新增或修改範本。')
+
+    name = str(payload.get('name', '')).strip()
+    if not name or len(name) > 30:
+        raise ValueError('範本名稱需在 1 至 30 字以內。')
+    
+    title = str(payload.get('title', '')).strip()
+    body = str(payload.get('body', '')).strip()
+    if len(body) > 1000:
+        raise ValueError('內容骨架請在 1,000 字以內。')
+    category_name = str(payload.get('category_name', '一般')).strip() or '一般'
+    defaults = payload.get('defaults', {})
+    if not isinstance(defaults, dict):
+        defaults = {}
+
+    template_id = payload.get('template_id')
+    now = now_iso()
+
+    if template_id:
+        row = conn.execute(f"SELECT is_locked, pack_id FROM {table} WHERE template_id=?", (template_id,)).fetchone()
+        if not row:
+            raise ValueError('找不到要修改的範本。')
+        if row[0] == 1 and not payload.get('unlock'):
+            raise ValueError('範本已鎖定，請先解鎖後再修改。')
+        
+        dup = conn.execute(f"SELECT 1 FROM {table} WHERE pack_id=? AND name=? AND template_id!=?", (pack_id, name, template_id)).fetchone()
+        if dup:
+            raise ValueError('同範本包內已有同名範本。')
+
+        conn.execute(
+            f"""UPDATE {table} SET name=?, category_name=?, title=?, body=?, defaults_json=?, updated_by=?, updated_at=?
+                WHERE template_id=?""",
+            (name, category_name, title, body, json.dumps(defaults, ensure_ascii=False), actor, now, template_id)
+        )
+    else:
+        cnt = conn.execute(f"SELECT COUNT(*) FROM {table} WHERE pack_id=?", (pack_id,)).fetchone()[0]
+        if cnt >= limits.TEMPLATES_PER_PACK:
+            raise ValueError(f'每個範本包最多建立 {limits.TEMPLATES_PER_PACK} 個{"案件" if template_type=="case" else "記事"}範本。')
+        dup = conn.execute(f"SELECT 1 FROM {table} WHERE pack_id=? AND name=?", (pack_id, name)).fetchone()
+        if dup:
+            raise ValueError('同範本包內已有同名範本。')
+
+        template_id = uuid.uuid4().hex
+        sort_order = cnt
+        conn.execute(
+            f"""INSERT INTO {table} (template_id, pack_id, name, category_name, title, body, defaults_json, sort_order, is_locked, created_by, updated_by, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)""",
+            (template_id, pack_id, name, category_name, title, body, json.dumps(defaults, ensure_ascii=False), sort_order, actor, actor, now, now)
+        )
+
+    import reports
+    reports.audit(conn, actor, f'template_{template_type}.save', template_id, f"儲存{'案件' if template_type=='case' else '記事'}範本「{name}」")
+    return {'template_id': template_id, 'name': name}
+
+
+def delete_template(conn: sqlite3.Connection, workspace_id: str, template_type: str, template_id: str, actor: str) -> bool:
+    table = 'case_templates' if template_type == 'case' else 'note_templates'
+    conn.row_factory = sqlite3.Row
+    row = conn.execute(f"""SELECT t.*, p.workspace_id, p.is_locked as pack_locked 
+                           FROM {table} t JOIN template_packs p ON t.pack_id=p.pack_id
+                           WHERE t.template_id=?""", (template_id,)).fetchone()
+    if not row or row['workspace_id'] != workspace_id:
+        raise ValueError('找不到範本。')
+    if row['is_locked'] == 1 or row['pack_locked'] == 1:
+        raise ValueError('範本或所屬範本包已鎖定，無法刪除。')
+
+    conn.execute(f"DELETE FROM {table} WHERE template_id=?", (template_id,))
+    import reports
+    reports.audit(conn, actor, f'template_{template_type}.delete', template_id, f"刪除{'案件' if template_type=='case' else '記事'}範本「{row['name']}」")
+    return True
+
+
+def copy_template(conn: sqlite3.Connection, workspace_id: str, template_type: str, source_id: str, target_pack_id: str, new_name: str, actor: str) -> dict:
+    table = 'case_templates' if template_type == 'case' else 'note_templates'
+    new_name = new_name.strip()
+    if not new_name or len(new_name) > 30:
+        raise ValueError('新範本名稱需在 1 至 30 字以內。')
+
+    pack = conn.execute("SELECT is_locked FROM template_packs WHERE pack_id=? AND workspace_id=?", (target_pack_id, workspace_id)).fetchone()
+    if not pack:
+        raise ValueError('目標範本包不存在。')
+    if pack[0] == 1:
+        raise ValueError('目標範本包已鎖定，無法新增範本。')
+
+    cnt = conn.execute(f"SELECT COUNT(*) FROM {table} WHERE pack_id=?", (target_pack_id,)).fetchone()[0]
+    if cnt >= limits.TEMPLATES_PER_PACK:
+        raise ValueError(f'目標範本包已達 {limits.TEMPLATES_PER_PACK} 個{"案件" if template_type=="case" else "記事"}範本上限。')
+    dup = conn.execute(f"SELECT 1 FROM {table} WHERE pack_id=? AND name=?", (target_pack_id, new_name)).fetchone()
+    if dup:
+        raise ValueError('目標範本包已有同名範本。')
+
+    # Source can be preset or custom
+    src_tmpl = None
+    if source_id.startswith('preset_'):
+        for p in PRESET_PACKS.values():
+            key = 'case_templates' if template_type == 'case' else 'note_templates'
+            for item in p.get(key, []):
+                if item['template_id'] == source_id:
+                    src_tmpl = dict(item)
+                    break
+            if src_tmpl:
+                break
+    else:
+        conn.row_factory = sqlite3.Row
+        r = conn.execute(f"SELECT * FROM {table} WHERE template_id=?", (source_id,)).fetchone()
+        if r:
+            src_tmpl = dict(r)
+            src_tmpl['defaults'] = json.loads(src_tmpl.get('defaults_json') or '{}')
+
+    if not src_tmpl:
+        raise ValueError('找不到來源範本。')
+
+    now = now_iso()
+    new_id = uuid.uuid4().hex
+    conn.execute(
+        f"""INSERT INTO {table} (template_id, pack_id, name, category_name, title, body, defaults_json, sort_order, is_locked, created_by, updated_by, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)""",
+        (new_id, target_pack_id, new_name, src_tmpl.get('category_name', '一般'), src_tmpl.get('title', ''), src_tmpl.get('body', ''),
+         json.dumps(src_tmpl.get('defaults', {}), ensure_ascii=False), cnt, actor, actor, now, now)
+    )
+
+    import reports
+    reports.audit(conn, actor, f'template_{template_type}.copy', new_id, f"複製{'案件' if template_type=='case' else '記事'}範本為「{new_name}」")
+    return {'template_id': new_id, 'name': new_name}
+
+
+def move_template(conn: sqlite3.Connection, workspace_id: str, template_type: str, template_id: str, target_pack_id: str, actor: str) -> bool:
+    table = 'case_templates' if template_type == 'case' else 'note_templates'
+    conn.row_factory = sqlite3.Row
+    row = conn.execute(f"""SELECT t.*, p.workspace_id, p.is_locked as pack_locked 
+                           FROM {table} t JOIN template_packs p ON t.pack_id=p.pack_id
+                           WHERE t.template_id=?""", (template_id,)).fetchone()
+    if not row or row['workspace_id'] != workspace_id:
+        raise ValueError('找不到範本。')
+    if row['is_locked'] == 1 or row['pack_locked'] == 1:
+        raise ValueError('範本已鎖定，無法搬移。')
+
+    target_pack = conn.execute("SELECT is_locked FROM template_packs WHERE pack_id=? AND workspace_id=?", (target_pack_id, workspace_id)).fetchone()
+    if not target_pack:
+        raise ValueError('目標範本包不存在。')
+    if target_pack[0] == 1:
+        raise ValueError('目標範本包已鎖定，無法搬入。')
+
+    cnt = conn.execute(f"SELECT COUNT(*) FROM {table} WHERE pack_id=?", (target_pack_id,)).fetchone()[0]
+    if cnt >= limits.TEMPLATES_PER_PACK:
+        raise ValueError(f'目標範本包已達 {limits.TEMPLATES_PER_PACK} 個{"案件" if template_type=="case" else "記事"}範本上限。')
+    dup = conn.execute(f"SELECT 1 FROM {table} WHERE pack_id=? AND name=?", (target_pack_id, row['name'])).fetchone()
+    if dup:
+        raise ValueError('目標範本包已有同名範本。')
+
+    conn.execute(f"UPDATE {table} SET pack_id=?, sort_order=?, updated_by=?, updated_at=? WHERE template_id=?", (target_pack_id, cnt, actor, now_iso(), template_id))
+    import reports
+    reports.audit(conn, actor, f'template_{template_type}.move', template_id, f"搬移{'案件' if template_type=='case' else '記事'}範本「{row['name']}」")
+    return True
+
+
+def toggle_template_lock(conn: sqlite3.Connection, workspace_id: str, template_type: str, template_id: str, is_locked: bool, actor: str) -> bool:
+    table = 'case_templates' if template_type == 'case' else 'note_templates'
+    conn.row_factory = sqlite3.Row
+    row = conn.execute(f"""SELECT t.*, p.workspace_id 
+                           FROM {table} t JOIN template_packs p ON t.pack_id=p.pack_id
+                           WHERE t.template_id=?""", (template_id,)).fetchone()
+    if not row or row['workspace_id'] != workspace_id:
+        raise ValueError('找不到範本。')
+
+    conn.execute(f"UPDATE {table} SET is_locked=?, updated_by=?, updated_at=? WHERE template_id=?", (1 if is_locked else 0, actor, now_iso(), template_id))
+    import reports
+    reports.audit(conn, actor, f'template_{template_type}.lock', template_id, f"{'鎖定' if is_locked else '解鎖'}{'案件' if template_type=='case' else '記事'}範本「{row['name']}」")
+    return True
+
+
+def create_template_from_source(conn: sqlite3.Connection, workspace_id: str, source_type: str, source_id: str, target_pack_id: str, template_name: str, actor: str) -> dict:
+    """Creates a custom case/note template from an existing case or chat note according to Section 17.4."""
+    if source_type not in ('case', 'note'):
+        raise ValueError('來源類型不正確。')
+
+    template_name = template_name.strip()
+    if not template_name or len(template_name) > 30:
+        raise ValueError('範本名稱需在 1 至 30 字以內。')
+
+    conn.row_factory = sqlite3.Row
+    if source_type == 'case':
+        case_row = conn.execute("SELECT * FROM cases WHERE case_id=?", (source_id,)).fetchone()
+        if not case_row:
+            raise ValueError('找不到指定的來源案件。')
+        category = case_row['category'] or '一般'
+        title = case_row['title'] or ''
+        body = case_row['description'] or ''
+        defaults = {'priority': case_row['priority'] or 'medium'}
+        return save_template(conn, workspace_id, 'case', {
+            'pack_id': target_pack_id,
+            'name': template_name,
+            'category_name': category,
+            'title': title,
+            'body': body,
+            'defaults': defaults
+        }, actor)
+    else:
+        note_row = conn.execute("SELECT * FROM chat_notes WHERE note_id=?", (source_id,)).fetchone()
+        if not note_row:
+            raise ValueError('找不到指定的來源記事。')
+        category = note_row['note_type'] or '一般'
+        title = note_row['title'] or ''
+        body = note_row['content'] or ''
+        tags = json.loads(note_row['tags_json'] or '[]')
+        defaults = {'tags': tags}
+        return save_template(conn, workspace_id, 'note', {
+            'pack_id': target_pack_id,
+            'name': template_name,
+            'category_name': category,
+            'title': title,
+            'body': body,
+            'defaults': defaults
+        }, actor)
+
+
+# ==========================================
+# 分類單項管理 (Section 17 條款 2)
+# ==========================================
+
+def save_single_category(conn: sqlite3.Connection, channel_id: str, category_type: str, name: str, old_name: str = '', actor: str = '') -> dict:
+    if category_type not in ('case', 'note'):
+        raise ValueError('分類類型不正確。')
+    table = 'oa_case_categories' if category_type == 'case' else 'oa_note_categories'
+    name = str(name).strip()
+    if not name or len(name) > 20:
+        raise ValueError('分類名稱需在 1 至 20 字以內。')
+
+    ensure_oa_default_categories(conn, channel_id)
+
+    if old_name and old_name != name:
+        if old_name == '一般':
+            raise ValueError('「一般」為系統保留項目，不可改名。')
+        dup = conn.execute(f"SELECT 1 FROM {table} WHERE channel_id=? AND name=?", (channel_id, name)).fetchone()
+        if dup:
+            raise ValueError('已有相同名稱的分類。')
+        conn.execute(f"UPDATE {table} SET name=? WHERE channel_id=? AND name=?", (name, channel_id, old_name))
+        if category_type == 'case':
+            conn.execute("UPDATE cases SET category=? WHERE channel_id=? AND category=?", (name, channel_id, old_name))
+        else:
+            conn.execute("UPDATE chat_notes SET note_type=? WHERE channel_id=? AND note_type=?", (name, channel_id, old_name))
+        import reports
+        reports.audit(conn, actor, f'category_{category_type}.rename', channel_id, f"將{'案件類別' if category_type=='case' else '記事類型'}「{old_name}」改名為「{name}」")
+    elif not old_name:
+        cnt = conn.execute(f"SELECT COUNT(*) FROM {table} WHERE channel_id=?", (channel_id,)).fetchone()[0]
+        if cnt >= limits.CATEGORIES_PER_OA:
+            raise ValueError(f'{"案件類別" if category_type=="case" else "記事類型"}最多 {limits.CATEGORIES_PER_OA} 項。')
+        dup = conn.execute(f"SELECT 1 FROM {table} WHERE channel_id=? AND name=?", (channel_id, name)).fetchone()
+        if dup:
+            raise ValueError('已有相同名稱的分類。')
+        cid = uuid.uuid4().hex
+        conn.execute(f"INSERT INTO {table} (category_id, channel_id, name, sort_order) VALUES (?, ?, ?, ?)", (cid, channel_id, name, cnt))
+        import reports
+        reports.audit(conn, actor, f'category_{category_type}.add', channel_id, f"新增{'案件類別' if category_type=='case' else '記事類型'}「{name}」")
+
+    return list_oa_categories(conn, channel_id)
+
+
+def delete_single_category(conn: sqlite3.Connection, channel_id: str, category_type: str, name: str, actor: str) -> dict:
+    if category_type not in ('case', 'note'):
+        raise ValueError('分類類型不正確。')
+    if name == '一般':
+        raise ValueError('「一般」為系統保留項目，不可刪除。')
+    table = 'oa_case_categories' if category_type == 'case' else 'oa_note_categories'
+    
+    conn.execute(f"DELETE FROM {table} WHERE channel_id=? AND name=?", (channel_id, name))
+    if category_type == 'case':
+        conn.execute("UPDATE cases SET category='一般' WHERE channel_id=? AND category=?", (channel_id, name))
+    else:
+        conn.execute("UPDATE chat_notes SET note_type='一般' WHERE channel_id=? AND note_type=?", (channel_id, name))
+
+    import reports
+    reports.audit(conn, actor, f'category_{category_type}.delete', channel_id, f"刪除{'案件類別' if category_type=='case' else '記事類型'}「{name}」（既有項目已轉為一般）")
+    return list_oa_categories(conn, channel_id)
+
+
+def reorder_categories(conn: sqlite3.Connection, channel_id: str, category_type: str, names: list, actor: str) -> dict:
+    if category_type not in ('case', 'note'):
+        raise ValueError('分類類型不正確。')
+    table = 'oa_case_categories' if category_type == 'case' else 'oa_note_categories'
+    for idx, name in enumerate(names):
+        conn.execute(f"UPDATE {table} SET sort_order=? WHERE channel_id=? AND name=?", (idx, channel_id, name))
+    return list_oa_categories(conn, channel_id)
+
