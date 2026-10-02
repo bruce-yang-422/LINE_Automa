@@ -9,8 +9,7 @@ import time
 import unittest
 from unittest.mock import patch
 from urllib.parse import quote
-from cryptography.hazmat.primitives.asymmetric import rsa
-import jwt
+from login_helper import session_headers
 import app
 import reports
 import channels
@@ -30,10 +29,6 @@ SCHEMA_PATH = Path(__file__).resolve().parent.parent / 'schema.sql'
 
 
 class RolesAndPermissionsTests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.signer = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-
     def server(self):
         return workspace.WorkspaceTests.server(self)
 
@@ -51,19 +46,15 @@ class RolesAndPermissionsTests(unittest.TestCase):
             p.start()
             self.addCleanup(p.stop)
         p = patch.dict(os.environ, {'LINE_CHANNEL_ACCESS_TOKEN': 'fake-token', 'WEATHER_IMAGE_PATH': str(self.image),
-                       'ADMIN_PUBLIC_HOST': 'admin.example.com', 'CF_ACCESS_TEAM_DOMAIN': 'test.cloudflareaccess.com',
-                       'CF_ACCESS_AUD': 'aud-test', 'ADMIN_ALLOWED_EMAILS': 'admin@example.com'}, clear=True)
+                       'ADMIN_PUBLIC_HOST': 'admin.example.com'}, clear=True)
         p.start()
         self.addCleanup(p.stop)
         app.initialize_database()
         reports.bootstrap_users({'admin@example.com'})
 
     def request(self, server, path, email='alice@example.com', payload=None, view_as=None, organization=None, preview_org=None, channel=None):
-        token = jwt.encode({'exp': int(time.time()) + 300, 'iat': int(time.time()) - 1, 'iss': server.remote_access.issuer,
-                            'aud': server.remote_access.audience, 'sub': 'test', 'email': email}, self.signer, algorithm='RS256', headers={'kid': 'test'})
         conn = http.client.HTTPConnection('127.0.0.1', server.server_port, timeout=5)
-        headers = {'Host': server.remote_access.host, 'X-Forwarded-Proto': 'https', 'Origin': 'https://' + server.remote_access.host,
-                   'Cf-Access-Jwt-Assertion': token, 'Content-Type': 'application/json'}
+        headers = {**session_headers(email, server.public_host), 'Content-Type': 'application/json'}
         if view_as is not None:
             headers['X-Workspace-View-As'] = view_as
         if organization is not None:

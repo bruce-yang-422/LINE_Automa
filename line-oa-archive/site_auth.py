@@ -1,4 +1,4 @@
-"""Website credentials and revocable opaque sessions, independent of Cloudflare Access."""
+"""Website credentials and revocable opaque sessions."""
 import hashlib
 import hmac
 import json
@@ -198,17 +198,17 @@ def change_password(email, current_password, new_password):
 
 def context(handler):
     """Public login endpoints still reject unknown hosts, HTTP proxying and duplicate headers."""
-    for name in ('Host','Origin','Authorization','Cookie','Content-Length','X-CSRF-Token','X-Forwarded-Proto','CF-Connecting-IP','Cf-Access-Jwt-Assertion'):
+    for name in ('Host','Origin','Authorization','Cookie','Content-Length','X-CSRF-Token','X-Forwarded-Proto','CF-Connecting-IP'):
         if len(handler.headers.get_all(name, [])) > 1:
             raise AuthError('不接受重複的驗證標頭。',403)
     host = handler.headers.get('Host','')
-    public = handler.server.remote_access.host
+    public = handler.server.public_host
     if public and re.fullmatch(r'[a-z0-9-]+(?:\.[a-z0-9-]+)+',public) and host.lower() == public:
         if handler.headers.get('X-Forwarded-Proto') != 'https':
             raise AuthError('請透過 HTTPS 管理網址操作。',403)
         origin = 'https://' + public
         remote = True
-    elif host == f'127.0.0.1:{handler.server.server_port}' and not any(h in handler.headers for h in ('CF-Connecting-IP','X-Forwarded-For','X-Forwarded-Proto','Cf-Access-Jwt-Assertion')):
+    elif host == f'127.0.0.1:{handler.server.server_port}' and not any(h in handler.headers for h in ('CF-Connecting-IP','X-Forwarded-For','X-Forwarded-Proto')):
         origin, remote = 'http://' + host, False
     else:
         raise AuthError('請使用已設定的管理網址。',403)
@@ -274,7 +274,7 @@ def authorize(handler):
 def status(handler):
     method = getattr(handler,'auth_method','local')
     principal = getattr(handler,'principal',handler.identity)
-    return {'method':method,'mode':handler.server.auth_mode,
+    return {'method':method,
             'password_set':bool(credential(principal)) if handler.server.workspace_ready else False,
             'csrf':csrf(handler.auth_token) if method=='password' else ''}
 
@@ -282,20 +282,17 @@ def status(handler):
 def handle_get(handler):
     paths = {'/login':('login.html','text/html; charset=utf-8'),'/login.js':('login.js','text/javascript; charset=utf-8')}
     assets = {'/app.css','/favicon.ico'}
-    public_asset = handler.server.auth_mode=='password' and (handler.path in assets or re.fullmatch(r'/assets/brand/line-automation-logo-light\.(png|ico)',handler.path))
-    if handler.path not in paths and handler.path!='/api/auth/config' and not public_asset:
+    public_asset = handler.path in assets or re.fullmatch(r'/assets/brand/line-automation-logo-light\.(png|ico)',handler.path)
+    if handler.path not in paths and not public_asset:
         return False
     try:
         context(handler)
-        if handler.path=='/api/auth/config':
-            handler.respond(200,{'mode':handler.server.auth_mode})
-        else:
-            name,mime = paths.get(handler.path,('',''))
-            if not name:
-                name = handler.path.lstrip('/')
-                if handler.path=='/favicon.ico':name='assets/brand/line-automation-logo-light.ico'
-                mime = 'text/css; charset=utf-8' if name.endswith('.css') else 'text/javascript; charset=utf-8' if name.endswith('.js') else 'image/png' if name.endswith('.png') else 'image/x-icon'
-            handler.respond(200,(app.BASE_DIR/'web'/name).read_bytes(),mime)
+        name,mime = paths.get(handler.path,('',''))
+        if not name:
+            name = handler.path.lstrip('/')
+            if handler.path=='/favicon.ico':name='assets/brand/line-automation-logo-light.ico'
+            mime = 'text/css; charset=utf-8' if name.endswith('.css') else 'text/javascript; charset=utf-8' if name.endswith('.js') else 'image/png' if name.endswith('.png') else 'image/x-icon'
+        handler.respond(200,(app.BASE_DIR/'web'/name).read_bytes(),mime)
     except AuthError as exc:
         handler.respond(exc.status,{'error':str(exc)})
     return True
@@ -313,8 +310,6 @@ def handle_post(handler):
         if not isinstance(payload,dict):raise AuthError('請求格式不正確。')
         client = handler.headers.get('CF-Connecting-IP','remote') if remote else 'local'
         if handler.path=='/api/auth/login':
-            if remote and handler.server.auth_mode!='password':
-                raise AuthError('網站密碼可先設定；目前尚未切換登入入口，請先使用現有後台或由管理員完成切換。',409)
             raw,lifetime = login(payload.get('email'),payload.get('password'),payload.get('remember',False),client)
             set_cookie(handler,raw,remote,lifetime if payload.get('remember') else None)
             handler.respond(200,{'ok':True})
@@ -343,7 +338,7 @@ def handle_post(handler):
                     raise AuthError('只有平台管理員能管理其他人的登入。',403)
                 if handler.path.endswith('/invite'):
                     raw = issue_activation(target,handler.identity)
-                    public = handler.server.remote_access.host
+                    public = handler.server.public_host
                     link_origin = 'https://'+public if re.fullmatch(r'[a-z0-9-]+(?:\.[a-z0-9-]+)+',public) else origin
                     handler.respond(200,{'url':link_origin+'/login#setup='+raw,'local_url':origin+'/login#setup='+raw if not remote else '', 'expires_in':1800})
                 else:

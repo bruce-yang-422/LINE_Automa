@@ -1,4 +1,4 @@
-"""Real HTTP authentication with isolated SQLite; no Cloudflare/LINE network calls."""
+"""Real HTTP authentication with isolated SQLite; no LINE network calls."""
 import http.client
 import json
 import os
@@ -29,11 +29,11 @@ class SiteAuthTests(unittest.TestCase):
         shutil.copytree(app.BASE_DIR/'web',self.root/'web')
         for name,value in [('BASE_DIR',self.root),('DATABASE_PATH',self.root/'test.db')]:
             p=patch.object(app,name,value);p.start();self.addCleanup(p.stop)
-        p=patch.dict(os.environ,{'ADMIN_AUTH_MODE':'password','ADMIN_PUBLIC_HOST':'admin.example.test',
-                                 'ADMIN_ALLOWED_EMAILS':'admin@example.test'},clear=True)
+        p=patch.dict(os.environ,{'ADMIN_PUBLIC_HOST':'admin.example.test'},clear=True)
         p.start();self.addCleanup(p.stop)
         app.initialize_database()
         self.server=admin_server.AdminServer(0);self.server.start();self.addCleanup(self.server.close)
+        reports.bootstrap_users({'admin@example.test'})
         site_auth.change_password('admin@example.test',None,PASSWORD)
         reports.save_user({'email':'sender@example.test','role':'sender','company':'A','active':True},'admin@example.test')
 
@@ -69,7 +69,6 @@ class SiteAuthTests(unittest.TestCase):
             self.assertEqual(self.request(route)[0],401)
         code,_,headers=self.request('/')
         self.assertEqual(code,303);self.assertEqual(headers['Location'],'/login')
-        self.assertEqual(self.request('/api/session',extra={'Cf-Access-Jwt-Assertion':'forged'})[0],401)
         self.assertEqual(self.request('/login',extra={'Host':'evil.test'})[0],403)
         self.assertEqual(self.request('/login',extra={'X-Forwarded-Proto':'http'})[0],403)
 
@@ -177,33 +176,6 @@ class SiteAuthTests(unittest.TestCase):
         with ThreadPoolExecutor(max_workers=2) as pool:
             results=list(pool.map(lambda _:use(),range(2)))
         self.assertEqual(results.count(True),1)
-
-    def test_cloudflare_identity_can_initialize_own_password(self):
-        self.server.auth_mode='cloudflare'
-        self.server.remote_access.enabled=True
-        self.assertEqual(self.request('/api/auth/login',{'email':'admin@example.test','password':PASSWORD})[0],409)
-        with app.database_connection() as conn:conn.execute('DELETE FROM site_credentials')
-        with patch.object(self.server.remote_access,'verify',return_value='admin@example.test') as verify:
-            code,_,_=self.request('/api/auth/password',{'password':PASSWORD},extra={'Cf-Access-Jwt-Assertion':'fixture'})
-            self.assertEqual(code,200);verify.assert_called_once()
-        self.assertTrue(site_auth.verify_password(PASSWORD,site_auth.credential('admin@example.test')))
-
-    def test_cutover_guard_and_literal_configuration(self):
-        import configure_login
-        import control_runtime
-        config=self.root/'.env'
-        original='LINE_CHANNEL_SECRET=fixture-secret\nADMIN_PUBLIC_HOST=admin.example.test\nADMIN_AUTH_MODE=cloudflare\n'
-        config.write_text(original,encoding='utf-8')
-        with patch.object(control_runtime,'ROOT',self.root),patch.object(configure_login,'__file__',str(self.root/'configure_login.py')):
-            with app.database_connection() as conn:conn.execute('DELETE FROM site_credentials')
-            with self.assertRaises(ValueError):configure_login.configure('password')
-            self.assertEqual(config.read_text(encoding='utf-8'),original)
-            site_auth.change_password('admin@example.test',None,PASSWORD)
-            result=configure_login.configure('password')
-            self.assertTrue(result['restart_required'])
-            self.assertIn('LINE_CHANNEL_SECRET=fixture-secret',config.read_text(encoding='utf-8'))
-            control_runtime.load_settings()
-            self.assertEqual(os.environ['ADMIN_AUTH_MODE'],'password')
 
     def test_password_validation_and_duplicate_cookie(self):
         for password in ['short','a'*20,'x'*129]:

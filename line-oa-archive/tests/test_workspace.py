@@ -6,14 +6,12 @@ import os
 from pathlib import Path
 import tempfile
 import time
-from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 from uuid import uuid4
 from urllib.parse import quote
 
-from cryptography.hazmat.primitives.asymmetric import rsa
-import jwt
+from login_helper import session_headers
 import app
 import admin_server
 import reports
@@ -24,10 +22,6 @@ OTHER = 'U' + '2' * 32
 
 
 class WorkspaceTests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.signer = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='line-workspace-test-')
         self.addCleanup(self.temp.cleanup)
@@ -41,8 +35,7 @@ class WorkspaceTests(unittest.TestCase):
             p.start()
             self.addCleanup(p.stop)
         p = patch.dict(os.environ, {'LINE_CHANNEL_ACCESS_TOKEN': 'fake-token', 'WEATHER_IMAGE_PATH': str(self.image),
-                       'ADMIN_PUBLIC_HOST': 'admin.example.com', 'CF_ACCESS_TEAM_DOMAIN': 'test.cloudflareaccess.com',
-                       'CF_ACCESS_AUD': 'aud-test', 'ADMIN_ALLOWED_EMAILS': 'admin@example.com'}, clear=True)
+                       'ADMIN_PUBLIC_HOST': 'admin.example.com'}, clear=True)
         p.start()
         self.addCleanup(p.stop)
         app.initialize_database()
@@ -62,17 +55,11 @@ class WorkspaceTests(unittest.TestCase):
         server = admin_server.AdminServer(0)
         server.start()
         self.addCleanup(server.close)
-        p = patch.object(server.remote_access.keys, 'get_signing_key_from_jwt', return_value=SimpleNamespace(key=self.signer.public_key()))
-        p.start()
-        self.addCleanup(p.stop)
         return server
 
     def request(self, server, path, email='alice@example.com', payload=None, view_as=None, organization=None, preview_org=None):
-        token = jwt.encode({'exp': int(time.time()) + 300, 'iat': int(time.time()) - 1, 'iss': server.remote_access.issuer,
-                            'aud': server.remote_access.audience, 'sub': 'test', 'email': email}, self.signer, algorithm='RS256', headers={'kid': 'test'})
         conn = http.client.HTTPConnection('127.0.0.1', server.server_port, timeout=5)
-        headers = {'Host': server.remote_access.host, 'X-Forwarded-Proto': 'https', 'Origin': 'https://' + server.remote_access.host,
-                   'Cf-Access-Jwt-Assertion': token, 'Content-Type': 'application/json'}
+        headers = {**session_headers(email, server.public_host), 'Content-Type': 'application/json'}
         if view_as is not None:
             headers['X-Workspace-View-As'] = view_as
         if organization is not None:
@@ -153,13 +140,13 @@ class WorkspaceTests(unittest.TestCase):
     def test_contact_without_account_cannot_read_or_modify_administration(self):
         server = self.server()
         for route in ('/api/contacts', '/api/jobs', '/api/settings', '/api/activity'):
-            self.assertEqual(self.request(server, route, 'nobody@example.com')[0], 403)
+            self.assertEqual(self.request(server, route, 'nobody@example.com')[0], 401)
         for route in ('/api/send', '/api/contact', '/api/profiles', '/api/accounts/save', '/api/reports/save', '/api/reports/remove'):
-            self.assertEqual(self.request(server, route, 'nobody@example.com', payload={})[0], 403)
+            self.assertEqual(self.request(server, route, 'nobody@example.com', payload={})[0], 401)
         self.assertEqual(self.request(server, '/api/settings', 'admin@example.com')[0], 200)
-        self.assertEqual(self.request(server, '/api/reports', 'unlisted@example.com')[0], 403)
+        self.assertEqual(self.request(server, '/api/reports', 'unlisted@example.com')[0], 401)
         reports.save_user({'email': 'alice@example.com', 'company': 'A', 'role': 'sender', 'active': False}, 'admin@example.com')
-        self.assertEqual(self.request(server, '/api/reports')[0], 403)
+        self.assertEqual(self.request(server, '/api/reports')[0], 401)
 
     def test_admin_sender_preview_is_scoped_readonly_and_revalidated(self):
         mine, other = self.add_report('personal'), self.add_report(company='B')

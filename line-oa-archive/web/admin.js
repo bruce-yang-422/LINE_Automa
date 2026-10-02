@@ -1304,7 +1304,6 @@ document.addEventListener("click",async event=>{
     else if(action==="edit-personnel")personnelForm(id);
     else if(action==="open-template-packs-mgr"){navigate("channels");$("modal").close();}
     else if(action==="confirm-logout"){
-      if(principalSession?.auth?.method!=="password"){location.href="/cdn-cgi/access/logout";return;}
       try{await api('/api/auth/logout',{},true,true);sessionStorage.removeItem('lineAdminToken');location.replace('/login');}catch(error){notice(error.message,true);}
     }
     else if(action==="case-filter"){state.caseFilter=id;render();}
@@ -1880,7 +1879,7 @@ document.addEventListener("keydown",event=>{
     if(form)form.requestSubmit();
   }
 });
-$("logout").addEventListener("click",async()=>{if(principalSession?.auth?.method!=="password"){location.href="/cdn-cgi/access/logout";return;}try{await api('/api/auth/logout',{},true,true);sessionStorage.removeItem('lineAdminToken');location.replace('/login');}catch(error){notice(error.message,true);}});
+$("logout").addEventListener("click",async()=>{try{await api('/api/auth/logout',{},true,true);sessionStorage.removeItem('lineAdminToken');location.replace('/login');}catch(error){notice(error.message,true);}});
 $("refresh").addEventListener("click",async()=>{if(state.busy)return;$("refresh").disabled=true;try{await load();render();notice("資料已更新。");await recoverSubmission();}catch(error){notice(error.message,true);}finally{$("refresh").disabled=false;}});
 async function boot(){try{await load();render();await recoverSubmission();}catch(error){$("page").innerHTML=empty("暫時無法開啟工作台",remote?"請重新整理登入，或聯絡管理員確認帳號已啟用。":"請確認 LINE 服務已更新並啟動，再從控制台重新開啟管理頁。");notice(error.message,true);$("connection").textContent="連線未完成";}}
 boot();

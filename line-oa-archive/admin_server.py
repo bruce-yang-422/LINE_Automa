@@ -1,4 +1,4 @@
-"""Recipient management: local bearer token or verified Cloudflare Access identity."""
+"""管理後台：本機控制台以 bearer token 進入；對外網址一律使用站內帳號密碼登入。"""
 
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone, timedelta
@@ -23,7 +23,6 @@ import line_api
 import recipients
 import reports
 import site_auth
-from remote_auth import RemoteAccess
 from send_image import publish_image, verify_public_image, send_push
 import composer
 import cases
@@ -349,44 +348,21 @@ class AdminHandler(BaseHTTPRequestHandler):
         self.auth_method = 'local'
         self.identity = "本機管理員"
         self.user = {"email": self.identity, "display_name": "本機管理員", "role": "administrator", "company": "", "department": ""}
-        for name in ("Host", "Origin", "Authorization", "Cookie", "X-CSRF-Token", "Cf-Access-Jwt-Assertion", "X-Forwarded-Proto", "X-Workspace-View-As", "X-Workspace-Organization", "X-Workspace-Preview-Organization"):
+        for name in ("Host", "Origin", "Authorization", "Cookie", "X-CSRF-Token", "X-Forwarded-Proto", "X-Workspace-View-As", "X-Workspace-Organization", "X-Workspace-Preview-Organization"):
             if len(self.headers.get_all(name, [])) > 1:
                 self.respond(403, {"error": "不接受重複的驗證標頭。"})
                 return False
+        public_host = self.server.public_host
+        if public_host and self.headers.get('Host', '').lower() == public_host:
+            return site_auth.authorize(self)
         expected_host = f"127.0.0.1:{self.server.server_port}"
         origin = self.headers.get("Origin")
-        remote = self.server.remote_access
-        if self.server.auth_mode == 'password' and remote.host and self.headers.get('Host','').lower() == remote.host:
-            return site_auth.authorize(self)
-        if remote.enabled and self.headers.get("Host", "").lower() == remote.host:
-            if (self.headers.get("X-Forwarded-Proto") != "https"
-                    or (origin is not None and origin != "https://" + remote.host)
-                    or (self.command == "POST" and origin != "https://" + remote.host)):
-                self.respond(403, {"error": "請透過 HTTPS 管理網址操作。"})
-                return False
-            try:
-                self.auth_method = 'cloudflare'
-                if self.server.workspace_ready:
-                    allowed = {u["email"] for u in reports.users() if u["active"]}
-                    self.identity = remote.verify(self.headers.get("Cf-Access-Jwt-Assertion", ""), allowed_emails=allowed)
-                    self.user = reports.login_account(self.identity)
-                    if not self.user:
-                        raise ValueError("此帳號沒有後台登入資格；聯絡對象請直接使用 LINE，不需後台帳號。")
-                else:
-                    self.identity = remote.verify(self.headers.get("Cf-Access-Jwt-Assertion", ""))
-            except ValueError as exc:
-                self.respond(403, {"error": str(exc)})
-                return False
-            return self.apply_view()
         if (self.headers.get("Host") != expected_host or (origin and origin != "http://" + expected_host)
-                or any(name in self.headers for name in ("CF-Connecting-IP", "X-Forwarded-For", "X-Forwarded-Proto", "Cf-Access-Jwt-Assertion"))):
-            self.respond(403, {"error": "請從本機控制台或已設定的 Cloudflare Access 管理入口登入。"})
+                or any(name in self.headers for name in ("CF-Connecting-IP", "X-Forwarded-For", "X-Forwarded-Proto"))):
+            self.respond(403, {"error": "請從本機控制台或已設定的管理網址登入。"})
             return False
         if require_token and not hmac.compare_digest(self.headers.get("Authorization", ""), "Bearer " + self.server.token):
-            if self.server.auth_mode == 'password' or site_auth.cookie_token(self, False):
-                return site_auth.authorize(self)
-            self.respond(401, {"error": "管理連線已失效，請從控制台重新開啟。"})
-            return False
+            return site_auth.authorize(self)
         return self.apply_view() if require_token else True
 
     def apply_view(self):
@@ -557,9 +533,9 @@ class AdminHandler(BaseHTTPRequestHandler):
         elif self.path == "/api/activity":
             self.respond(200, {"events": reports.activity(self.user)})
         elif self.path == "/api/settings":
-            self.respond(200, {"remote_enabled": self.server.remote_access.enabled,
+            self.respond(200, {"remote_enabled": bool(self.server.public_host),
                                "weather_report_removed": reports.weather_removed() if self.user['role']=='administrator' else False,
-                               "admin_host": self.server.remote_access.host,
+                               "admin_host": self.server.public_host,
                                "users": reports.scoped_users(self.user),
                                "report_sources": reports.sources() if self.user['role'] == 'administrator' else [],
                                "line_configured": bool(channels.get()) if channels.configured() else bool(os.environ.get("LINE_CHANNEL_ACCESS_TOKEN")),
@@ -1201,16 +1177,12 @@ class AdminServer(ThreadingHTTPServer):
     def __init__(self, port):
         super().__init__(("127.0.0.1", port), AdminHandler)
         self.token = secrets.token_urlsafe(32)
-        self.remote_access = RemoteAccess()
-        self.auth_mode = os.environ.get('ADMIN_AUTH_MODE', 'cloudflare').strip().lower()
-        if self.auth_mode not in {'cloudflare', 'password'}:
-            self.server_close()
-            raise ValueError('ADMIN_AUTH_MODE 必須為 cloudflare 或 password。')
+        # 對外管理網域；未設定時只接受本機控制台連線。
+        self.public_host = os.environ.get("ADMIN_PUBLIC_HOST", "").strip().lower()
         self.dispatcher = None
         self.workspace_ready = False
 
     def start(self):
-        reports.bootstrap_users(self.remote_access.emails)
         self.workspace_ready = True
         self.dispatcher = Dispatcher()
         self.dispatcher.start_scheduler()

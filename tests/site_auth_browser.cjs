@@ -5,7 +5,7 @@ const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 (async()=>{
   const dir=path.resolve('line-oa-archive/instance');fs.mkdirSync(dir,{recursive:true});
   const stateFile=path.join(dir,`auth-fixture-${Date.now()}.json`),stopFile=stateFile.replace(/\.json$/,'.stop');
-  const child=spawn(path.resolve('.venv/Scripts/python.exe'),['tests/workspace_fixture.py',stateFile,'--password-auth'],{windowsHide:true,stdio:['ignore','ignore','pipe']});
+  const child=spawn(path.resolve('.venv/Scripts/python.exe'),['tests/workspace_fixture.py',stateFile],{windowsHide:true,stdio:['ignore','ignore','pipe']});
   let stderr='',browser;child.stderr.on('data',data=>stderr+=data);
   try{
     for(let i=0;i<100&&!fs.existsSync(stateFile);i++){if(child.exitCode!==null)throw Error(stderr);await delay(100);}

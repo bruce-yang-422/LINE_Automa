@@ -28,7 +28,7 @@ class ManagedRuntimeTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(prefix="line-runtime-test-")
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        for name in ("control_runtime.py", "app.py", "schema.sql", "recipients.py", "admin_server.py", "line_api.py", "send_image.py", "remote_auth.py", "reports.py", "composer.py", "site_auth.py", "channels.py", "cases.py", "chat_notes.py", "chat.py", "template_packs.py", "limits.py"):
+        for name in ("control_runtime.py", "app.py", "schema.sql", "recipients.py", "admin_server.py", "line_api.py", "send_image.py", "reports.py", "composer.py", "site_auth.py", "channels.py", "cases.py", "chat_notes.py", "chat.py", "template_packs.py", "limits.py"):
             shutil.copy2(ROOT / name, self.root / name)
         self.environment = os.environ.copy()
         self.environment.pop("LINE_CHANNEL_SECRET", None)
@@ -120,12 +120,11 @@ class ManagedRuntimeTests(unittest.TestCase):
             self.assertEqual(conn.execute("SELECT text_content FROM line_messages WHERE message_id='pending'").fetchone(),
                              ("saved before stop",))
 
-    def test_missing_secret_does_not_start_or_create_database(self):
-        (self.root / ".env").write_text("LINE_CHANNEL_SECRET=replace_with_messaging_api_channel_secret\n")
+    def test_missing_instance_does_not_start_or_create_database(self):
         result = subprocess.run([sys.executable, str(self.root / "control_runtime.py"), "--check"],
                                 env=self.environment, capture_output=True, text=True, timeout=5)
-        self.assertFalse(json.loads(result.stdout)["configured"])
-        result = subprocess.run([sys.executable, str(self.root / "control_runtime.py"), "--instance", str(uuid4())],
+        self.assertTrue(json.loads(result.stdout)["configured"])
+        result = subprocess.run([sys.executable, str(self.root / "control_runtime.py")],
                                 env=self.environment, capture_output=True, text=True, timeout=5)
         self.assertEqual(result.returncode, 2)
         self.assertFalse((self.root / "data").exists())

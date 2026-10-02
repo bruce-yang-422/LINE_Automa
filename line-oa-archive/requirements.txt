@@ -1,4 +1,5 @@
 # 圖片發送使用作業系統憑證存放區驗證 HTTPS；Webhook 與 SQLite 本身僅使用標準函式庫。
 truststore>=0.10,<1
-PyJWT[crypto]>=2.10,<3
+# OA 憑證以 Fernet 加密保存。
+cryptography>=44,<52
 Pillow>=11,<13

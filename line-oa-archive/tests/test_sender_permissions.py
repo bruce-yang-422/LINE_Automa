@@ -39,7 +39,7 @@ class SenderTests(unittest.TestCase):
     def test_contact_without_account_cannot_login_but_other_org_operator_can(self):
         server = self.server()
         for route in ('/api/session','/api/reports','/api/organizations'):
-            self.assertEqual(self.request(server,route,'nobody@example.com')[0],403)
+            self.assertEqual(self.request(server,route,'nobody@example.com')[0],401)
         reports.save_user({'email':'carol@example.com','role':'sender','company':'B','active':True},'admin@example.com')
         status,session = self.request(server,'/api/session','carol@example.com')
         self.assertEqual(status,200)

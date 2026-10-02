@@ -14,7 +14,6 @@ if(activation){
 }
 function show(message,error=true){el('login-notice').textContent=message;el('login-notice').className='notice'+(error?' error':'');el('login-notice').hidden=false;}
 el('password-visibility').addEventListener('click',()=>{const showPassword=el('login-password').type==='password';el('login-password').type=showPassword?'text':'password';el('password-visibility').textContent=showPassword?'隱藏':'顯示';el('password-visibility').setAttribute('aria-label',showPassword?'隱藏密碼':'顯示密碼');el('password-visibility').setAttribute('aria-pressed',String(showPassword));});
-fetch('/api/auth/config',{credentials:'same-origin',cache:'no-store'}).then(r=>r.json()).then(c=>{el('login-migration').hidden=c.mode!=='cloudflare';}).catch(()=>{});
 el('login-form').addEventListener('submit',async event=>{
   event.preventDefault();if(el('login-submit').disabled)return;
   if(activation&&el('login-password').value!==el('login-confirm').value){show('兩次輸入的密碼不相同。');return;}

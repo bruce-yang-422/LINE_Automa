@@ -29,7 +29,7 @@
 | --- | --- |
 | LINE 服務 | 執行中；本機與公開連線健康檢查正常。16:46 為套用多 OA 升級停止，17:00 重新啟動；期間約 14 分鐘沒有接收 Webhook 事件 |
 | 資料庫 | 已執行 `upgrade_multi_oa.py --apply`，結構為多 OA 版本（再次檢查回報 `already_current`） |
-| 管理入口 | `ADMIN_AUTH_MODE=password`，公開網址使用站內 Email／密碼登入；Cloudflare Access 已設 Bypass，Tunnel 保留 |
+| 管理入口 | 公開網址使用站內 Email／密碼登入；2026-10-02 程式已移除 Cloudflare Access 模式，Access 的 `line-admin` 應用程式（Bypass）待使用者刪除，Tunnel 保留 |
 | 既有 LINE OA | **尚未匯入工作區**（`line_channels` 為 0 筆）。目前沿用 `.env` 憑證以單一 OA 模式運作，收發不受影響 |
 | 介面 | 全站僅提供亮色，已移除深色模式及色系切換 |
 | 驗證 | 101 項 Python 測試；工作台、多 OA、登入瀏覽器流程；亮色 57 個畫面文字對比最低 5.297:1。皆使用隔離資料，沒有真實 LINE 發送 |
@@ -52,7 +52,7 @@
 - **改為僅亮色介面**：使用者決定不提供暗色系。已移除深色主題變數、右上角與登入頁的色系切換及 `appearance.js`；系統為深色時仍顯示亮色，Logo／favicon 固定亮色。101 項 Python 測試、工作台／多 OA／登入瀏覽器流程，以及亮色 57 個畫面文字對比（最低 5.297:1）通過。
 
 - **個人／組織多 LINE OA 已實作並部署**：工作區／OA 切換、新增與驗證 OA、憑證加密、每個 OA 獨立 Webhook；聯絡對象、訂閱、報告、素材、授權、發送紀錄與預約依 OA 隔離，預約固定原 OA。詳見 SaaS 筆記第 13 節。
-- **網站帳密登入已上線**：同網域 `/login`、Email／密碼、保持登入、修改密碼、限時一次性設定連結與撤銷登入。正式入口已切為 `password` 模式，Cloudflare Access 改為 Bypass，共用 Tunnel 保留；步驟見 [網站登入與切換.md](../功能規格/網站登入與切換.md)。
+- **網站帳密登入已上線**：同網域 `/login`、Email／密碼、保持登入、修改密碼、限時一次性設定連結與撤銷登入。正式入口已切為 `password` 模式，Cloudflare Access 改為 Bypass，共用 Tunnel 保留；步驟見 [網站登入.md](../功能規格/網站登入.md)。
 - 其後依使用者要求清空正式資料庫、刪除舊備份，由完整 `schema.sql` 重建，使用者已重新建立平台管理員。下方提到的 `backups/before-*.db` 備份已不存在。
 
 - **全站 UI 首版已實作**：使用者授權開始作業，並指定優先完整接上現有功能。Tailwind 單一入口 `styles/app.css` → `web/app.css`；全站側欄、工具列、卡片、表單、訊息編輯、組織／人員共用主題。保留原品牌、`#00B900` 及手機版（當時含深淺模式，後改為僅亮色）。
@@ -210,7 +210,7 @@
 | 網頁入口 | [index.html](index.html) |
 | 網頁樣式／互動 | [admin.css](line-oa-archive/web/admin.css)、[admin.js](line-oa-archive/web/admin.js) |
 | 管理 API／發送工作 | [admin_server.py](line-oa-archive/admin_server.py) |
-| 遠端登入驗證 | [remote_auth.py](line-oa-archive/remote_auth.py) |
+| 網站登入驗證 | [site_auth.py](line-oa-archive/site_auth.py) |
 | 聯絡對象／訂閱 | [recipients.py](line-oa-archive/recipients.py) |
 | Webhook／資料結構 | [app.py](line-oa-archive/app.py)、[schema.sql](line-oa-archive/schema.sql) |
 | 圖片推送 | [send_image.py](line-oa-archive/send_image.py)、[Send-WeatherReport.ps1](Send-WeatherReport.ps1) |
@@ -219,7 +219,7 @@
 
 資料庫、`.env`、圖片快照、備份及 `instance/` 都是本機資料，不納入 Git；`line-bot-sdk-python/` 是參考原始碼，也不納入此專案版本控制。本文件不記錄 Channel secret、access token、登入憑證或實際發送對象 ID。
 
-管理員目前採雙重白名單：Cloudflare Access 的 Email 原則，以及本機 `.env` 的 `ADMIN_ALLOWED_EMAILS`。兩邊都要加入同一信箱，本機變更後須重啟。目前本機有兩個管理員信箱；還沒有新增、停用、分配角色的管理畫面。
+（2026-10-02 更新）後台帳號全部在網頁管理，已不使用 Cloudflare Access Email 原則與 `.env` 的 `ADMIN_ALLOWED_EMAILS`。
 
 ## 5. 目前 UI／UX 的具體問題
 

@@ -2,9 +2,7 @@
 
 ## 網站帳號密碼登入
 
-站內登入功能已完成，保留 Cloudflare Tunnel。既有帳號可從右上角「登入設定」建立密碼；平台管理員也能在「帳號與設定」提供 30 分鐘一次性啟用／重設連結、撤銷登入。支援保持登入、修改密碼與登出，沿用原有組織及發送範圍權限。
-
-正式入口需先有管理員密碼，再執行 `line-oa-archive/configure_login.py --mode password`、重啟服務，最後調整 Cloudflare Access 的 `line-admin` 應用程式原則。完成前仍會看到舊 Access 驗證。完整操作、恢復方式及測試見 [網站登入與切換](docs/功能規格/網站登入與切換.md)。密碼與 Token 不填入 `.env` 或 Git。
+管理後台只使用站內 Email／密碼登入（2026-10-02 移除 Cloudflare Access 登入模式）；Cloudflare Tunnel 繼續作為對外連線通道。管理員可提供 30 分鐘一次性啟用／重設連結、撤銷登入；支援保持登入、修改密碼與登出。完整說明見 [網站登入](docs/功能規格/網站登入.md)。密碼與 Token 不填入 `.env` 或 Git。
 
 ## 全站工作台（Apple 風格＋Tailwind）
 
@@ -24,7 +22,7 @@
 3. 在「發送範圍」建立部門、專案或 LINE 群組，再回到人員旁勾選範圍、模組及報告。
 4. 在「可用模組」查看組織開放的功能，透過「編輯組織」調整。帳號頁可搜尋姓名／Email／主要組織、依主要角色篩選。
 
-新增組織後會自動選中；新增帳號和範圍會帶入該組織。新增表單提供角色說明，LINE 綁定收於選填進階設定。Cloudflare Access 的 Email 允許名單仍須另外維護，介面不會宣稱已驗證外部名單。
+新增組織後會自動選中；新增帳號和範圍會帶入該組織。新增表單提供角色說明，LINE 綁定收於選填進階設定。
 
 全站 UI 使用 Tailwind CSS 4 的主題變數與 CLI 本機編譯，無瀏覽器端 CDN 或全域 Preflight 重設。入口為 `styles/app.css`，整合既有基礎樣式、`workspace-theme.css` 與 `styles/management.css`，輸出為 `line-oa-archive/web/app.css`（部署時需包含）。修改來源後要重新建置；一般啟動不需要 Node.js：
 
@@ -93,29 +91,18 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Install-ControlPanel.p
 - 預設天氣報告沿用 `.env` 的 `WEATHER_IMAGE_PATH`，定位為個人模組，預設僅管理員可見；可用 `WEATHER_OWNER_EMAIL` 指定擁有者，或以 `WEATHER_MODULE_ENABLED=false` 停用。其他報告依所屬公司、部門或指定 Email 在後端篩選及驗證。
 - 總管理員可管理全部報告與發送；公司管理員僅管理所屬公司，員工只能查看獲授權報告，不能讀取聯絡對象、發送紀錄、帳號設定，或呼叫任何管理寫入 API。
 - 「帳號與設定」可新增、編輯、停用帳號與調整角色，公司／部門／個人範圍變更於後續請求生效，無須重啟服務。至少保留一位啟用中的管理員。
-- 管理員可按右上角「切換視角」，選擇已啟用的員工來預覽公司／部門／個人報告。瀏覽器依實際登入帳號記住選擇，重新整理仍保留；上方提示列可一鍵返回管理員。每次 API 都重新驗證管理員與目標員工權限，預覽期間禁止管理操作。這不切換真正的 Cloudflare 帳號，也不延長登入期限；一般員工無此功能。
+- 管理員可按右上角「切換視角」，選擇已啟用的員工來預覽公司／部門／個人報告。瀏覽器依實際登入帳號記住選擇，重新整理仍保留；上方提示列可一鍵返回管理員。每次 API 都重新驗證管理員與目標員工權限，預覽期間禁止管理操作。這不切換真正的登入帳號，也不延長登入期限；一般員工無此功能。
 - 個人報告發送至 LINE 時，需將網站帳號連結到同公司的個人聊天室。公司／部門報表也會檢查聯絡對象分類；權限或分類在排隊期間改變，尚未發送的對象會再檢查並取消不符合者。
 - 預覽只由管理服務提供並驗證帳號權限；送到 LINE 的圖片仍使用既有高隨機性公開快照網址。此版本尚未提供圖片到期刪除或可撤銷分享，請在公司資料使用前評估這個傳遞方式。
-- 新增員工後，仍需在 **Cloudflare Access 的 Allow／Emails 原則** 加入同一信箱；網站無法自動修改 Cloudflare 帳戶設定。
 
-管理頁監聽 `127.0.0.1:18475`，與 `18474` Webhook／圖片服務分開。本機使用臨時管理憑證，服務重啟後需從控制台重新開啟管理頁。遠端使用須先完成下方 Cloudflare Access 設定；缺少設定時不接受代理連線。收到群組訊息不代表取得全部群組成員名單；要個別收件，使用者需與 Bot 互動。
+管理頁監聽 `127.0.0.1:18475`，與 `18474` Webhook／圖片服務分開。本機使用臨時管理憑證，服務重啟後需從控制台重新開啟管理頁。遠端使用須設定 `ADMIN_PUBLIC_HOST` 並以站內帳號登入；未設定時不接受代理連線。收到群組訊息不代表取得全部群組成員名單；要個別收件，使用者需與 Bot 互動。
 
 ### 在外面登入管理頁
 
-1. Cloudflare Zero Trust → Access controls → Applications → Add an application → Self-hosted（介面也可能顯示 Self-hosted and private）。應用程式名称 `LINE 管理後台`，Public hostname 為 `line-admin.stack-base.com`，Path 留白，保護整個網域。
-2. 設定 Allow 政策，Include → Emails 填入可登入管理員的完整信箱；不使用 Everyone 或 Bypass。登入方法啟用 One-time PIN（信箱驗證碼）。若未列出，先到 Zero Trust 的 Integrations → Identity providers 新增 One-time PIN。建議 Session duration 為 8 小時。
-3. 複製 Access 應用程式的 Application Audience（AUD）與帳戶的 Team domain（`你的團隊.cloudflareaccess.com`），填入 `line-oa-archive/.env`：
-
-   ```dotenv
-   ADMIN_PUBLIC_HOST=line-admin.stack-base.com
-   CF_ACCESS_TEAM_DOMAIN=你的團隊.cloudflareaccess.com
-   CF_ACCESS_AUD=應用程式的AUD
-   ADMIN_ALLOWED_EMAILS=你的完整信箱
-   ```
-
-   `ADMIN_ALLOWED_EMAILS` 現用於初次建立管理員（多個以逗號分隔），需同時加入 Access 政策。已有網站帳號不會因重啟而被重設角色或重新啟用。後續請從「帳號與設定」維護帳號，停用時在網站停用並移除 Access 許可；單獨移除 `.env` 的信箱不會刪除既有帳號。四項連線設定須完整填入；修改連線設定後重啟 LINE。本機會驗證 Access JWT 的 RSA 簽章、期限、issuer、audience，再查詢資料庫中的帳號及角色；不信任單獨的 Email 標頭。
-4. 完成 Access 政策後，到 Tunnels → Bruce-PC-Services → Routes 新增已發佈應用程式路由：`line-admin.stack-base.com` → HTTP `127.0.0.1:18475`。Path 留白，HTTP Host Header 不要覆寫；保留 `reports.stack-base.com` 的 18474 路由。Access 僅保護管理網域，避免 Webhook 與 LINE 取圖被登入頁攔截。
-5. 手機使用行動網路開啟 `https://line-admin.stack-base.com`，輸入允許的信箱，收取驗證碼登入。確認頁面上方顯示管理員信箱，再測試查閱名單。使用完成可按「登出」。到期時重新整理並登入；發送中斷先查紀錄，不自動重送。
+1. 在 `line-oa-archive/.env` 設定 `ADMIN_PUBLIC_HOST=line-admin.stack-base.com`，重啟 LINE 服務。
+2. Cloudflare Zero Trust → Networks → Tunnels → Bruce-PC-Services → Routes：`line-admin.stack-base.com` → HTTP `127.0.0.1:18475`。Path 留白，HTTP Host Header 不要覆寫；保留 `reports.stack-base.com` 的 18474 路由。
+3. 不需要 Cloudflare Access 應用程式；舊的 `line-admin` Access 應用程式可刪除。
+4. 手機開啟 `https://line-admin.stack-base.com`，於 `/login` 以 Email 與密碼登入；帳號與密碼設定見 [網站登入](docs/功能規格/網站登入.md)。
 
 電腦須保持開機、不進入睡眠、網路正常，LINE 本機服務與共用 Cloudflared 都須持續執行。遠端頁面的 PNG 路徑指的是這台 Windows 電腦上的檔案；不需要把圖片下載到手機。
 
@@ -269,12 +256,12 @@ node tests/workspace_browser.cjs
 
 ## 發送人員與收件範圍（2026-09-30）
 
-LINE 聯絡對象不需要 Email 登入或 Cloudflare Access 白名單。後台僅供平台管理員、組織管理員及被授權的發送人員操作；小組長、部門主管與專案主管可使用「發送人員」角色。
+LINE 聯絡對象不需要後台帳號。後台僅供平台管理員、組織管理員及被授權的發送人員操作；小組長、部門主管與專案主管可使用「發送人員」角色。
 
 平台管理員設定步驟：
 
 1. 在「聯絡對象」指定聊天室所屬組織、部門。
-2. 在「帳號與設定」建立角色為「發送人員」的登入帳號，指定主要組織；需要跨組織時，再於「組織管理」新增成員資格。遠端登入仍須在 Cloudflare Access 允許該 Email。
+2. 在「帳號與設定」建立角色為「發送人員」的登入帳號，指定主要組織；需要跨組織時，再於「組織管理」新增成員資格。
 3. 在「組織管理 → 發送範圍」新增部門、專案或群組範圍。部門依分類動態比對；專案可勾選多個個人／群組；群組只指定一個聊天室。
 4. 在同頁「發送人員授權 → 設定授權」勾選可用模組、可發送範圍（可複選）及報告。新帳號預設無權限；只發文字或自訂圖片可不選報告。
 5. 可使用右上角「切換視角」檢視發送人員看到的內容。預覽仍為唯讀；實際發送須使用本人登入。

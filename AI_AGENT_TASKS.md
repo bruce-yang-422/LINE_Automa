@@ -177,11 +177,11 @@
     - **網頁首次設定**：資料庫沒有任何甲級帳號時，經桌面控制台開啟的本機入口直接進入「建立第一位平台管理員」：輸入 Email、顯示名稱，產生一次性設定密碼連結；建立後此頁不再出現。外部網址只顯示「系統尚未完成初始設定」。
     - **無桌面主機**：提供一次性指令 `create_admin.py`，互動輸入 Email 後印出一次性設定連結；不接受命令列密碼參數、不寫入任何檔案；已有甲級帳號時可用於新增甲級或重設密碼（緊急復原）。
     - 驗收：全新資料庫經本機入口可完成首次設定，外部網址無法進入設定頁；已有甲級後設定頁不再出現；`create_admin.py` 在無桌面環境可完成相同流程；任何檔案與日誌中都沒有明文密碼。
-- [ ] **移除 Cloudflare Access 登入**：網站只保留站內帳號密碼登入，不再支援 Cloudflare Access 模式與模式切換。
+- [x] **移除 Cloudflare Access 登入**：網站只保留站內帳號密碼登入，不再支援 Cloudflare Access 模式與模式切換。 2026-10-02 完成：已刪除 `remote_auth.py`、`configure_login.py`、`tests/test_remote_auth.py`；`admin_server.py`／`site_auth.py` 以 `ADMIN_PUBLIC_HOST` 判斷對外網址並一律走站內登入；`/api/auth/config` 與登入頁 Access 提示移除；`requirements.txt` 改列 `cryptography`；測試改以 `tests/login_helper.py` 建立站內 Session。134 個 Python 測試通過；瀏覽器測試未執行。**待使用者**：Cloudflare 後台刪除 `line-admin` Access 應用程式；`.env` 的 `ADMIN_AUTH_MODE`、`CF_ACCESS_*`、`ADMIN_ALLOWED_EMAILS` 已不讀取，可刪除。
     - 刪除 `remote_auth.py` 與 `tests/test_remote_auth.py`、`configure_login.py`（登入模式切換工具）；移除 `ADMIN_AUTH_MODE`、`CF_ACCESS_TEAM_DOMAIN`、`CF_ACCESS_AUD`。
     - `site_auth.py`、`admin_server.py`、`control_runtime.py` 移除 Access 模式分支與 `Cf-Access-Jwt-Assertion` 處理；`requirements.txt` 移除 `PyJWT[crypto]`。
     - 調整相關測試（`test_site_auth.py`、`test_workspace.py`、`test_roles_and_permissions.py`、`test_control_runtime.py`、`tests/control_lifecycle.ps1`、`tests/workspace_fixture.py`），只測站內登入。
-    - 文件：`docs/功能規格/網站登入與切換.md` 改寫為只描述站內登入（或改名為「網站登入」），刪除切換與回復 Access 的步驟；README、`line-oa-archive/README.md`、專案需求、SaaS 規劃、進度紀錄同步更新。
+    - 文件：`docs/功能規格/網站登入.md` 改寫為只描述站內登入（或改名為「網站登入」），刪除切換與回復 Access 的步驟；README、`line-oa-archive/README.md`、專案需求、SaaS 規劃、進度紀錄同步更新。
     - **保留 Cloudflare Tunnel**：Tunnel 是對外連線通道，與 Access 登入無關，不刪除。程式完成後，由使用者在 Cloudflare 後台刪除 `line-admin` 的 Access 應用程式（目前為 Bypass）。
 - [x] **管理選單依等級隱藏（修正）**：`index.html` 管理選單已有 `data-nav-role`，但 `admin.js` 未依此隱藏，所有人看到全部 5 項。依權限規格 8.3：甲級只顯示「組織、LINE OA」；乙級只顯示「LINE OA、人員與權限、組織設定」；丙、丁級不顯示管理選單。移除「平台設定」頁（甲級帳號改由本機管理員或 `create_admin.py` 處理，預設範本包內建於程式）。後端對應 API 也須依等級拒絕。驗收：四級各自登入，選單與規格一致；直接呼叫未顯示選單的 API 被拒絕。 2026-10-01 完成：甲級以 headless Chrome 實測只顯示「組織、LINE OA」；後端新增測試 `test_platform_admin_manages_only_org_admins_and_not_personnel`；瀏覽器測試已改寫但未執行（本機無 Playwright）。暫留「組織 › 平台管理員帳號」區塊供甲級設定登入，待第 9 節首次設定與 `create_admin.py` 完成後再評估。
 - [ ] **等級名稱與程式角色值**（規格「2. 等級總覽」「7. 實作注意」）：

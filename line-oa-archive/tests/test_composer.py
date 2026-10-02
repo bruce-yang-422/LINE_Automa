@@ -60,7 +60,7 @@ class ComposerTests(unittest.TestCase):
 
     def test_upload_api_permission_and_preview_and_org_isolation(self):
         server = self.server()
-        self.assertEqual(self.request(server, '/api/assets/upload', 'nobody@example.com', {})[0], 403)
+        self.assertEqual(self.request(server, '/api/assets/upload', 'nobody@example.com', {})[0], 401)
         self.assertEqual(self.request(server, '/api/assets/upload', 'admin@example.com', {}, view_as='alice@example.com')[0], 403)
         reports.save_user({'email':'manager@example.com','role':'company_admin','company':'A','active':True}, 'admin@example.com')
         image = self.upload('B')

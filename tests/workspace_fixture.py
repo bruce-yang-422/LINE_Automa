@@ -14,7 +14,6 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / 'line-oa-archive'))
 parser = argparse.ArgumentParser()
 parser.add_argument('state_file', type=Path)
-parser.add_argument('--password-auth', action='store_true')
 parser.add_argument('--multi-oa', action='store_true')
 args = parser.parse_args()
 with tempfile.TemporaryDirectory(prefix='line-ui-fixture-') as temp:
@@ -40,11 +39,9 @@ with tempfile.TemporaryDirectory(prefix='line-ui-fixture-') as temp:
     image = base / 'sample.png'
     image.write_bytes(b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB',480,240,8,2,0,0,0)) + chunk(b'IDAT',zlib.compress(pixels)) + chunk(b'IEND',b''))
     for key in list(os.environ):
-        if key.startswith(('LINE_', 'CF_ACCESS_', 'ADMIN_')):
+        if key.startswith(('LINE_', 'ADMIN_')):
             os.environ.pop(key)
-    os.environ.update(WEATHER_IMAGE_PATH=str(image), LINE_CHANNEL_ACCESS_TOKEN='fixture-only', ADMIN_ALLOWED_EMAILS='admin@example.test')
-    if args.password_auth:
-        os.environ['ADMIN_AUTH_MODE']='password'
+    os.environ.update(WEATHER_IMAGE_PATH=str(image), LINE_CHANNEL_ACCESS_TOKEN='fixture-only')
     import app
     import admin_server
     import reports
