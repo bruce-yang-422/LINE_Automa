@@ -25,9 +25,12 @@ window.handleChatImgError = function(img) {
   img.onerror = null;
   const parent = img.closest('.chat-media-image-wrapper') || img.parentElement;
   if (parent) {
-    parent.innerHTML = `<div class="chat-media-error" style="padding:12px 16px;font-size:12px;color:var(--muted);display:flex;align-items:center;gap:8px;background:var(--soft);border-radius:10px;border:1px solid var(--line);">
-      <span style="display:inline-flex;color:var(--muted);">${icon('image')}</span>
-      <span>圖片已過期或無法載入</span>
+    parent.innerHTML = `<div class="chat-media-error" style="padding:14px 18px;font-size:12px;color:var(--muted);display:flex;align-items:center;gap:12px;background:var(--soft);border-radius:12px;border:1px solid var(--line);">
+      <span style="display:inline-flex;width:44px;height:44px;flex-shrink:0;">${solidIcons64.image_error}</span>
+      <div style="display:flex;flex-direction:column;gap:2px;">
+        <strong style="color:var(--ink);font-size:13px;">圖片已過期或無法載入</strong>
+        <small style="color:var(--muted);font-size:11px;">LINE 伺服器原始媒體可能已過期</small>
+      </div>
     </div>`;
   }
 };
@@ -295,7 +298,10 @@ function renderMessageBubbles() {
       bubbleContent = `<div class="chat-media-image-wrapper">
         <a href="${src}" target="_blank" rel="noopener" title="點擊在新分頁放大檢視原圖" class="chat-media-image-link">
           <img src="${src}" alt="LINE 圖片" class="chat-img-thumb" loading="lazy" onerror="window.handleChatImgError(this)">
-          <span class="chat-img-overlay">${icon('search')} 放大檢視</span>
+          <span class="chat-img-overlay" style="display:flex;align-items:center;gap:6px;">
+            <span style="display:inline-flex;width:20px;height:20px;flex-shrink:0;">${solidIcons64.zoom}</span>
+            <span>放大檢視</span>
+          </span>
         </a>
       </div>`;
     } else if (m.message_type === "video") {
@@ -311,7 +317,7 @@ function renderMessageBubbles() {
       isMediaBubble = true;
       const src = mediaUrl(m.message_id);
       bubbleContent = `<div class="chat-media-audio-card">
-        <span class="chat-audio-icon" style="color:var(--brand);display:inline-flex;">${icon('mic')}</span>
+        <span class="chat-audio-icon" style="display:inline-flex;width:34px;height:34px;flex-shrink:0;">${solidIcons64.mic_round}</span>
         <audio src="${src}" controls class="chat-audio-player"></audio>
       </div>`;
     } else if (m.message_type === "file") {
@@ -321,8 +327,8 @@ function renderMessageBubbles() {
       const src = mediaUrl(m.message_id);
       bubbleContent = `<div class="chat-media-file-card">
         <a href="${src}" download="${esc(fileName)}" class="chat-file-link" title="點擊下載 ${esc(fileName)}">
-          <div class="chat-file-icon" style="background:${meta.bg};border:1px solid ${meta.border};color:${meta.color};">
-            ${icon(meta.iconName)}
+          <div class="chat-file-icon">
+            ${docIcon(meta.iconName)}
           </div>
           <div class="chat-file-info">
             <div class="chat-file-name" title="${esc(fileName)}">${esc(fileName)}</div>
@@ -334,7 +340,7 @@ function renderMessageBubbles() {
         </a>
       </div>`;
     } else if (m.message_type === "sticker") {
-      bubbleContent = `<div class="chat-media-sticker"><span class="badge" data-s="se71ae94" style="display:inline-flex;align-items:center;gap:4px;">${icon('star')} 貼圖訊息</span></div>`;
+      bubbleContent = `<div class="chat-media-sticker"><span class="badge" data-s="se71ae94" style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;font-size:13px;"><span style="display:inline-flex;width:18px;height:18px;">${solidIcons64.sticker_star}</span> LINE 貼圖</span></div>`;
     } else {
       const text = m.text_content || `[${m.message_type}]`;
       bubbleContent = `<div class="chat-bubble-text">${highlightSearchText(text, chatUI.searchQuery)}</div>`;
