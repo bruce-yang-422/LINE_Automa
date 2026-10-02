@@ -6,11 +6,11 @@ function workspaceHeader(){
   if(!state.contacts.some(r=>r.recipient_id===workspaceUI.contactDetail))workspaceUI.contactDetail="";
   if(!state.reports.some(r=>r.report_id===workspaceUI.reportDetail))workspaceUI.reportDetail="";
   const user=state.session?.user;
-  const context=document.getElementById("workspace-context-name");
   const ch = typeof selectedOA === "function" ? selectedOA() : null;
   if(context) context.textContent=ch ? ch.name : (superAdmin()?"平台管理":orgName(user?.organization_id));
   const kind = document.getElementById("workspace-context-kind");
-  if(kind) kind.textContent=ch ? orgName(ch.org_id) : (superAdmin()?"跨組織":roleName(state.session?.role));
+  const orgId = ch ? (ch.org_id || ch.workspace_id?.replace(/^o:/, "") || user?.organization_id) : user?.organization_id;
+  if(kind) kind.textContent = ch ? (orgName(orgId) || "組織工作空間") : (superAdmin() ? "跨組織" : roleName(state.session?.role));
   const wrap = document.getElementById("workspace-context");
   // OA 切換器只給在 OA 內工作的人；平台管理員不進入 OA 營運畫面。
   if(wrap) wrap.hidden=superAdmin();

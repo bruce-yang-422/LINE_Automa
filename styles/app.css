@@ -676,6 +676,27 @@ dialog { border-radius:18px; }
   text-overflow: ellipsis;
   flex: 1;
 }
+.preview-media-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4.5px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.preview-media-chip svg {
+  width: 13px;
+  height: 13px;
+  stroke: currentColor;
+  stroke-width: 2;
+  flex-shrink: 0;
+}
+.chat-room-item.active .preview-media-chip {
+  color: var(--ink);
+}
 .chat-room-badges {
   display: flex;
   align-items: center;

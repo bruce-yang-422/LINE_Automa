@@ -225,3 +225,25 @@
   stroke-width: 0 !important;
 }
 
+.preview-media-chip {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 4.5px !important;
+  color: var(--muted) !important;
+  font-size: 12px !important;
+  line-height: 1.4 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+.preview-media-chip svg {
+  width: 13px !important;
+  height: 13px !important;
+  stroke: currentColor !important;
+  stroke-width: 2 !important;
+  flex-shrink: 0 !important;
+}
+.chat-room-item.active .preview-media-chip {
+  color: var(--ink) !important;
+}
+

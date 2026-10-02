@@ -100,6 +100,49 @@ function chatPage() {
   </div>`;
 }
 
+function formatChatPreviewPlain(msg) {
+  if (!msg) return "尚無訊息";
+  if (msg.unsent_at) return "對方已收回訊息";
+  const type = msg.message_type || "text";
+  if (type === "text") return msg.text_content || "";
+  if (type === "image") return "傳送了圖片";
+  if (type === "video") return "傳送了影片";
+  if (type === "audio") return "傳送了語音訊息";
+  if (type === "file") return "傳送了檔案 " + (msg.text_content || "");
+  if (type === "sticker") return "傳送了貼圖";
+  if (type === "location") return "傳送了位置資訊";
+  return "傳送了多媒體訊息";
+}
+
+function formatChatPreviewHtml(msg) {
+  if (!msg) return `<span class="chat-preview-text muted">尚無訊息</span>`;
+  if (msg.unsent_at) return `<span class="chat-preview-text muted">對方已收回訊息</span>`;
+  const type = msg.message_type || "text";
+  if (type === "text") {
+    return `<span class="chat-preview-text">${esc(msg.text_content || "")}</span>`;
+  }
+  if (type === "image") {
+    return `<span class="preview-media-chip">${icon("image")} 圖片</span>`;
+  }
+  if (type === "video") {
+    return `<span class="preview-media-chip">${icon("video")} 影片</span>`;
+  }
+  if (type === "audio") {
+    return `<span class="preview-media-chip">${icon("mic")} 語音訊息</span>`;
+  }
+  if (type === "file") {
+    const fileName = (msg.text_content || "檔案").trim();
+    return `<span class="preview-media-chip">${icon("file")} ${esc(fileName)}</span>`;
+  }
+  if (type === "sticker") {
+    return `<span class="preview-media-chip">${icon("star")} 貼圖</span>`;
+  }
+  if (type === "location") {
+    return `<span class="preview-media-chip">${icon("pin")} 位置資訊</span>`;
+  }
+  return `<span class="preview-media-chip">${icon("message")} 多媒體訊息</span>`;
+}
+
 function renderChatRoomItems() {
   const filtered = chatUI.rooms.filter(r => {
     if (chatUI.filter === "unread" && r.unread_count === 0) return false;
@@ -108,7 +151,8 @@ function renderChatRoomItems() {
     if (chatUI.query) {
       const q = chatUI.query.toLowerCase();
       const matchName = (r.name || "").toLowerCase().includes(q) || (r.display_name || "").toLowerCase().includes(q);
-      const matchText = (r.last_message?.text_content || "").toLowerCase().includes(q);
+      const plainPreview = formatChatPreviewPlain(r.last_message);
+      const matchText = plainPreview.toLowerCase().includes(q) || (r.last_message?.text_content || "").toLowerCase().includes(q);
       if (!matchName && !matchText) return false;
     }
     return true;
@@ -121,7 +165,6 @@ function renderChatRoomItems() {
   return filtered.map(r => {
     const isSelected = r.recipient_id === chatUI.selectedId;
     const initial = (r.name || r.display_name || "L").slice(0, 1).toUpperCase();
-    const lastText = r.last_message ? (r.last_message.unsent_at ? "[對方已收回訊息]" : (r.last_message.text_content || `[${r.last_message.message_type}]`)) : "尚無訊息";
     const timeStr = formatChatTime(r.last_message?.sent_at || r.last_activity_at);
     const unread = r.unread_count > 0;
 
@@ -133,7 +176,7 @@ function renderChatRoomItems() {
           <span class="chat-room-time">${esc(timeStr)}</span>
         </div>
         <div class="chat-room-bottom">
-          <span class="chat-room-preview">${esc(lastText)}</span>
+          <span class="chat-room-preview">${formatChatPreviewHtml(r.last_message)}</span>
           <div class="chat-room-badges">
             ${r.status === 'pending' ? '<span class="status-badge pending">待處理</span>' : ''}
             ${r.status === 'done' ? '<span class="status-badge done">處理完畢</span>' : ''}

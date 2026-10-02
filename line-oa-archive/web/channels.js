@@ -22,10 +22,11 @@ async function loadChannels(){
   lineUI.ready=true;
   if(lineUI.channel)state.session=await api('/api/session');
   if(lineUI.registry&&!messageDraft.items.length)messageDraft.organization_id=selectedWorkspace()?.org_id||"";
-  // 平台管理員不進入 OA 營運畫面，不顯示工作區／OA 切換；在「LINE OA」頁內選組織。
-  document.getElementById('line-context').hidden=superAdmin()||!lineUI.registry;
-  document.getElementById('line-workspace-select').innerHTML=options(lineUI.spaces.map(w=>[w.id,w.name]),lineUI.workspace);
-  document.getElementById('line-oa-select').innerHTML=options(available.length?available.map(c=>[c.channel_id,c.name]):[['','尚未設定 OA']],lineUI.channel);
+  // 頂欄採用統一現代化圖形切換器（workspace-context），隱藏舊版原生下拉選單
+  const oldContext = document.getElementById('line-context');
+  if(oldContext) oldContext.hidden = true;
+  if(document.getElementById('line-workspace-select')) document.getElementById('line-workspace-select').innerHTML=options(lineUI.spaces.map(w=>[w.id,w.name]),lineUI.workspace);
+  if(document.getElementById('line-oa-select')) document.getElementById('line-oa-select').innerHTML=options(available.length?available.map(c=>[c.channel_id,c.name]):[['','尚未設定 OA']],lineUI.channel);
 }
 
 function changeLineContext(workspace,channel){
