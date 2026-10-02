@@ -36,13 +36,13 @@ LINE OA 憑證、客製模組（天氣訂閱）與後台帳號一律在管理後
 
 **沒有桌面的主機**：在 `line-oa-archive/` 執行 `..\.venv\Scripts\python.exe create_admin.py`，互動輸入 Email 後印出一次性設定連結。已有平台管理員時，同一指令可新增平台管理員或產生重設密碼連結（緊急復原）。指令不接受密碼參數、不寫入任何檔案。
 
-架設主機的人若自己也要經營 OA，請為自己建立一個組織（例如類型「個人」）與管理員帳號，以該帳號登入操作；本機控制台身分等同平台管理員，對客戶的營運內容只能閱讀。
+架設主機的人若自己也要經營 OA，請為自己建立一個組織（例如類型「個人」）與管理員帳號，**使用另一個 Email**（平台管理員帳號不能同時是組織帳號），以該帳號登入操作。本機控制台身分等同平台管理員。
 
 ## 角色
 
 | 畫面名稱 | 程式角色值 | 範圍 |
 | --- | --- | --- |
-| 平台管理員 | `platform_admin` | 建立組織與管理員、設定 LINE OA 與客製模組；對客戶營運內容只能閱讀（閱讀會留下紀錄） |
+| 平台管理員 | `platform_admin` | 只有「組織」與「LINE OA」兩個管理頁：建立組織與其管理員、設定 LINE OA 與客製模組；不進入 OA 營運畫面，必要時以「切換視角」唯讀查看，每次查看寫入該組織操作紀錄 |
 | 管理員 | `org_admin` | 所屬組織的所有 OA 與人員 |
 | 操作人員 | `operator` | 被授權 OA 的對話、發送、案件與記事 |
 | 協作人員 | `collaborator` | 被授權 OA 的案件、記事與聯絡對象；不能傳送訊息 |
@@ -76,6 +76,8 @@ npm ci
 npm run build:css
 ```
 
+管理後台送出 CSP `style-src 'self'; script-src 'self'`：瀏覽器**不會套用** `style="..."` 行內樣式，也不執行 `onclick=` 等行內事件。樣式請寫成 class；`line-oa-archive/web/inline-styles.css` 是由舊行內樣式轉出的對照表，新程式不要再新增行內樣式。
+
 ## 測試
 
 ```powershell
@@ -92,6 +94,7 @@ node tests/workspace_browser.cjs
 ## 文件
 
 - [專案文件索引](docs/README.md)
+- [權限與角色規格](docs/功能規格/權限與角色規格.md)、[網站登入](docs/功能規格/網站登入.md)、[對話記事本管理規格](docs/功能規格/對話記事本管理規格.md)
 - [Bot 功能與資料庫說明](line-oa-archive/README.md)
 - [LINE OA 申請與設定](line-oa-archive/LINE_OA申請與設定.md)
 - `line-bot-sdk-python/` 只供本機參考，不納入 Git。

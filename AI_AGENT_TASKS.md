@@ -199,32 +199,44 @@
     - 重建後依權限規格 8.6 重新設定：甲級帳號、自己的組織（類型「個人」）與乙級帳號、OA 連線。
 - [x] **驗收**： 2026-10-02 完成：131 個 Python 單元測試全部通過（`OK`）；`grep` 檢查確認舊代碼與無效欄位全數清除；控制台服務啟動正常且大頭貼同源快取代理驗證完畢；正式資料庫與管理後台運行無誤。
 
+### 第七階段後續修正（2026-10-02，依使用者實測回報）
+
+- [x] **甲級（平台管理員）只做平台管理**（權限規格 8.1）：側欄只顯示「組織、LINE OA」，隱藏工作空間、工作區／OA 切換器與搜尋工作台；登入後進「組織」；不預先讀取客戶資料、不啟動聊天輪詢（避免在客戶操作紀錄留下查看紀錄）。「LINE OA」頁改為頁內「組織」選單。
+- [x] **甲級閱讀客戶內容只透過視角預覽**（使用者選 A）：每次查看以甲級本人（`principal`）寫入該組織操作紀錄；修正預覽時誤記為被預覽者、或完全未記錄的問題。
+- [x] **帳號與組織權限**：帳號 API 不能新增、升級或降級平台管理員（只能首次設定或 `create_admin.py`）；組織頁的帳號表單角色固定「管理員」、所屬組織不可改；`/api/org-settings/save` 只能改組織名稱與類型（原本管理員可自行開啟模組）。
+- [x] **介面用語**：組織清單標題「所有組織」；天氣圖片路徑只在勾選天氣模組時顯示並必填。
+- [x] **聯絡對象自動更新**：聯絡對象頁接上聊天輪詢（每 10 秒），新對象與 LINE 名稱自動出現；輸入中或開著視窗時不重畫。
+- [x] **案件管理樣式與優先度**：補上案件卡片、詳情、時間軸的 CSS；前端優先度統一為 `medium`（原 `normal` 與後端不一致，篩選「一般」永遠無結果）。
+- [x] **工作總覽「開始使用」清單**：改讀正確資料（OA 以 `lineUI.channels` 的 `workspace_id`、同事以 `state.settings.users` 判斷），改用 class 排版。
+- [ ] **CSP 下的行內樣式**：管理後台的 CSP 為 `style-src 'self'`，瀏覽器**不套用** `style="..."`，這是多處「渲染失敗」的根因。已將當時 147 種靜態行內樣式轉為 `web/inline-styles.css`（`data-s` 屬性對應），但之後的修改又新增行內樣式（2026-10-02 晚間：`admin.js` 91、`chat.js` 19、`workspace.js` 12 處），需改為 class。不放寬 CSP（不加 `'unsafe-inline'`）。
+- [ ] **瀏覽器測試**：本機無 Playwright，`tests/workspace_browser.cjs` 與 fixture 已改寫但未執行。
+
 ---
 
 ## 🚀 階段八：對話（聊天）記事本管理制度實作 (Phase 8: Chat Notes Management)
 依據 [docs/功能規格/對話記事本管理規格.md](docs/功能規格/對話記事本管理規格.md) 全面實作通用對話記事本與治理系統：
 
-- [ ] **資料表與資料庫遷移**：
+- [x] **資料表與資料庫遷移**： 2026-10-02 完成
   - 新增 `chat_notes`、`chat_note_categories`、`chat_note_tags`、`chat_note_tag_assignments` 資料表。
   - `organizations` 新增 `note_lock_policy` (預設 `disabled`) 與 `note_tag_policy` (預設 `controlled`) 設定欄位。
   - 系統初始化時寫入 8 大通用預設分類與 8 大通用預設標籤（Apple HIG 色票）。
-- [ ] **後端 RESTful API 實作 (`chat_notes.py` & `admin_server.py`)**：
+- [x] **後端 RESTful API 實作 (`chat_notes.py` & `admin_server.py`)**： 2026-10-02 完成
   - 記事 CRUD、置頂 (單室上限 5 筆)、鎖定/解鎖 (依組織政策)、完成/重啟、軟刪除/垃圾桶/還原/清除。
   - 轉為案件 (Convert to Case)：複製內容與引文並建立雙向關聯 `linked_case_id`。
   - 分類與標籤治理 API：清單、新增、修改、合併 (Merge) 與無引用孤立標籤清理 (限乙、丙級)。
-  - 匯出 API：依條件匯出 CSV / Markdown。
-- [ ] **聊天室側欄記事本面板 UI (`web/chat.js` & `styles/`)**：
+  - 匯出 API：依條件匯出 CSV / Markdown / JSON。
+- [x] **聊天室側欄記事本面板 UI (`web/chat.js`, `web/workspace.js`, `web/workspace-theme.css`)**： 2026-10-02 完成
   - 導入 Apple iOS Notes 質感：毛玻璃、超細邊框、連續平滑圓角、純向量 SVG 圖示 (嚴禁 Emoji)。
-  - 置頂大頭針區、進行中清單、已完成事項折疊區。
+  - 置頂大頭針區、進行中清單、已完成事項折疊與打勾切換。
   - 單筆卡片操作選單：置頂、鎖定(唯讀+一鍵複製)、轉為案件、編輯(手動按儲存)、標記完成、刪除。
   - 表單編輯防呆 (Dirty State Guard)：未儲存離開/切換時跳出確認通知對話框。
-- [ ] **全域對話記事本管理中心 UI (`web/notes_hub.js`)**：
+- [x] **全域對話記事本管理中心 UI (`web/admin.js`, `web/workspace-theme.css`)**： 2026-10-02 完成
   - 跨聊天室總覽：支援卡片檢視 (Grid View) 與表格檢視 (Table View)。
   - 多維度篩選工具列：關鍵字搜尋、OA 篩選、對象篩選、分類篩選、標籤多選、狀態篩選、日期區間、建立人員。
   - 批次操作與分類/標籤治理介面 (同義詞合併、批次標籤、清理廢棄標籤)。
-- [ ] **單元測試與自動化驗證**：
+- [x] **單元測試與自動化驗證**： 2026-10-02 完成
   - 編寫完整 Python 測試覆蓋：CRUD、配額上限 (100筆)、RBAC 權限 (乙丙管理/丁挑選/甲不碰)、鎖定防篡改、標籤合併。
-  - 確保 100% 測試通過且無回歸。
+  - 全站 140 個單元測試全數通過（`OK`）且無回歸。
 
 ## 📋 開發規範與規則 (Coding Standards & Rules)
 1.  **禁止引入新框架**: 堅持使用 Vanilla JS，不加入 React/Vue。
@@ -233,6 +245,9 @@
 4.  **手動明確儲存**: 嚴禁即時自動儲存與失焦自動儲存；未儲存切換強制跳防呆通知。
 5.  **測試驗證**: 每個新功能必須配備對應的 Python 測試案例。
 6.  **Small Team First**: 核心功能專為 1–3 人後台設計，避免多餘審批與複雜流程阻礙效率。
+7.  **CSP：禁止行內樣式與行內腳本**: 管理後台送出 `Content-Security-Policy: style-src 'self'; script-src 'self'`，瀏覽器會忽略 `style="..."` 與 `onclick=`／`onerror=` 等行內事件。樣式一律寫成 class（`styles/app.css` 或 `web/workspace-theme.css`，修改後執行 `npm run build:css`）；動態樣式以切換 class 或 `element.style` 設定；事件以 `addEventListener` 綁定。不得放寬 CSP。
+8.  **數量上限集中定義**: 所有數量上限只在 `line-oa-archive/limits.py` 定義，前端經 `/api/session` 的 `limits` 取得，不在程式中另寫數字。
+9.  **角色與欄位命名**: 角色值為 `platform_admin`、`org_admin`、`operator`、`collaborator`；組織 ID 欄位一律 `organization_id`；畫面不顯示甲乙丙丁。
 
 ## 📝 AI Agent 任務執行協定 (Task Execution Protocol)
 1.  **分析需求**: 閱讀 `docs/需求與規劃/SaaS平台與全站Tailwind改版規劃.md` 中的特定章節；聯絡對象相關任務另須閱讀 `docs/功能規格/聯絡人管理規格.md`，案件管理相關任務另須閱讀 `docs/功能規格/案件管理流程規格.md`，聊天相關任務另須閱讀 `docs/功能規格/聊天功能規格.md`。
