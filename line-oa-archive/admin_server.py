@@ -829,7 +829,7 @@ class AdminHandler(BaseHTTPRequestHandler):
             '/api/saved-filters', '/api/saved-filters/save', '/api/saved-filters/delete',
             '/api/cases', '/api/cases/save', '/api/cases/transition', '/api/cases/activity',
             '/api/template-packs/save', '/api/template-packs/delete', '/api/template-packs/copy', '/api/template-packs/lock',
-            '/api/templates/save', '/api/templates/delete', '/api/templates/copy', '/api/templates/move',
+            '/api/templates/save', '/api/templates/delete', '/api/templates/batch-delete', '/api/templates/copy', '/api/templates/move',
             '/api/templates/lock', '/api/templates/create-from-source',
             '/api/template-packs/toggle', '/api/categories/preview', '/api/categories/apply',
             '/api/categories/save', '/api/categories/delete', '/api/categories/reorder',
@@ -876,7 +876,7 @@ class AdminHandler(BaseHTTPRequestHandler):
             '/api/saved-filters', '/api/saved-filters/save', '/api/saved-filters/delete',
             '/api/cases', '/api/cases/save', '/api/cases/transition', '/api/cases/activity',
             '/api/template-packs/save', '/api/template-packs/delete', '/api/template-packs/copy', '/api/template-packs/lock',
-            '/api/templates/save', '/api/templates/delete', '/api/templates/copy', '/api/templates/move',
+            '/api/templates/save', '/api/templates/delete', '/api/templates/batch-delete', '/api/templates/copy', '/api/templates/move',
             '/api/templates/lock', '/api/templates/create-from-source',
             '/api/categories/apply', '/api/categories/save', '/api/categories/delete', '/api/categories/reorder',
             '/api/chat/canned-replies/save', '/api/chat/canned-replies/delete', '/api/chat/response-hours/save', '/api/chat/status'
@@ -1134,6 +1134,11 @@ class AdminHandler(BaseHTTPRequestHandler):
                 with app.database_connection() as conn:
                     template_packs.delete_template(conn, self.user.get('organization_id', ''), payload.get('template_type', 'case'), payload.get('template_id'), actor_label)
                 self.respond(200, {'ok': True})
+            elif self.path == '/api/templates/batch-delete':
+                items = payload.get('items', [])
+                with app.database_connection() as conn:
+                    cnt = template_packs.batch_delete_templates(conn, self.user.get('organization_id', ''), items, actor_label)
+                self.respond(200, {'ok': True, 'deleted_count': cnt})
             elif self.path == '/api/templates/copy':
                 with app.database_connection() as conn:
                     res = template_packs.copy_template(conn, self.user.get('organization_id', ''), payload.get('template_type', 'case'), payload.get('source_id'), payload.get('target_pack_id'), payload.get('name', ''), actor_label)

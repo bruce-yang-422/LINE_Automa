@@ -843,11 +843,20 @@ async function chatNoteModal(recipient_id,note_id="",prefill={}){
   if(!state.noteCategories.length || !state.noteTags.length){
     await loadTaxonomyCaches();
   }
-  const notes=state.chatNotes.get(recipient_id)||[];
+  const notes=recipient_id? (state.chatNotes.get(recipient_id)||[]) : [];
   const existing=note_id?notes.find(n=>n.note_id===note_id):null;
   const title = prefill.title || existing?.title || "";
   const content = prefill.content || existing?.content || "";
-  const category_id = prefill.category_id || existing?.category_id || (state.noteCategories[0]?.category_id || "");
+  
+  let category_id = prefill.category_id || existing?.category_id || "";
+  if(!category_id && prefill.category_name){
+    const matchedCat = (state.noteCategories||[]).find(c => c.name === prefill.category_name);
+    if(matchedCat) category_id = matchedCat.category_id;
+  }
+  if(!category_id){
+    category_id = state.noteCategories[0]?.category_id || "";
+  }
+
   const due_date = prefill.due_date || existing?.due_date || "";
   const tagsList = prefill.tags ? (Array.isArray(prefill.tags) ? prefill.tags : prefill.tags.split(/[,，]/).map(s=>s.trim()).filter(Boolean)) : (existing?.tags || []);
   const tagsStr = tagsList.join(", ");
@@ -856,13 +865,16 @@ async function chatNoteModal(recipient_id,note_id="",prefill={}){
   const catOptions = (state.noteCategories||[]).map(c => [c.category_id, c.name]);
   if(!catOptions.length) catOptions.push(["", "一般"]);
 
+  const contactOpts = [["", "請選擇關聯的聯絡對象 / 聊天室"], ...state.contacts.filter(r => r.active).map(r => [r.recipient_id, label(r) + (r.kind === "user" ? " (個人)" : " (群組)")])];
+
   modal(existing ? "編輯對話記事" : "新增對話記事", `<form id="chat-note-form" data-recipient="${esc(recipient_id)}" data-note-id="${esc(note_id)}" data-dirty="false">
     ${updated_at ? `<input type="hidden" name="expected_updated_at" value="${esc(updated_at)}">` : ''}
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
       <span class="muted" style="font-size:12px;">記錄對話重要承諾、待辦、工務或商務摘要</span>
-      <button type="button" class="btn text small" data-action="open-note-template-picker" data-recipient="${esc(recipient_id)}">從範本帶入</button>
+      ${recipient_id ? `<button type="button" class="btn text small" data-action="open-note-template-picker" data-recipient="${esc(recipient_id)}">從範本帶入</button>` : ''}
     </div>
     <div class="form-grid">
+      ${!recipient_id ? `<div class="full">${selectField("關聯聯絡對象（必選）", "recipient_id", contactOpts, "")}</div>` : ''}
       <div class="full">${field("記事標題（選填）", "title", title, 'maxlength="50" placeholder="例如：客戶詢問合約條件、報修現況、會議結論"')}</div>
       ${selectField("記事分類", "category_id", catOptions, category_id)}
       ${field("完成期限（選填）", "due_date", due_date, 'type="date"')}
@@ -1389,6 +1401,192 @@ let templatesSubFilter = "all";
 let templatesSearchQuery = "";
 let selectedPackKey = "universal";
 let lastDeletedTemplate = null;
+let selectedTemplateItems = new Map();
+
+function parseMdInline(str){
+  if(!str) return "";
+  let s = esc(str);
+  // Inline code: `code`
+  s = s.replace(/`([^`\n]+)`/g, '<code class="md-inline-code">$1</code>');
+  // Bold: **text** or __text__
+  s = s.replace(/\*\*([^\*\n]+)\*\*/g, '<strong>$1</strong>');
+  s = s.replace(/__([^_\n]+)__/g, '<strong>$1</strong>');
+  // Italic: *text* or _text_
+  s = s.replace(/(?<!\*)\*([^\*\n\s](?:[^\*\n]*?[^\*\n\s])?)\*(?!\*)/g, '<em>$1</em>');
+  s = s.replace(/(?<!_)_([^_\n\s](?:[^_\n]*?[^_\n\s])?)_(?!_)/g, '<em>$1</em>');
+  // Strikethrough: ~~text~~ or -text-
+  s = s.replace(/~~([^~\n]+)~~/g, '<s>$1</s>');
+  s = s.replace(/(?<=\s|^)-([^\-\n\s](?:[^\-\n]*?[^\-\n\s])?)-(?=\s|$)/g, '<s>$1</s>');
+  // Links: [text](url)
+  s = s.replace(/\[([^\]]+)\]\(((?:https?:\/\/|\/)[^\s\)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="md-link">$1</a>');
+  return s;
+}
+
+function renderMarkdown(md){
+  if(!md || !md.trim()) return '<span class="muted">（無內容）</span>';
+
+  // 1. Extract fenced code blocks
+  const codeBlocks = [];
+  let processed = md.replace(/```([a-zA-Z0-9_-]*)\r?\n([\s\S]*?)```/g, (match, lang, code) => {
+    const idx = codeBlocks.length;
+    codeBlocks.push(`<pre class="md-code-block"><code>${esc(code.trimEnd())}</code></pre>`);
+    return `@@MD_CODE_BLOCK_${idx}@@`;
+  });
+
+  const lines = processed.split(/\r?\n/);
+  const out = [];
+  let currentList = null; // 'ul' | 'ol'
+
+  function closeList(){
+    if(currentList === 'ul'){
+      out.push('</ul>');
+      currentList = null;
+    } else if(currentList === 'ol'){
+      out.push('</ol>');
+      currentList = null;
+    }
+  }
+
+  for(let i = 0; i < lines.length; i++){
+    const rawLine = lines[i];
+    const trimmed = rawLine.trim();
+
+    // Check code block placeholder
+    const codeMatch = trimmed.match(/^@@MD_CODE_BLOCK_(\d+)@@$/);
+    if(codeMatch){
+      closeList();
+      const idx = parseInt(codeMatch[1], 10);
+      out.push(codeBlocks[idx] || '');
+      continue;
+    }
+
+    if(!trimmed){
+      closeList();
+      if(out.length > 0 && !out[out.length - 1].includes('class="md-gap"')){
+        out.push('<div class="md-gap"></div>');
+      }
+      continue;
+    }
+
+    // Horizontal Rule: ---, ***, ___
+    if(/^(\-{3,}|\*{3,}|_{3,})$/.test(trimmed)){
+      closeList();
+      out.push('<hr class="md-hr">');
+      continue;
+    }
+
+    // Headers: #, ##, ###, ####, #####, ###### (supports with or without space after hashes)
+    const headerMatch = trimmed.match(/^(#{1,6})\s*(.+)$/);
+    if(headerMatch){
+      closeList();
+      const level = Math.min(headerMatch[1].length + 1, 5); // # -> h2, ## -> h3, ### -> h4, etc.
+      const headingText = parseMdInline(headerMatch[2]);
+      out.push(`<h${level} class="md-h${level}">${headingText}</h${level}>`);
+      continue;
+    }
+
+    // Blockquote: > text
+    const quoteMatch = trimmed.match(/^>\s*(.*)$/);
+    if(quoteMatch){
+      closeList();
+      out.push(`<blockquote class="md-quote">${parseMdInline(quoteMatch[1])}</blockquote>`);
+      continue;
+    }
+
+    // Checklist / Task items: - [ ] or - [x] or * [ ] or * [x]
+    const checkMatch = trimmed.match(/^[\*\-]\s+\[([ xX])\]\s*(.*)$/);
+    if(checkMatch){
+      closeList();
+      const isDone = checkMatch[1].toLowerCase() === 'x';
+      const itemContent = parseMdInline(checkMatch[2]);
+      if(isDone){
+        out.push(`<div class="md-check-item done"><span class="md-checkbox done">✓</span> <s>${itemContent}</s></div>`);
+      } else {
+        out.push(`<div class="md-check-item"><span class="md-checkbox">○</span> ${itemContent}</div>`);
+      }
+      continue;
+    }
+
+    // Unordered List: - item or * item
+    const ulMatch = trimmed.match(/^[\*\-]\s+(.+)$/);
+    if(ulMatch){
+      if(currentList === 'ol') closeList();
+      if(!currentList){
+        out.push('<ul class="md-ul">');
+        currentList = 'ul';
+      }
+      out.push(`<li class="md-li">${parseMdInline(ulMatch[1])}</li>`);
+      continue;
+    }
+
+    // Ordered List: 1. item or 1) item
+    const olMatch = trimmed.match(/^\d+[\.\)]\s+(.+)$/);
+    if(olMatch){
+      if(currentList === 'ul') closeList();
+      if(!currentList){
+        out.push('<ol class="md-ol">');
+        currentList = 'ol';
+      }
+      out.push(`<li class="md-oli">${parseMdInline(olMatch[1])}</li>`);
+      continue;
+    }
+
+    // Regular paragraph line
+    closeList();
+    out.push(`<p class="md-p">${parseMdInline(trimmed)}</p>`);
+  }
+
+  closeList();
+
+  return `<div class="md-rendered-content">${out.join("")}</div>`;
+}
+
+function getPreferredEditorFormat(){
+  return localStorage.getItem("preferred_editor_format") || "plain";
+}
+
+function setPreferredEditorFormat(fmt){
+  const f = fmt === "markdown" ? "markdown" : "plain";
+  localStorage.setItem("preferred_editor_format", f);
+  return f;
+}
+
+function renderDualFormatEditor(fieldName, fieldId, value = "", format = null){
+  let chosenFormat = format;
+  if(!chosenFormat){
+    if(value && (/^#{1,6}\s|^- \[[ xX]\]|^\* |\*\*|```/m.test(value))){
+      chosenFormat = "markdown";
+    } else {
+      chosenFormat = getPreferredEditorFormat();
+    }
+  }
+  const isMd = chosenFormat === "markdown";
+  return `
+    <div class="full tmpl-editor-container" data-field="${esc(fieldId)}" data-format="${isMd?'markdown':'plain'}" data-subtab="write">
+      <div class="tmpl-editor-header">
+        <label for="${esc(fieldId)}" class="tmpl-editor-label">內容骨架 / 檢查清單</label>
+        <div class="tmpl-editor-controls">
+          <div class="tmpl-format-pill-group" role="group" aria-label="格式選擇">
+            <button type="button" class="tmpl-pill-btn ${!isMd?'active':''}" data-action="set-editor-format" data-target="${esc(fieldId)}" data-format="plain">純文字</button>
+            <button type="button" class="tmpl-pill-btn ${isMd?'active':''}" data-action="set-editor-format" data-target="${esc(fieldId)}" data-format="markdown">Markdown</button>
+          </div>
+
+          <div class="tmpl-md-subtabs" role="group" aria-label="編輯模式切換">
+            <button type="button" class="tmpl-subtab-btn active" data-action="set-md-subtab" data-target="${esc(fieldId)}" data-tab="write">✍️ 編輯</button>
+            <button type="button" class="tmpl-subtab-btn" data-action="set-md-subtab" data-target="${esc(fieldId)}" data-tab="preview">👁️ 預覽</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="tmpl-editor-write-box">
+        <textarea id="${esc(fieldId)}" name="${esc(fieldName)}" rows="6" maxlength="2000" placeholder="${isMd ? '支援 Markdown 語法，例如：\n### 1. 狀況確認\n- [ ] 詢問設備型號與故障現象\n- [ ] 拍照存證\n\n### 2. 處置措施\n* **優先等級**：重要處理\n* **備註**：安排工程窗口' : '填寫標準內容流程或檢查清單...'}">${esc(value)}</textarea>
+        <small class="muted tmpl-md-hint">💡 支援標題 (###)、檢查清單 (- [ ])、條列 (-)、粗體 (**文字**)、引用 (>)、程式碼區塊等 Markdown 語法</small>
+      </div>
+
+      <div class="tmpl-editor-preview-box md-preview-area"></div>
+    </div>
+  `;
+}
 
 function showUndoToast(msg, onUndo){
   const existing = document.querySelector(".tmpl-undo-toast");
@@ -1407,14 +1605,14 @@ function showUndoToast(msg, onUndo){
 function templatesAndCategoriesPage(){
   return `
     <div class="tmpl-mgmt-wrap">
-      ${heading("範本與分類", "建立常用內容與標準流程，之後處理對話與案件時可一鍵快速套用。", `<div style="display:flex;gap:8px;"><button class="btn primary small" data-action="open-template-wizard">${icon("plus")} 建立新範本</button>${manager()?`<button class="btn text small" data-action="templates-switch-tab" data-tab="packs">${icon("settings")} 進階群組</button>`:''}</div>`, "TEMPLATES & CATEGORIES")}
+      ${heading("範本與分類", "建立常用內容與標準流程，之後處理對話與案件時可一鍵快速套用。", `<div class="tmpl-heading-btns"><button class="btn primary small" data-action="open-template-wizard">${icon("plus")} 建立新範本</button>${manager()?`<button class="btn text small" data-action="templates-switch-tab" data-tab="packs">${icon("settings")} 進階群組</button>`:''}</div>`, "TEMPLATES & CATEGORIES")}
       
       <div class="tmpl-search-bar">
         ${icon("search")}
         <input type="search" id="templates-search-input" value="${esc(templatesSearchQuery)}" placeholder="搜尋範本名稱、內容大綱或標籤關鍵字（例如：報修、客訴、報價、教務）…" autocomplete="off">
       </div>
 
-      <div class="segmented toolbar" style="margin-bottom:6px;">
+      <div class="segmented toolbar tmpl-main-nav">
         <button type="button" class="${templatesTab==='home'?'active':''}" data-action="templates-switch-tab" data-tab="home">${icon("sparkles")} 首頁推薦</button>
         <button type="button" class="${templatesTab==='my_templates'?'active':''}" data-action="templates-switch-tab" data-tab="my_templates">${icon("file")} 我的範本庫</button>
         <button type="button" class="${templatesTab==='taxonomy'?'active':''}" data-action="templates-switch-tab" data-tab="taxonomy">${icon("tag")} 分類與標籤</button>
@@ -1427,16 +1625,6 @@ function templatesAndCategoriesPage(){
     </div>
   `;
 }
-
-setTimeout(()=>{
-  const searchInput = $("templates-search-input");
-  if(searchInput){
-    searchInput.addEventListener("input", (e)=>{
-      templatesSearchQuery = e.target.value.trim();
-      loadTemplatesTabContent();
-    });
-  }
-}, 50);
 
 async function loadTemplatesTabContent(){
   const wrap = $("templates-tab-content");
@@ -1499,11 +1687,17 @@ async function loadTemplatesTabContent(){
         </div>
 
         <!-- 常用推薦範本清單 -->
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;">
-          <h3 style="font-size:15px;font-weight:650;margin:0;display:flex;align-items:center;gap:6px;">
+        <div class="tmpl-section-header">
+          <h3 class="tmpl-section-title">
             ${icon("sparkles")} 常用推薦範本 (${filtered.length})
           </h3>
-          <button type="button" class="btn text small" data-action="templates-switch-tab" data-tab="my_templates">查看全部範本 ➔</button>
+          <div style="display:flex;gap:8px;align-items:center;">
+            ${manager() && selectedTemplateItems.size > 0 ? `
+              <button type="button" class="btn text small danger" data-action="batch-delete-templates">${icon("trash")} 批次刪除 (${selectedTemplateItems.size})</button>
+              <button type="button" class="btn text small" data-action="clear-selected-templates">取消選取</button>
+            ` : ''}
+            <button type="button" class="btn text small" data-action="templates-switch-tab" data-tab="my_templates">查看全部範本 ➔</button>
+          </div>
         </div>
 
         ${filtered.length ? `
@@ -1511,8 +1705,8 @@ async function loadTemplatesTabContent(){
             ${filtered.slice(0, 6).map(t => renderTmplCard(t)).join("")}
           </div>
         ` : `
-          <div class="panel" style="text-align:center;padding:36px 20px;">
-            <p class="muted" style="margin-bottom:12px;">找不到符合「${esc(templatesSearchQuery)}」的範本。</p>
+          <div class="panel tmpl-empty-box">
+            <p class="muted">找不到符合「${esc(templatesSearchQuery)}」的範本。</p>
             <button type="button" class="btn primary small" data-action="open-template-wizard">${icon("plus")} 立即建立此範本</button>
           </div>
         `}
@@ -1521,15 +1715,28 @@ async function loadTemplatesTabContent(){
       let typeFiltered = filtered;
       if(templatesSubFilter === "case") typeFiltered = filtered.filter(t => t.type === 'case');
       if(templatesSubFilter === "note") typeFiltered = filtered.filter(t => t.type === 'note');
+      const isAllSelected = typeFiltered.length > 0 && typeFiltered.every(t => selectedTemplateItems.has(t.template_id));
 
       wrap.innerHTML = `
-        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px;">
-          <div class="segmented" style="font-size:12px;">
+        <div class="tmpl-toolbar-row">
+          <div class="segmented tmpl-segmented-sm">
             <button type="button" class="${templatesSubFilter==='all'?'active':''}" data-action="templates-subfilter" data-id="all">全部範本 (${filtered.length})</button>
             <button type="button" class="${templatesSubFilter==='case'?'active':''}" data-action="templates-subfilter" data-id="case">${icon("case_icon")} 案件範本 (${filtered.filter(t=>t.type==='case').length})</button>
             <button type="button" class="${templatesSubFilter==='note'?'active':''}" data-action="templates-subfilter" data-id="note">${icon("note_icon")} 記事範本 (${filtered.filter(t=>t.type==='note').length})</button>
           </div>
-          <button type="button" class="btn primary small" data-action="open-template-wizard">${icon("plus")} 新增範本</button>
+          <div class="tmpl-toolbar-right-btns">
+            ${manager() && typeFiltered.length > 0 ? `
+              <label class="tmpl-select-all-label">
+                <input type="checkbox" id="tmpl-select-all-cb" data-action="toggle-select-all-templates" ${isAllSelected ? 'checked' : ''}>
+                <span>${selectedTemplateItems.size > 0 ? `已選 ${selectedTemplateItems.size} 項` : '全選'}</span>
+              </label>
+            ` : ''}
+            ${manager() && selectedTemplateItems.size > 0 ? `
+              <button type="button" class="btn text small danger" data-action="batch-delete-templates" title="批次刪除選取的範本">${icon("trash")} 批次刪除 (${selectedTemplateItems.size})</button>
+              <button type="button" class="btn text small" data-action="clear-selected-templates">取消選取</button>
+            ` : ''}
+            <button type="button" class="btn primary small" data-action="open-template-wizard">${icon("plus")} 新增範本</button>
+          </div>
         </div>
 
         ${typeFiltered.length ? `
@@ -1537,35 +1744,35 @@ async function loadTemplatesTabContent(){
             ${typeFiltered.map(t => renderTmplCard(t)).join("")}
           </div>
         ` : `
-          <div class="panel" style="text-align:center;padding:40px 20px;">
-            <p class="muted" style="margin-bottom:12px;">目前尚無範本，可點選建立新範本。</p>
+          <div class="panel tmpl-empty-box">
+            <p class="muted">目前尚無範本，可點選建立新範本。</p>
             <button type="button" class="btn primary small" data-action="open-template-wizard">${icon("plus")} 建立第一個範本</button>
           </div>
         `}
       `;
     } else if(templatesTab === "taxonomy"){
       wrap.innerHTML = `
-        <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(320px, 1fr));gap:20px;">
+        <div class="tmpl-taxonomy-grid">
           <!-- 記事分類 (單選) -->
-          <div class="panel">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+          <div class="panel category-panel">
+            <div class="category-panel-head">
               <div>
-                <h3 style="font-size:15px;font-weight:650;margin:0;display:flex;align-items:center;gap:6px;">${icon("folder")} 記事分類清單</h3>
+                <h3 class="category-panel-title">${icon("folder")} 記事分類清單</h3>
                 <small class="muted">單選：標記這筆記事主要屬於哪一類業務</small>
               </div>
               ${manager() && noteCats.length < 20 ? `<button class="btn primary small" data-action="new-single-category" data-type="note">${icon("plus")} 新增分類</button>` : ''}
             </div>
             <div class="categories-list">
               ${noteCats.map((c, idx) => `
-                <div class="category-item-row" style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);">
-                  <div>
-                    <span class="muted" style="font-size:11px;margin-right:6px;">#${idx+1}</span>
-                    <strong>${esc(c.name)}</strong>
-                    ${c.name === '一般' ? '<span class="badge" style="margin-left:6px;font-size:10.5px;">系統保留</span>' : ''}
-                    <span class="muted" style="font-size:11px;margin-left:4px;">(${c.usage_count||0} 筆)</span>
+                <div class="category-item-row">
+                  <div class="category-item-info">
+                    <span class="muted category-idx">#${idx+1}</span>
+                    <strong class="category-name">${esc(c.name)}</strong>
+                    ${c.name === '一般' ? '<span class="badge">系統保留</span>' : ''}
+                    <span class="muted category-count">(${c.usage_count||0} 筆)</span>
                   </div>
                   ${manager() && c.name !== '一般' ? `
-                    <div style="display:flex;gap:4px;">
+                    <div class="category-item-actions">
                       <button class="btn text small" data-action="edit-single-category" data-type="note" data-name="${esc(c.name)}">${icon("edit")} 改名</button>
                       <button class="btn text small danger" data-action="delete-single-category" data-type="note" data-name="${esc(c.name)}">${icon("trash")} 刪除</button>
                     </div>
@@ -1576,25 +1783,25 @@ async function loadTemplatesTabContent(){
           </div>
 
           <!-- 案件類別 (單選) -->
-          <div class="panel">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+          <div class="panel category-panel">
+            <div class="category-panel-head">
               <div>
-                <h3 style="font-size:15px;font-weight:650;margin:0;display:flex;align-items:center;gap:6px;">${icon("case_icon")} 案件類別清單</h3>
+                <h3 class="category-panel-title">${icon("case_icon")} 案件類別清單</h3>
                 <small class="muted">單選：標記此案件所屬的工單流程類別</small>
               </div>
               ${manager() && caseCats.length < 20 ? `<button class="btn primary small" data-action="new-single-category" data-type="case">${icon("plus")} 新增類別</button>` : ''}
             </div>
             <div class="categories-list">
               ${caseCats.map((c, idx) => `
-                <div class="category-item-row" style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);">
-                  <div>
-                    <span class="muted" style="font-size:11px;margin-right:6px;">#${idx+1}</span>
-                    <strong>${esc(c.name)}</strong>
-                    ${c.name === '一般' ? '<span class="badge" style="margin-left:6px;font-size:10.5px;">系統保留</span>' : ''}
-                    <span class="muted" style="font-size:11px;margin-left:4px;">(${c.usage_count||0} 筆)</span>
+                <div class="category-item-row">
+                  <div class="category-item-info">
+                    <span class="muted category-idx">#${idx+1}</span>
+                    <strong class="category-name">${esc(c.name)}</strong>
+                    ${c.name === '一般' ? '<span class="badge">系統保留</span>' : ''}
+                    <span class="muted category-count">(${c.usage_count||0} 筆)</span>
                   </div>
                   ${manager() && c.name !== '一般' ? `
-                    <div style="display:flex;gap:4px;">
+                    <div class="category-item-actions">
                       <button class="btn text small" data-action="edit-single-category" data-type="case" data-name="${esc(c.name)}">${icon("edit")} 改名</button>
                       <button class="btn text small danger" data-action="delete-single-category" data-type="case" data-name="${esc(c.name)}">${icon("trash")} 刪除</button>
                     </div>
@@ -1606,20 +1813,20 @@ async function loadTemplatesTabContent(){
         </div>
 
         <!-- 標籤色彩庫 (多選) -->
-        <div class="panel section-space">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <div class="panel section-space tags-panel">
+          <div class="category-panel-head">
             <div>
-              <h3 style="font-size:15px;font-weight:650;margin:0;display:flex;align-items:center;gap:6px;">${icon("tag")} 標籤色彩治理庫 (${noteTags.length} 項)</h3>
+              <h3 class="category-panel-title">${icon("tag")} 標籤色彩治理庫 (${noteTags.length} 項)</h3>
               <small class="muted">多選：為案件與記事標記特徵屬性，支援 Apple HIG 柔和色彩</small>
             </div>
             ${manager() ? `<button class="btn primary small" data-action="manage-notes-taxonomy">${icon("tag")} 治理與新增標籤</button>` : ''}
           </div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <div class="tags-cloud">
             ${noteTags.map(t => {
               const color = t.color || DEFAULT_TAG_COLORS[t.name] || "#007AFF";
               const bg = color.length === 7 ? color + "20" : "rgba(0,122,255,0.14)";
               const border = color.length === 7 ? color + "48" : "rgba(0,122,255,0.3)";
-              return `<span class="apple-pill" data-color="${esc(color)}" style="background-color:${esc(bg)}!important;color:${esc(color)}!important;border-color:${esc(border)}!important;">${icon("tag")} ${esc(t.name)} <small style="opacity:0.75;">(${t.note_count||t.usage_count||0})</small></span>`;
+              return `<span class="apple-pill" data-color="${esc(color)}" style="background-color:${esc(bg)}!important;color:${esc(color)}!important;border-color:${esc(border)}!important;">${icon("tag")} ${esc(t.name)} <small class="pill-count">(${t.note_count||t.usage_count||0})</small></span>`;
             }).join("")}
           </div>
         </div>
@@ -1629,9 +1836,9 @@ async function loadTemplatesTabContent(){
       if(currentPack) selectedPackKey = currentPack.pack_id || currentPack.key;
 
       wrap.innerHTML = `
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <div class="category-panel-head">
           <div>
-            <h3 style="font-size:15px;font-weight:650;margin:0;display:flex;align-items:center;gap:6px;">${icon("layers")} 範本群組管理 (進階)</h3>
+            <h3 class="category-panel-title">${icon("layers")} 範本群組管理 (進階)</h3>
             <small class="muted">管理組織啟用的範本群組、匯出/匯入與跨 OA 派發</small>
           </div>
           ${manager() ? `<button class="btn primary small" data-action="new-custom-pack">${icon("plus")} 新增自訂群組</button>` : ''}
@@ -1639,17 +1846,17 @@ async function loadTemplatesTabContent(){
 
         <div class="packs-layout">
           <div class="panel packs-sidebar">
-            <h4 style="font-size:13px;margin:0 0 10px 0;color:var(--muted);">${icon("bookmark")} 範本群組清單</h4>
+            <h4 class="packs-sidebar-title">${icon("bookmark")} 範本群組清單</h4>
             <div class="packs-nav-list">
               ${packs.map(p => {
                 const isSelected = (p.pack_id === selectedPackKey || p.key === selectedPackKey);
                 return `
-                  <div class="pack-nav-card ${isSelected?'selected':''}" style="border:1.5px solid ${isSelected?'var(--brand,#007AFF)':'var(--line)'};border-radius:10px;padding:12px;background:${isSelected?'rgba(0,122,255,0.04)':'var(--surface)'};margin-bottom:8px;cursor:pointer;" data-action="select-template-pack" data-id="${esc(p.pack_id||p.key)}">
-                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+                  <div class="pack-nav-card ${isSelected?'selected':''}" data-action="select-template-pack" data-id="${esc(p.pack_id||p.key)}">
+                    <div class="pack-nav-card-head">
                       <strong>${esc(p.name)}</strong>
-                      ${p.is_preset ? '<span class="badge" style="font-size:10px;">系統預設</span>' : '<span class="badge primary" style="font-size:10px;">自訂</span>'}
+                      ${p.is_preset ? '<span class="badge">系統預設</span>' : '<span class="badge primary">自訂</span>'}
                     </div>
-                    <div style="font-size:11.5px;color:var(--muted);">${esc(p.description||"無說明")}</div>
+                    <div class="pack-nav-card-desc">${esc(p.description||"無說明")}</div>
                   </div>
                 `;
               }).join("")}
@@ -1677,28 +1884,36 @@ function renderTmplCard(t){
   const priText = isCase ? (priLabels[priority] || "⚪ 一般") : "";
 
   return `
-    <article class="tmpl-card">
+    <article class="tmpl-card ${selectedTemplateItems.has(t.template_id)?'selected':''}">
       <div class="tmpl-card-head">
         <div class="tmpl-card-title-row">
+          ${manager() ? `<input type="checkbox" class="tmpl-card-select-cb" data-id="${esc(t.template_id)}" data-type="${esc(t.type)}" data-name="${esc(t.name)}" ${selectedTemplateItems.has(t.template_id)?'checked':''} title="選取此範本">` : ''}
           <span class="tmpl-type-tag ${isCase?'case':'note'}">${iconHtml} ${typeLabel}</span>
           <h4 class="tmpl-card-title">${esc(t.name)}</h4>
         </div>
-        ${!t.is_preset && manager() ? `
-          <button type="button" class="btn text small" data-action="edit-template-modal" data-id="${esc(t.template_id)}" data-pack="${esc(t.pack_id)}" data-type="${esc(t.type)}" title="編輯範本">${icon("edit")}</button>
+        ${manager() ? `
+          <div class="tmpl-card-head-actions">
+            <button type="button" class="tmpl-icon-btn" data-action="edit-template-modal" data-id="${esc(t.template_id)}" data-name="${esc(t.name)}" data-pack="${esc(t.pack_id)}" data-type="${esc(t.type)}" title="編輯範本">${icon("edit")}</button>
+            <button type="button" class="tmpl-icon-btn danger" data-action="delete-template-btn" data-id="${esc(t.template_id)}" data-name="${esc(t.name)}" data-type="${esc(t.type)}" title="刪除範本">${icon("trash")}</button>
+          </div>
         ` : ''}
       </div>
 
       <p class="tmpl-card-desc">${esc(t.body || t.title || "無詳細說明")}</p>
 
       <div class="tmpl-card-meta">
-        <span class="badge" style="font-size:11px;">${icon("folder")} ${esc(catName)}</span>
+        <span class="badge">${icon("folder")} ${esc(catName)}</span>
         ${isCase ? `<span class="tmpl-priority-badge ${priority}">${priText}</span>` : ''}
+        ${t.is_preset ? '<span class="badge">範本範例</span>' : '<span class="badge primary">自訂範本</span>'}
       </div>
 
       <div class="tmpl-card-foot">
-        <small class="muted" style="font-size:11px;">群組：${esc(t.pack_name||"通用")}</small>
+        <small class="muted">群組：${esc(t.pack_name||"通用")}</small>
         <div class="tmpl-card-actions">
-          <button type="button" class="btn small primary" data-action="use-template-fast" data-id="${esc(t.template_id)}" data-type="${esc(t.type)}" data-title="${esc(t.title||t.name)}" data-body="${esc(t.body||'')}" data-cat="${esc(catName)}" data-pri="${esc(priority)}">${icon("check")} 使用範本</button>
+          <button type="button" class="btn small" data-action="preview-template-modal" data-id="${esc(t.template_id)}" data-name="${esc(t.name)}" data-pack="${esc(t.pack_id)}" data-type="${esc(t.type)}">${icon("file")} 檢視大綱</button>
+          ${manager() ? `
+            <button type="button" class="btn small" data-action="edit-template-modal" data-id="${esc(t.template_id)}" data-name="${esc(t.name)}" data-pack="${esc(t.pack_id)}" data-type="${esc(t.type)}">${icon("edit")} 編輯</button>
+          ` : ''}
         </div>
       </div>
     </article>
@@ -1837,13 +2052,7 @@ async function openTemplateWizard(step = 1, wizardState = {}){
           </label>
         </div>
 
-        <div class="full">
-          <label class="field">
-            要記錄的內容大綱 / 檢查清單
-            <textarea id="wz-body" rows="4" maxlength="1000" placeholder="1. 狀況描述：&#10;2. 處理措施：&#10;3. 預計完成時間：">${esc(stateData.body)}</textarea>
-            <small class="muted">可使用條列式清單，方便團隊依循標準 SOP</small>
-          </label>
-        </div>
+        ${renderDualFormatEditor("body", "wz-body", stateData.body, stateData.format || null)}
       </div>
 
       <div class="form-actions" style="margin-top:20px;justify-content:space-between;">
@@ -1905,16 +2114,19 @@ async function openTemplateWizard(step = 1, wizardState = {}){
         ` : ''}
       </div>
 
-      <!-- 即時完成卡片預覽 -->
+      <!-- 即時完成卡片預覽 (支援 Markdown 渲染) -->
       <div class="tmpl-live-preview-box">
-        <h5>${icon("sparkles")} 完成後卡片預覽</h5>
-        <div style="display:flex;justify-content:space-between;align-items:center;">
+        <h5>${icon("sparkles")} 完成後卡片與 Markdown 預覽</h5>
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">
           <div>
             <span class="tmpl-type-tag ${isCase?'case':'note'}" style="margin-bottom:4px;">${isCase?icon("case_icon")+' 案件範本':icon("note_icon")+' 記事範本'}</span>
-            <strong style="display:block;font-size:14.5px;">${esc(stateData.name || "未命名範本")}</strong>
+            <strong style="display:block;font-size:15px;margin:3px 0 2px 0;">${esc(stateData.name || "未命名範本")}</strong>
             <small class="muted">${esc(stateData.category || "一般")} ${isCase?'· '+priLabels[stateData.priority||'medium']:''}</small>
           </div>
           <span class="badge primary">${icon("check")} 預覽就緒</span>
+        </div>
+        <div class="tmpl-live-md-box" style="background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:12px;margin-top:8px;">
+          ${renderMarkdown(stateData.body)}
         </div>
       </div>
 
@@ -1978,6 +2190,9 @@ function render(){
   const pageFn = pages[state.view] || overview;
   $("page").innerHTML=pageFn();
   hydratePreviews();
+  if(state.view === "templates"){
+    loadTemplatesTabContent();
+  }
 }
 
 function oaListPage(){
@@ -2967,6 +3182,64 @@ document.addEventListener("click",async event=>{
 
       openTemplateWizard(prevStep, wzState);
     }
+    else if(action==="set-editor-format"){
+      const format = target.dataset.format || "plain";
+      setPreferredEditorFormat(format);
+      const editorWrap = target.closest(".tmpl-dual-editor-wrap") || target.closest(".tmpl-editor-container");
+      if(!editorWrap) return;
+      
+      editorWrap.dataset.format = format;
+      editorWrap.dataset.subtab = "write";
+      const isMd = format === "markdown";
+      
+      // Update format switch button active state
+      editorWrap.querySelectorAll('[data-action="set-editor-format"]').forEach(b => {
+        b.classList.toggle("active", b.dataset.format === format);
+      });
+
+      const subtabs = editorWrap.querySelector(".tmpl-md-subtabs");
+      if(subtabs){
+        subtabs.querySelectorAll('[data-action="set-md-subtab"]').forEach(b => {
+          b.classList.toggle("active", b.dataset.tab === "write");
+        });
+      }
+
+      const textarea = editorWrap.querySelector("textarea");
+      if(textarea){
+        textarea.placeholder = isMd 
+          ? '支援 Markdown 語法，例如：\n### 1. 狀況確認\n- [ ] 詢問設備型號與故障現象\n- [ ] 拍照存證\n\n### 2. 處置措施\n* **優先等級**：重要處理\n* **備註**：安排工程窗口'
+          : '填寫標準內容流程或檢查清單...';
+      }
+    }
+    else if(action==="set-md-subtab"){
+      const subtab = target.dataset.tab || "write";
+      const targetId = target.dataset.target;
+      const editorWrap = target.closest(".tmpl-dual-editor-wrap") || target.closest(".tmpl-editor-container");
+      if(!editorWrap) return;
+
+      editorWrap.dataset.subtab = subtab;
+
+      const subtabs = editorWrap.querySelector(".tmpl-md-subtabs");
+      if(subtabs){
+        subtabs.querySelectorAll('[data-action="set-md-subtab"]').forEach(b => {
+          b.classList.toggle("active", b.dataset.tab === subtab);
+        });
+      }
+
+      const previewBox = editorWrap.querySelector(".tmpl-editor-preview-box");
+      const textarea = $(targetId) || editorWrap.querySelector("textarea");
+
+      if(subtab === "write"){
+        if(textarea) textarea.focus();
+      } else if(subtab === "preview"){
+        if(previewBox){
+          const text = textarea ? textarea.value : "";
+          previewBox.innerHTML = text.trim() 
+            ? renderMarkdown(text) 
+            : '<span class="muted" style="font-size:12px;">（目前尚無內容可預覽，請切換回「✍️ 編輯」輸入文字）</span>';
+        }
+      }
+    }
     else if(action==="wizard-submit-final"){
       const wzWrap = target.closest("#template-wizard-container");
       let wzState = {};
@@ -2998,18 +3271,79 @@ document.addEventListener("click",async event=>{
         notice("建立失敗：" + err.message, true);
       }
     }
-    else if(action==="use-template-fast"){
+    else if(action==="preview-template-modal"){
+      const tmplId = target.dataset.id;
+      const tmplName = target.dataset.name;
+      const packId = target.dataset.pack;
       const tmplType = target.dataset.type;
-      const title = target.dataset.title || "";
-      const body = target.dataset.body || "";
-      const cat = target.dataset.cat || "一般";
-      const pri = target.dataset.pri || "medium";
+      
+      const packsRes = await api('/api/template-packs');
+      const pack = (packsRes.packs || []).find(p => p.pack_id === packId || p.key === packId);
+      const list = tmplType === 'case' ? pack?.case_templates : pack?.note_templates;
+      const tmpl = (list || []).find(t => t.template_id === tmplId || t.name === tmplName);
 
-      if(tmplType === "case"){
-        newCaseModal("", { title, description: body, category: cat, priority: pri });
-      } else {
-        chatNoteModal(chatUI.selectedId || "", "", { title, content: body, category_name: cat });
+      if(!tmpl){
+        notice("找不到該範本。", true);
+        return;
       }
+
+      const isCase = tmplType === 'case';
+      const priLabels = { urgent: "🔴 緊急優先", high: "🟠 重要處理", medium: "⚪ 一般進度", low: "低優先度" };
+
+      modal(`檢視範本：${esc(tmpl.name)}`, `
+        <div class="case-detail-view">
+          <div class="case-detail-header">
+            <div>
+              <span class="tmpl-type-tag ${isCase?'case':'note'}">${isCase?icon("case_icon")+' 案件範本':icon("note_icon")+' 記事範本'}</span>
+              <h2 style="font-size:17px;margin:6px 0 2px 0;">${esc(tmpl.name)}</h2>
+              <small class="muted">所屬群組：${esc(pack?.name||"通用範本群組")}</small>
+            </div>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <span class="badge">${icon("folder")} ${esc(tmpl.category_name||"一般")}</span>
+              ${isCase ? `<span class="tmpl-priority-badge ${tmpl.priority||'medium'}">${priLabels[tmpl.priority||'medium']}</span>` : ''}
+              ${pack?.is_preset ? '<span class="badge">系統預設</span>' : '<span class="badge primary">自訂</span>'}
+            </div>
+          </div>
+
+          ${tmpl.title ? `
+            <div class="section-space">
+              <h4 style="font-size:13px;margin:0 0 4px 0;color:var(--muted);">預設帶入標題</h4>
+              <p style="margin:0;font-weight:600;">${esc(tmpl.title)}</p>
+            </div>
+          ` : ''}
+
+          <div class="section-space">
+            <h4 style="font-size:13px;margin:0 0 6px 0;color:var(--muted);">內容大綱 / SOP 檢查清單</h4>
+            <div class="tmpl-live-md-box" style="background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:14px;font-size:13px;line-height:1.6;">
+              ${tmpl.body ? renderMarkdown(tmpl.body) : '<span class="muted">（無內容骨架）</span>'}
+            </div>
+          </div>
+
+          <div class="callout" style="font-size:12.5px;">
+            💡 <strong>使用提示</strong>：此頁面為管理中心，用於建立與維護標準 SOP。在處理「聊天對話」或「案件管理」時，側欄記事本與工單視窗均支援「從範本帶入」一鍵套用。
+          </div>
+
+          <div class="form-actions" style="justify-content:space-between;margin-top:20px;flex-wrap:wrap;gap:8px;">
+            <button type="button" class="btn small" data-action="copy-template-text" data-text="${esc(tmpl.body||tmpl.title||tmpl.name)}">${icon("copy")} 複製大綱文字</button>
+            <div style="display:flex;gap:8px;align-items:center;">
+              ${manager() ? `
+                <button type="button" class="btn small danger" data-action="delete-template-btn" data-id="${esc(tmpl.template_id)}" data-name="${esc(tmpl.name)}" data-type="${esc(tmplType)}">${icon("trash")} 刪除範本</button>
+                <button class="btn primary small" data-action="edit-template-modal" data-id="${esc(tmpl.template_id)}" data-name="${esc(tmpl.name)}" data-pack="${esc(packId)}" data-type="${esc(tmplType)}">${icon("edit")} 編輯此範本</button>
+              ` : ''}
+              <button type="button" class="btn small" onclick="$('modal').close()">關閉</button>
+            </div>
+          </div>
+        </div>
+      `);
+    }
+    else if(action==="copy-template-text"){
+      const text = target.dataset.text || "";
+      if(navigator.clipboard && navigator.clipboard.writeText){
+        await navigator.clipboard.writeText(text);
+      } else {
+        fallbackCopy(text);
+      }
+      notice("已複製範本大綱內容至剪貼簿。");
     }
     else if(action==="toggle-pack-enable"){
       const checked = target.checked;
@@ -3056,40 +3390,117 @@ document.addEventListener("click",async event=>{
       const tmplType = target.dataset.type;
       openTemplateWizard(2, { targetType: tmplType, packId });
     }
-    else if(action==="edit-template-modal"){
+    else if(action==="customize-preset-template"){
       const tmplId = target.dataset.id;
+      const tmplName = target.dataset.name;
       const packId = target.dataset.pack;
       const tmplType = target.dataset.type;
       
       const packsRes = await api('/api/template-packs');
       const pack = (packsRes.packs || []).find(p => p.pack_id === packId || p.key === packId);
       const list = tmplType === 'case' ? pack?.case_templates : pack?.note_templates;
-      const tmpl = (list || []).find(t => t.template_id === tmplId);
+      const tmpl = (list || []).find(t => t.template_id === tmplId || t.name === tmplName);
 
       if(!tmpl){
         notice("找不到該範本。", true);
         return;
       }
 
-      modal(`編輯${tmplType==="case"?"案件":"記事"}範本`, `<form id="template-form" data-pack="${esc(packId)}" data-type="${esc(tmplType)}" data-id="${esc(tmplId)}">
+      openTemplateWizard(2, {
+        targetType: tmplType,
+        name: tmpl.name,
+        title: tmpl.title || "",
+        body: tmpl.body || "",
+        category: tmpl.category_name || "一般",
+        priority: tmpl.priority || "medium"
+      });
+    }
+    else if(action==="edit-template-modal"){
+      const tmplId = target.dataset.id;
+      const tmplName = target.dataset.name;
+      const packId = target.dataset.pack;
+      const tmplType = target.dataset.type;
+      
+      const packsRes = await api('/api/template-packs');
+      const pack = (packsRes.packs || []).find(p => p.pack_id === packId || p.key === packId);
+      const list = tmplType === 'case' ? pack?.case_templates : pack?.note_templates;
+      const tmpl = (list || []).find(t => t.template_id === tmplId || t.name === tmplName);
+
+      if(!tmpl){
+        notice("找不到該範本。", true);
+        return;
+      }
+
+      modal(`編輯${tmplType==="case"?"案件":"記事"}範本`, `<form id="template-form" data-pack="${esc(packId||'universal')}" data-type="${esc(tmplType)}" data-id="${esc(tmpl.template_id)}">
         <div class="form-grid">
           <div class="full">${field("範本名稱", "name", tmpl.name, 'required maxlength="30"')}</div>
           ${field("預設分類名稱", "category_name", tmpl.category_name||"一般", 'maxlength="30"')}
           ${field("預設標題", "title", tmpl.title||"", 'maxlength="100"')}
-          <div class="full"><label class="field">內容骨架 / 檢查清單<textarea name="body" rows="4" maxlength="1000">${esc(tmpl.body||"")}</textarea></label></div>
+          ${renderDualFormatEditor("body", "tmpl-edit-body", tmpl.body || "", null)}
         </div>
-        <div class="form-actions" style="justify-content:space-between;">
-          <button type="button" class="btn text danger" data-action="delete-template-btn" data-id="${esc(tmplId)}" data-type="${esc(tmplType)}">${icon("trash")} 刪除範本</button>
+        <div class="form-actions" style="justify-content:space-between;margin-top:16px;">
+          <button type="button" class="btn text danger" data-action="delete-template-btn" data-id="${esc(tmpl.template_id)}" data-name="${esc(tmpl.name)}" data-type="${esc(tmplType)}">${icon("trash")} 刪除範本</button>
           <button class="btn primary" type="submit">儲存修改</button>
         </div>
       </form>`);
     }
     else if(action==="delete-template-btn"){
       const tmplType = target.dataset.type;
+      const tmplId = target.dataset.id || id;
+      const tmplName = target.dataset.name || "";
+      modal("確認刪除範本？", `<p>確定要刪除「${esc(tmplName || "此範本")}」嗎？既有已建立的案件或對話記事不受影響。</p>
+        <div class="form-actions" style="justify-content:flex-end;gap:8px;">
+          <button type="button" class="btn" onclick="$('modal').close()">取消</button>
+          <button type="button" class="btn danger" data-action="confirm-delete-template" data-id="${esc(tmplId)}" data-type="${esc(tmplType)}">確認刪除</button>
+        </div>`);
+    }
+    else if(action==="confirm-delete-template"){
+      const tmplType = target.dataset.type;
       await api('/api/templates/delete', {template_id: id, template_type: tmplType});
+      selectedTemplateItems.delete(id);
       $("modal").close();
       await loadTemplatesTabContent();
-      notice("範本已刪除。");
+      notice("範本已成功刪除。");
+    }
+    else if(action==="batch-delete-templates"){
+      if(selectedTemplateItems.size === 0){
+        notice("尚未勾選任何範本。", true);
+        return;
+      }
+      const items = Array.from(selectedTemplateItems.values());
+      const count = items.length;
+      const previewNames = items.slice(0, 5).map(it => `「${esc(it.name)}」`).join("、") + (count > 5 ? ` 等 ${count} 個範本` : "");
+
+      modal(`確認批次刪除 ${count} 個範本？`, `
+        <div class="form-grid">
+          <p>確定要刪除所勾選的 ${count} 個範本嗎？</p>
+          <div class="callout" style="max-height:140px;overflow-y:auto;font-size:12.5px;">
+            ${previewNames}
+          </div>
+          <p class="muted" style="font-size:12px;">💡 刪除後，既有已建立的案件或對話記事不會受到任何影響。</p>
+        </div>
+        <div class="form-actions" style="justify-content:flex-end;gap:8px;margin-top:16px;">
+          <button type="button" class="btn" onclick="$('modal').close()">取消</button>
+          <button type="button" class="btn danger" data-action="confirm-batch-delete-templates">${icon("trash")} 確認批次刪除 (${count})</button>
+        </div>
+      `);
+    }
+    else if(action==="confirm-batch-delete-templates"){
+      const items = Array.from(selectedTemplateItems.values()).map(it => ({
+        template_id: it.template_id || it.id,
+        template_type: it.template_type || it.type
+      }));
+      target.disabled = true;
+      const res = await api('/api/templates/batch-delete', { items });
+      const delCount = res.deleted_count || items.length;
+      selectedTemplateItems.clear();
+      $("modal").close();
+      await loadTemplatesTabContent();
+      notice(`已成功批次刪除 ${delCount} 項範本。`);
+    }
+    else if(action==="clear-selected-templates"){
+      selectedTemplateItems.clear();
+      loadTemplatesTabContent();
     }
     else if(action==="preview-apply-categories"){
       modal("套用分類組合", '<div class="loading-panel"><span class="spinner"></span><p>計算分類差異…</p></div>');
@@ -3169,6 +3580,10 @@ document.addEventListener("input",event=>{
   if(event.target.id==="chat-list-search"){if(typeof chatUI!=="undefined"){chatUI.query=event.target.value;if($("chat-room-list"))$("chat-room-list").innerHTML=renderChatRoomItems();}}
   if(event.target.id==="chat-inner-search-input"){if(typeof chatUI!=="undefined"){chatUI.searchQuery=event.target.value;const stream=$("chat-messages-stream");if(stream)stream.innerHTML=renderMessageBubbles();}}
   if(event.target.id==="oa-list-search"){state.oaSearch=event.target.value;if(state.view==="oa-list")render();}
+  if(event.target.id==="templates-search-input"){
+    templatesSearchQuery = event.target.value.trim();
+    loadTemplatesTabContent();
+  }
   if(event.target.id==="oa-switcher-filter"){
     const q=event.target.value.toLowerCase();
     document.querySelectorAll(".oa-switcher-item").forEach(item=>{
@@ -3181,6 +3596,34 @@ document.addEventListener("change",event=>{
   if(el.name==="color"&&el.closest(".color-swatch-card")){
     el.closest(".color-picker-grid")?.querySelectorAll(".color-swatch-card").forEach(card=>card.classList.remove("selected"));
     el.closest(".color-swatch-card")?.classList.add("selected");
+    return;
+  }
+  if(el.classList.contains("tmpl-card-select-cb")){
+    const tid = el.dataset.id;
+    const ttype = el.dataset.type;
+    const tname = el.dataset.name;
+    if(el.checked){
+      selectedTemplateItems.set(tid, { template_id: tid, template_type: ttype, name: tname });
+    } else {
+      selectedTemplateItems.delete(tid);
+    }
+    loadTemplatesTabContent();
+    return;
+  }
+  if(el.id === "tmpl-select-all-cb"){
+    const isChecked = el.checked;
+    const cbs = document.querySelectorAll(".tmpl-card-select-cb");
+    cbs.forEach(cb => {
+      const tid = cb.dataset.id;
+      const ttype = cb.dataset.type;
+      const tname = cb.dataset.name;
+      if(isChecked){
+        selectedTemplateItems.set(tid, { template_id: tid, template_type: ttype, name: tname });
+      } else {
+        selectedTemplateItems.delete(tid);
+      }
+    });
+    loadTemplatesTabContent();
     return;
   }
   if(el.id==="organization-select"){localStorage.setItem(organizationKey,el.value);location.replace(location.pathname+"?view=overview");return;}
@@ -3272,7 +3715,12 @@ document.addEventListener("submit",async event=>{if(event.target.id==="password-
       notice("已新增處理紀錄。");
       return;
     }else if(form.id==="chat-note-form"){
-      const recipient_id = form.dataset.recipient;
+      const recipient_id = form.dataset.recipient || values.recipient_id;
+      if(!recipient_id){
+        notice("請選擇關聯的聯絡對象。", true);
+        submit.disabled = false;
+        return;
+      }
       const note_id = form.dataset.noteId;
       const tags = values.tags ? values.tags.split(/[,，]/).map(s=>s.trim()).filter(Boolean) : [];
       await api('/api/chat-notes', {
@@ -3398,6 +3846,7 @@ document.addEventListener("submit",async event=>{if(event.target.id==="password-
     }else if(form.id==="template-form"){
       await api('/api/templates/save', {
         pack_id: form.dataset.pack,
+        template_id: form.dataset.id || undefined,
         template_type: form.dataset.type,
         name: values.name,
         category_name: values.category_name || "一般",
@@ -3406,7 +3855,7 @@ document.addEventListener("submit",async event=>{if(event.target.id==="password-
       });
       $("modal").close();
       await loadTemplatesTabContent();
-      notice("範本已建立。");
+      notice(form.dataset.id ? "範本已更新。" : "範本已建立。");
       return;
     }else if(form.id==="single-category-form"){
       await api('/api/categories/save', {

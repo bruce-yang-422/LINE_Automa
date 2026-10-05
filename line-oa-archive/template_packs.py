@@ -13,17 +13,17 @@ PRESET_PACKS = {
         'pack_id': 'universal',
         'key': 'universal',
         'name': '通用',
-        'description': '適用於多數一般溝通、諮詢與簡易報修情境（新 OA 預設）',
+        'description': '適用於各類諮詢、問題處理、聯絡備忘與日常工作流程（新 OA 預設）',
         'is_preset': True,
-        'note_types': ['一般', '待辦', '約定事項', '重要提醒', '交接'],
-        'case_categories': ['一般', '詢問', '申請', '報修', '反映'],
+        'note_types': ['一般', '待辦', '備忘', '重點提醒', '交接事項'],
+        'case_categories': ['一般', '諮詢', '申請', '報修', '反映'],
         'case_templates': [
             {
                 'template_id': 'preset_u_case_1',
-                'name': '一般詢問',
-                'category_name': '詢問',
-                'title': '{聯絡對象} - 一般詢問',
-                'body': '詢問內容：\n希望回覆方式：',
+                'name': '一般諮詢',
+                'category_name': '諮詢',
+                'title': '{聯絡對象} - 諮詢事項',
+                'body': '### 1. 諮詢確認\n- [ ] 詢問對象基本需求與現況\n- [ ] 確認回覆方式與期限\n\n### 2. 處置措施\n* **優先等級**：重要處理\n* **處理窗口**：\n* **備註說明**：',
                 'defaults': {'priority': 'medium', 'due_days': 2, 'ref_prompt': ''}
             },
             {
@@ -31,16 +31,24 @@ PRESET_PACKS = {
                 'name': '申請處理',
                 'category_name': '申請',
                 'title': '{聯絡對象} - 申請處理',
-                'body': '申請項目：\n申請日期：{今天}\n所需文件：',
+                'body': '### 1. 申請資料\n* **申請項目**：\n* **申請日期**：{今天}\n\n### 2. 檢核項目\n- [ ] 證件與必要文件核對\n- [ ] 案件建檔與派案\n- [ ] 主動通知申請人進度',
                 'defaults': {'priority': 'medium', 'due_days': 5, 'ref_prompt': '申請編號'}
             },
             {
                 'template_id': 'preset_u_case_3',
-                'name': '報修處理',
+                'name': '問題與報修',
                 'category_name': '報修',
-                'title': '{聯絡對象} - 報修處理',
-                'body': '品項：\n位置：\n狀況描述：\n發生時間：\n方便聯絡時間：',
+                'title': '{聯絡對象} - 問題報修',
+                'body': '### 1. 狀況描述\n* **品項/設備**：\n* **故障或問題現象**：\n* **發生時間**：\n\n### 2. 處置進度\n- [ ] 照片或事證留存\n- [ ] 安排專人聯絡處理\n- [ ] 完工/結案確認',
                 'defaults': {'priority': 'high', 'due_days': 3, 'ref_prompt': '設備或產品編號'}
+            },
+            {
+                'template_id': 'preset_u_case_4',
+                'name': '客戶反映',
+                'category_name': '反映',
+                'title': '{聯絡對象} - 客戶反映',
+                'body': '### 1. 反映事項\n* **發生時間與地點**：\n* **事件緣由**：\n\n### 2. 處置與回覆\n- [ ] 釐清狀況與原因\n- [ ] 研擬處置或改善方案\n- [ ] 專人回覆客戶說明',
+                'defaults': {'priority': 'high', 'due_days': 2, 'ref_prompt': ''}
             }
         ],
         'note_templates': [
@@ -49,355 +57,24 @@ PRESET_PACKS = {
                 'name': '聯絡紀錄',
                 'category_name': '一般',
                 'title': '聯絡紀錄 - {今天}',
-                'body': '聯絡對象：{聯絡對象}\n溝通重點：\n後續追蹤：',
+                'body': '### 溝通大綱\n* **對話對象**：{聯絡對象}\n* **溝通重點**：\n\n### 後續追蹤\n- [ ] 待回覆項目\n- [ ] 預計跟進日期：',
                 'defaults': {'tags': ['聯絡紀錄']}
             },
             {
                 'template_id': 'preset_u_note_2',
-                'name': '約定事項',
-                'category_name': '約定事項',
-                'title': '約定事項',
-                'body': '約定事項：\n預計完成日：\n相關窗口：',
-                'defaults': {'tags': ['約定事項']}
+                'name': '待辦事項',
+                'category_name': '待辦',
+                'title': '待辦事項 - {聯絡對象}',
+                'body': '### 事項清單\n- [ ] 待辦內容：\n- [ ] 預定完成日：\n- [ ] 協同負責人：',
+                'defaults': {'tags': ['待辦']}
             },
             {
                 'template_id': 'preset_u_note_3',
-                'name': '交接紀錄',
-                'category_name': '交接',
-                'title': '交接紀錄 - {今天}',
-                'body': '交接事項：\n目前進度：\n待確認項目：',
+                'name': '交接備忘',
+                'category_name': '交接事項',
+                'title': '交接備忘 - {今天}',
+                'body': '### 交接重點\n* **目前進度**：\n* **注意事項**：\n\n### 待辦清單\n- [ ] 需交接事項 1\n- [ ] 需交接事項 2',
                 'defaults': {'tags': ['交接']}
-            }
-        ]
-    },
-    'school': {
-        'pack_id': 'school',
-        'key': 'school',
-        'name': '學校',
-        'description': '適用於學校、班級、補習班與家長聯繫情境',
-        'is_preset': True,
-        'note_types': ['一般', '學習狀況', '出缺勤', '家長聯繫', '行政事務'],
-        'case_categories': ['一般', '請假', '輔導', '設備報修', '家長反映'],
-        'case_templates': [
-            {
-                'template_id': 'preset_sch_case_1',
-                'name': '請假申請',
-                'category_name': '請假',
-                'title': '{聯絡對象} - 請假申請',
-                'body': '請假日期：\n節次或時段：\n事由：',
-                'defaults': {'priority': 'medium', 'due_days': 1, 'ref_prompt': ''}
-            },
-            {
-                'template_id': 'preset_sch_case_2',
-                'name': '設備報修',
-                'category_name': '設備報修',
-                'title': '{OA} - 設備報修',
-                'body': '品項：\n教室/位置：\n狀況描述：\n發生時間：',
-                'defaults': {'priority': 'medium', 'due_days': 3, 'ref_prompt': '設備編號'}
-            },
-            {
-                'template_id': 'preset_sch_case_3',
-                'name': '家長反映',
-                'category_name': '家長反映',
-                'title': '{聯絡對象} - 家長反映事項',
-                'body': '反映事項：\n發生地點：\n期望處理方式：',
-                'defaults': {'priority': 'high', 'due_days': 2, 'ref_prompt': ''}
-            }
-        ],
-        'note_templates': [
-            {
-                'template_id': 'preset_sch_note_1',
-                'name': '家長聯繫紀錄',
-                'category_name': '家長聯繫',
-                'title': '家長聯繫 - {聯絡對象}',
-                'body': '通話/訊息摘要：\n家長主要回饋：\n導師後續事項：',
-                'defaults': {'tags': ['家長聯繫']}
-            },
-            {
-                'template_id': 'preset_sch_note_2',
-                'name': '學習狀況觀察',
-                'category_name': '學習狀況',
-                'title': '學習狀況紀錄',
-                'body': '觀察課堂/科目：\n具體表現：\n建議協助事項：',
-                'defaults': {'tags': ['學習觀察']}
-            }
-        ]
-    },
-    'election': {
-        'pack_id': 'election',
-        'key': 'election',
-        'name': '選舉／服務處',
-        'description': '適用於民意代表、候選人服務處與選民服務',
-        'is_preset': True,
-        'note_types': ['一般', '陳情', '服務案件', '活動', '選務'],
-        'case_categories': ['一般', '陳情', '服務申請', '活動', '選務'],
-        'case_templates': [
-            {
-                'template_id': 'preset_elc_case_1',
-                'name': '陳情案件',
-                'category_name': '陳情',
-                'title': '{聯絡對象} - 陳情事項',
-                'body': '陳情事由：\n發生地點：\n相關單位：\n期望協助方式：',
-                'defaults': {'priority': 'high', 'due_days': 7, 'ref_prompt': '地點或地址'}
-            },
-            {
-                'template_id': 'preset_elc_case_2',
-                'name': '服務申請',
-                'category_name': '服務申請',
-                'title': '{聯絡對象} - 服務申請',
-                'body': '申請項目：\n需求說明：\n預計完成期限：',
-                'defaults': {'priority': 'medium', 'due_days': 5, 'ref_prompt': '申請編號'}
-            }
-        ],
-        'note_templates': [
-            {
-                'template_id': 'preset_elc_note_1',
-                'name': '陳情訪談紀錄',
-                'category_name': '陳情',
-                'title': '訪談紀錄 - {聯絡對象}',
-                'body': '陳情人：{聯絡對象}\n訪談重點：\n承辦窗口：',
-                'defaults': {'tags': ['陳情訪談']}
-            },
-            {
-                'template_id': 'preset_elc_note_2',
-                'name': '活動聯繫',
-                'category_name': '活動',
-                'title': '活動聯繫紀錄',
-                'body': '活動名稱：\n活動日期：\n出席意向：',
-                'defaults': {'tags': ['活動聯繫']}
-            }
-        ]
-    },
-    'enterprise': {
-        'pack_id': 'enterprise',
-        'key': 'enterprise',
-        'name': '企業內部',
-        'description': '適用於企業內部行政、IT、採購與部門協作',
-        'is_preset': True,
-        'note_types': ['一般', '交辦', '會議紀錄', '行政', '交接'],
-        'case_categories': ['一般', 'IT 報修', '行政申請', '請假', '採購'],
-        'case_templates': [
-            {
-                'template_id': 'preset_ent_case_1',
-                'name': 'IT 報修',
-                'category_name': 'IT 報修',
-                'title': '{聯絡對象} - IT 問題報修',
-                'body': '問題系統/設備：\n錯誤訊息/狀況：\n急迫性：',
-                'defaults': {'priority': 'high', 'due_days': 1, 'ref_prompt': '設備序號'}
-            },
-            {
-                'template_id': 'preset_ent_case_2',
-                'name': '行政申請',
-                'category_name': '行政申請',
-                'title': '{聯絡對象} - 行政事務申請',
-                'body': '申請項目：\n用途說明：\n需求日期：',
-                'defaults': {'priority': 'medium', 'due_days': 3, 'ref_prompt': '表單編號'}
-            }
-        ],
-        'note_templates': [
-            {
-                'template_id': 'preset_ent_note_1',
-                'name': '會議紀錄',
-                'category_name': '會議紀錄',
-                'title': '會議紀錄 - {今天}',
-                'body': '會議主題：\n出席人員：\n決議事項：\n待辦行動：',
-                'defaults': {'tags': ['會議紀錄']}
-            },
-            {
-                'template_id': 'preset_ent_note_2',
-                'name': '交辦事項',
-                'category_name': '交辦',
-                'title': '交辦事項',
-                'body': '交辦內容：\n負責人：\n預計完成時間：',
-                'defaults': {'tags': ['交辦']}
-            }
-        ]
-    },
-    'government': {
-        'pack_id': 'government',
-        'key': 'government',
-        'name': '政府／對外窗口',
-        'description': '適用於公務機關、對外服務窗口與民眾查報',
-        'is_preset': True,
-        'note_types': ['一般', '陳情', '公文往返', '會勘', '追蹤'],
-        'case_categories': ['一般', '陳情', '查報', '申請', '會勘'],
-        'case_templates': [
-            {
-                'template_id': 'preset_gov_case_1',
-                'name': '民眾查報',
-                'category_name': '查報',
-                'title': '民眾查報案件',
-                'body': '查報項目：\n地點：\n照片/事證：\n發生時間：',
-                'defaults': {'priority': 'medium', 'due_days': 5, 'ref_prompt': '地點或地號'}
-            },
-            {
-                'template_id': 'preset_gov_case_2',
-                'name': '陳情處理',
-                'category_name': '陳情',
-                'title': '民眾陳情處理',
-                'body': '陳情主旨：\n案由說明：\n主責科室：',
-                'defaults': {'priority': 'high', 'due_days': 10, 'ref_prompt': '公文文號'}
-            }
-        ],
-        'note_templates': [
-            {
-                'template_id': 'preset_gov_note_1',
-                'name': '會勘紀錄',
-                'category_name': '會勘',
-                'title': '現場會勘紀錄 - {今天}',
-                'body': '會勘地點：\n會勘單位：\n現場結論：',
-                'defaults': {'tags': ['會勘']}
-            },
-            {
-                'template_id': 'preset_gov_note_2',
-                'name': '公文往返',
-                'category_name': '公文往返',
-                'title': '公文處理備註',
-                'body': '發文字號：\n主旨：\n辦理情形：',
-                'defaults': {'tags': ['公文']}
-            }
-        ]
-    },
-    'ngo': {
-        'pack_id': 'ngo',
-        'key': 'ngo',
-        'name': '公益團體',
-        'description': '適用於非營利組織、基金會、志工與捐款者服務',
-        'is_preset': True,
-        'note_types': ['一般', '志工', '捐款', '物資', '活動'],
-        'case_categories': ['一般', '物資需求', '志工排班', '捐款問題', '反映'],
-        'case_templates': [
-            {
-                'template_id': 'preset_ngo_case_1',
-                'name': '物資需求',
-                'category_name': '物資需求',
-                'title': '{聯絡對象} - 物資需求申請',
-                'body': '需求項目與數量：\n需求地點：\n聯絡窗口：',
-                'defaults': {'priority': 'medium', 'due_days': 7, 'ref_prompt': ''}
-            },
-            {
-                'template_id': 'preset_ngo_case_2',
-                'name': '志工排班',
-                'category_name': '志工排班',
-                'title': '{聯絡對象} - 志工排班確認',
-                'body': '服務日期與時段：\n服務地點：\n當日帶隊人：',
-                'defaults': {'priority': 'medium', 'due_days': 3, 'ref_prompt': ''}
-            }
-        ],
-        'note_templates': [
-            {
-                'template_id': 'preset_ngo_note_1',
-                'name': '志工聯繫',
-                'category_name': '志工',
-                'title': '志工聯繫紀錄',
-                'body': '志工姓名：{聯絡對象}\n聯繫事項：\n出勤意願：',
-                'defaults': {'tags': ['志工聯繫']}
-            },
-            {
-                'template_id': 'preset_ngo_note_2',
-                'name': '捐款者聯繫',
-                'category_name': '捐款',
-                'title': '捐款者關懷紀錄',
-                'body': '捐款者：{聯絡對象}\n收據需求：\n關懷事項：',
-                'defaults': {'tags': ['捐款關懷']}
-            }
-        ]
-    },
-    'club': {
-        'pack_id': 'club',
-        'key': 'club',
-        'name': '社團／同好會',
-        'description': '適用於社團、學會、協會、同好俱樂部活動與會員服務',
-        'is_preset': True,
-        'note_types': ['一般', '活動', '會員', '器材', '交接'],
-        'case_categories': ['一般', '活動報名', '器材借用', '會員問題', '反映'],
-        'case_templates': [
-            {
-                'template_id': 'preset_clb_case_1',
-                'name': '活動報名問題',
-                'category_name': '活動報名',
-                'title': '{聯絡對象} - 活動報名問題',
-                'body': '活動名稱：\n報名序號/場次：\n問題描述：',
-                'defaults': {'priority': 'medium', 'due_days': 3, 'ref_prompt': '活動名稱'}
-            },
-            {
-                'template_id': 'preset_clb_case_2',
-                'name': '器材借用',
-                'category_name': '器材借用',
-                'title': '{聯絡對象} - 器材借用申請',
-                'body': '借用器材清單：\n借用期間：\n歸還預定日：',
-                'defaults': {'priority': 'medium', 'due_days': 2, 'ref_prompt': '器材名稱'}
-            }
-        ],
-        'note_templates': [
-            {
-                'template_id': 'preset_clb_note_1',
-                'name': '活動籌備',
-                'category_name': '活動',
-                'title': '活動籌備紀錄',
-                'body': '活動名稱：\n工作分工：\n目前進度：',
-                'defaults': {'tags': ['活動籌備']}
-            },
-            {
-                'template_id': 'preset_clb_note_2',
-                'name': '會員聯繫',
-                'category_name': '會員',
-                'title': '會員聯繫紀錄',
-                'body': '會員姓名：{聯絡對象}\n溝通事項：',
-                'defaults': {'tags': ['會員聯繫']}
-            }
-        ]
-    },
-    'shop': {
-        'pack_id': 'shop',
-        'key': 'shop',
-        'name': '商店／客服',
-        'description': '適用於零售門市、電商客服、售後服務與訂單維修',
-        'is_preset': True,
-        'note_types': ['一般', '訂單', '售後服務', '客訴', '交接'],
-        'case_categories': ['一般', '訂單問題', '退換貨', '維修', '客訴'],
-        'case_templates': [
-            {
-                'template_id': 'preset_shp_case_1',
-                'name': '訂單問題',
-                'category_name': '訂單問題',
-                'title': '{聯絡對象} - 訂單諮詢',
-                'body': '購買商品：\n問題描述：\n希望處理方式：',
-                'defaults': {'priority': 'medium', 'due_days': 2, 'ref_prompt': '訂單編號'}
-            },
-            {
-                'template_id': 'preset_shp_case_2',
-                'name': '退換貨處理',
-                'category_name': '退換貨',
-                'title': '{聯絡對象} - 退換貨申請',
-                'body': '商品名稱與型號：\n退換原因：\n收件地址/門市：',
-                'defaults': {'priority': 'high', 'due_days': 3, 'ref_prompt': '訂單編號'}
-            },
-            {
-                'template_id': 'preset_shp_case_3',
-                'name': '維修處理',
-                'category_name': '維修',
-                'title': '{聯絡對象} - 產品維修',
-                'body': '產品型號：\n故障狀況：\n購買日期/保固狀態：',
-                'defaults': {'priority': 'medium', 'due_days': 5, 'ref_prompt': '產品序號'}
-            }
-        ],
-        'note_templates': [
-            {
-                'template_id': 'preset_shp_note_1',
-                'name': '客戶需求追蹤',
-                'category_name': '訂單',
-                'title': '客戶偏好與需求',
-                'body': '客戶偏好：\n詢問商品：\n後續跟進時機：',
-                'defaults': {'tags': ['客戶需求']}
-            },
-            {
-                'template_id': 'preset_shp_note_2',
-                'name': '售後追蹤',
-                'category_name': '售後服務',
-                'title': '售後關懷紀錄',
-                'body': '關懷事項：\n客戶滿意度：\n其他備註：',
-                'defaults': {'tags': ['售後追蹤']}
             }
         ]
     }
@@ -468,6 +145,17 @@ def list_oa_categories(conn: sqlite3.Connection, channel_id: str = None) -> dict
     }
 
 
+def get_deleted_preset_ids(conn: sqlite3.Connection, workspace_id: str = None) -> set:
+    try:
+        if workspace_id:
+            rows = conn.execute("SELECT template_id FROM deleted_preset_templates WHERE workspace_id=?", (workspace_id,)).fetchall()
+        else:
+            rows = conn.execute("SELECT template_id FROM deleted_preset_templates").fetchall()
+        return set(r[0] for r in rows)
+    except sqlite3.OperationalError:
+        return set()
+
+
 def list_all_packs(conn: sqlite3.Connection, workspace_id: str = None, channel_id: str = None) -> list:
     if not channel_id:
         channel_id = channels.current_id()
@@ -481,11 +169,15 @@ def list_all_packs(conn: sqlite3.Connection, workspace_id: str = None, channel_i
         ).fetchall()
     )
 
+    deleted_preset_ids = get_deleted_preset_ids(conn, workspace_id)
+
     packs = []
-    # 1. Preset packs
+    # 1. Preset packs (filtered by deleted_preset_ids)
     for k, p in PRESET_PACKS.items():
         pack_copy = dict(p)
         pack_copy['is_enabled'] = (k in enabled_keys)
+        pack_copy['case_templates'] = [t for t in p.get('case_templates', []) if t['template_id'] not in deleted_preset_ids]
+        pack_copy['note_templates'] = [t for t in p.get('note_templates', []) if t['template_id'] not in deleted_preset_ids]
         packs.append(pack_copy)
 
     # 2. Custom packs
@@ -662,8 +354,11 @@ def get_oa_enabled_templates(conn: sqlite3.Connection, channel_id: str, contact_
     enabled_rows = conn.execute("SELECT pack_key FROM oa_enabled_packs WHERE channel_id=?", (channel_id,)).fetchall()
     enabled_keys = [r[0] for r in enabled_rows]
 
-    oa_row = conn.execute("SELECT name FROM line_channels WHERE channel_id=?", (channel_id,)).fetchone()
+    oa_row = conn.execute("SELECT name, org_id FROM line_channels WHERE channel_id=?", (channel_id,)).fetchone()
     oa_name = oa_row[0] if oa_row else ""
+    workspace_id = oa_row[1] if oa_row else ""
+
+    deleted_preset_ids = get_deleted_preset_ids(conn, workspace_id)
 
     case_groups = []
     note_groups = []
@@ -674,6 +369,8 @@ def get_oa_enabled_templates(conn: sqlite3.Connection, channel_id: str, contact_
             # Case templates
             cts = []
             for t in p.get('case_templates', []):
+                if t['template_id'] in deleted_preset_ids:
+                    continue
                 t_copy = dict(t)
                 t_copy['rendered_title'] = substitute_template(t.get('title', ''), contact_name, oa_name)
                 t_copy['rendered_body'] = substitute_template(t.get('body', ''), contact_name, oa_name)
@@ -684,6 +381,8 @@ def get_oa_enabled_templates(conn: sqlite3.Connection, channel_id: str, contact_
             # Note templates
             nts = []
             for t in p.get('note_templates', []):
+                if t['template_id'] in deleted_preset_ids:
+                    continue
                 t_copy = dict(t)
                 t_copy['rendered_title'] = substitute_template(t.get('title', ''), contact_name, oa_name)
                 t_copy['rendered_body'] = substitute_template(t.get('body', ''), contact_name, oa_name)
@@ -893,8 +592,42 @@ def save_template(conn: sqlite3.Connection, workspace_id: str, template_type: st
     table = 'case_templates' if template_type == 'case' else 'note_templates'
     
     pack_id = payload.get('pack_id')
-    if not pack_id or pack_id in PRESET_PACKS:
-        raise ValueError('請選擇有效的自訂範本包。')
+    template_id = payload.get('template_id')
+    is_preset_source = bool(template_id and (template_id.startswith('preset_') or any(
+        any(t.get('template_id') == template_id for t in p.get('case_templates', []) + p.get('note_templates', []))
+        for p in PRESET_PACKS.values()
+    )))
+
+    if not pack_id or pack_id in PRESET_PACKS or pack_id == 'universal':
+        # Find first custom pack for this workspace or auto-create one
+        custom_pack = conn.execute("SELECT pack_id FROM template_packs WHERE workspace_id=? AND is_locked=0 ORDER BY created_at ASC", (workspace_id,)).fetchone()
+        if custom_pack:
+            pack_id = custom_pack[0]
+        else:
+            pack_id = uuid.uuid4().hex
+            now = now_iso()
+            conn.execute(
+                """INSERT INTO template_packs (pack_id, workspace_id, name, description, note_types_json, case_categories_json, is_locked, created_by, updated_by, created_at, updated_at)
+                   VALUES (?, ?, '自訂範本庫', '主要業務自訂範本庫', '["一般"]', '["一般"]', 0, ?, ?, ?, ?)""",
+                (pack_id, workspace_id, actor, actor, now, now)
+            )
+            ch = channels.current_id()
+            if ch:
+                conn.execute("INSERT OR IGNORE INTO oa_enabled_packs (channel_id, pack_key) VALUES (?, ?)", (ch, pack_id))
+
+    if is_preset_source:
+        # Mark preset template as deleted so it is replaced by this custom edit
+        conn.execute("""CREATE TABLE IF NOT EXISTS deleted_preset_templates (
+            workspace_id TEXT NOT NULL,
+            template_id TEXT NOT NULL,
+            deleted_at TEXT NOT NULL,
+            PRIMARY KEY (workspace_id, template_id)
+        )""")
+        conn.execute(
+            "INSERT OR REPLACE INTO deleted_preset_templates (workspace_id, template_id, deleted_at) VALUES (?, ?, ?)",
+            (workspace_id or '', template_id, now_iso())
+        )
+        template_id = None  # Insert as new custom template
     
     pack = conn.execute("SELECT is_locked FROM template_packs WHERE pack_id=? AND workspace_id=?", (pack_id, workspace_id)).fetchone()
     if not pack:
@@ -915,7 +648,6 @@ def save_template(conn: sqlite3.Connection, workspace_id: str, template_type: st
     if not isinstance(defaults, dict):
         defaults = {}
 
-    template_id = payload.get('template_id')
     now = now_iso()
 
     if template_id:
@@ -956,12 +688,44 @@ def save_template(conn: sqlite3.Connection, workspace_id: str, template_type: st
 
 
 def delete_template(conn: sqlite3.Connection, workspace_id: str, template_type: str, template_id: str, actor: str) -> bool:
+    if not template_id:
+        raise ValueError('缺少範本 ID。')
+
+    # Check if this is a preset template
+    is_preset = False
+    preset_name = ""
+    for p in PRESET_PACKS.values():
+        key = 'case_templates' if template_type == 'case' else 'note_templates'
+        for item in p.get(key, []):
+            if item.get('template_id') == template_id:
+                is_preset = True
+                preset_name = item.get('name', '預設範本')
+                break
+        if is_preset:
+            break
+
+    if is_preset or template_id.startswith('preset_'):
+        conn.execute("""CREATE TABLE IF NOT EXISTS deleted_preset_templates (
+            workspace_id TEXT NOT NULL,
+            template_id TEXT NOT NULL,
+            deleted_at TEXT NOT NULL,
+            PRIMARY KEY (workspace_id, template_id)
+        )""")
+        now = now_iso()
+        conn.execute(
+            "INSERT OR REPLACE INTO deleted_preset_templates (workspace_id, template_id, deleted_at) VALUES (?, ?, ?)",
+            (workspace_id or '', template_id, now)
+        )
+        import reports
+        reports.audit(conn, actor, f'template_{template_type}.delete', template_id, f"刪除內建{'案件' if template_type=='case' else '記事'}範本「{preset_name or template_id}」")
+        return True
+
     table = 'case_templates' if template_type == 'case' else 'note_templates'
     conn.row_factory = sqlite3.Row
     row = conn.execute(f"""SELECT t.*, p.workspace_id, p.is_locked as pack_locked 
                            FROM {table} t JOIN template_packs p ON t.pack_id=p.pack_id
                            WHERE t.template_id=?""", (template_id,)).fetchone()
-    if not row or row['workspace_id'] != workspace_id:
+    if not row or (workspace_id and row['workspace_id'] != workspace_id):
         raise ValueError('找不到範本。')
     if row['is_locked'] == 1 or row['pack_locked'] == 1:
         raise ValueError('範本或所屬範本包已鎖定，無法刪除。')
@@ -970,6 +734,21 @@ def delete_template(conn: sqlite3.Connection, workspace_id: str, template_type: 
     import reports
     reports.audit(conn, actor, f'template_{template_type}.delete', template_id, f"刪除{'案件' if template_type=='case' else '記事'}範本「{row['name']}」")
     return True
+
+
+def batch_delete_templates(conn: sqlite3.Connection, workspace_id: str, items: list, actor: str) -> int:
+    deleted = 0
+    for it in items:
+        tmpl_id = it.get('template_id')
+        tmpl_type = it.get('template_type', 'case')
+        if not tmpl_id:
+            continue
+        try:
+            delete_template(conn, workspace_id, tmpl_type, tmpl_id, actor)
+            deleted += 1
+        except Exception:
+            pass
+    return deleted
 
 
 def copy_template(conn: sqlite3.Connection, workspace_id: str, template_type: str, source_id: str, target_pack_id: str, new_name: str, actor: str) -> dict:
