@@ -49,17 +49,14 @@ class LimitsTests(unittest.TestCase):
 
     def test_note_tags_per_oa_cap(self):
         with app.database_connection() as conn:
-            per_note = limits.TAGS_PER_NOTE
-            for i in range(limits.NOTE_TAGS_PER_OA // per_note):
-                chat_notes.save_chat_note(conn, {
-                    'recipient_id': 'U_limit', 'content': f'記事 {i}',
-                    'tags': [f't{i}-{j}' for j in range(per_note)],
-                }, 'admin@test.com')
+            for i in range(limits.NOTE_TAGS_PER_OA):
+                chat_notes.save_note_tag(conn, f't{i}', actor_role='org_admin')
             self.assertEqual(chat_notes.list_note_tags(conn)['count'], limits.NOTE_TAGS_PER_OA)
-            with self.assertRaisesRegex(ValueError, '記事標籤已達上限'):
-                chat_notes.save_chat_note(conn, {'recipient_id': 'U_limit', 'content': '新標籤', 'tags': ['全新']}, 'admin@test.com')
-            # 沿用既有標籤不受影響
-            chat_notes.save_chat_note(conn, {'recipient_id': 'U_limit', 'content': '沿用', 'tags': ['t0-0']}, 'admin@test.com')
+            with self.assertRaises(ValueError):
+                chat_notes.save_note_tag(conn, '全新', actor_role='org_admin')
+            chat_notes.save_chat_note(conn, {'recipient_id': 'U_limit', 'content': '沿用', 'tags': ['t0']}, 'admin@test.com')
+            with self.assertRaisesRegex(ValueError, '既有標籤'):
+                chat_notes.save_chat_note(conn, {'recipient_id': 'U_limit', 'content': '不可自動新增', 'tags': ['全新']}, 'admin@test.com')
 
     def test_response_hours_validation_and_round_trip(self):
         with app.database_connection() as conn:

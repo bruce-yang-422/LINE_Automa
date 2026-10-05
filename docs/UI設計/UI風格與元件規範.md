@@ -1,6 +1,6 @@
 # 工作台 UI 風格與元件
 
-更新：2026-09-30。使用者指定以 Apple iOS／macOS 作為介面風格參考，使用低飽和綠色相近色、保留主色 `#00B900` 及 AA 文字對比要求。
+更新：2026-10-05（密集版面、個人化設定、圖示與 CSP 規則）；首版 2026-09-30。使用者指定以 Apple iOS／macOS 作為介面風格參考，使用低飽和綠色相近色、保留主色 `#00B900` 及 AA 文字對比要求。
 
 ## 設計方向
 
@@ -28,6 +28,39 @@
 系統字體依裝置採 `-apple-system`、`BlinkMacSystemFont`、Segoe UI Variable／Segoe UI、Microsoft JhengHei 等回退；沒有下載或散布 Apple 字型或 SF Symbols。
 
 桌面側欄 248px；850px 以下使用 272px 抽屜。1200px 以下詳情改為單欄；手機表單在 580px 以下改為底部表單，搜尋維持上方對話框。`admin.css`、`workspace-theme.css` 作為編譯來源保留，頁面統一載入 `app.css`。
+
+## 密集版面（2026-10-05）
+
+全系統改採密集版面，涵蓋導覽、總覽、卡片、表單、聊天、管理頁與登入頁。共用樣式為 `line-oa-archive/web/density.css`，由 `index.html` 與 `login.html` 在 `app.css`、`workspace-theme.css` 之後載入（伺服器以 `/density.css` 提供）。
+
+| 項目 | 尺寸 |
+| --- | --- |
+| 主內容內距 | 18px 20px |
+| 卡片內距 | 12px |
+| 區塊間距 | 10–12px |
+| 標準控制項高度 | 34px |
+| 小按鈕 | 30px |
+| 分段切換器 | 28px |
+| 表格垂直內距 | 8px |
+
+- 手機主要按鈕仍維持可點擊的觸控尺寸；密集化不得降低文字對比。
+- 聊天頁依參考 demo 採淡綠導覽、緊湊聊天室列表與寬幅對話區；卡片操作列置於卡片底部並可換行。
+
+## 個人化設定
+
+側欄「個人化設定」頁（`?view=personal-settings`）調整個人偏好，自動存在該瀏覽器的 `localStorage`，依登入帳號分開記住，不影響其他人：
+
+| 設定 | 選項 |
+| --- | --- |
+| 通知顯示位置 | 右下角（預設）、左下角、右上角、左上角；套用於一般通知與「復原」提示 |
+| 通知停留時間 | 1、3、5（預設）、8、10 秒或手動關閉 |
+| 閱讀尺寸 | 小、中（預設，依螢幕調整）、大；同步調整字級、按鈕高度、間距與側欄寬度（`html[data-reading]`） |
+| 動態效果 | 標準或減少動畫（`html[data-motion="reduced"]`） |
+
+## 圖示與行內樣式
+
+- **一律使用向量 SVG 圖示**（Apple SF Symbols 風格、`stroke-linecap="round"`），不使用作業系統原生 Emoji 或 Unicode 符號當圖示，確保跨裝置一致。檔案卡、媒體氣泡與記事操作皆已改為 SVG。
+- 管理後台送出 CSP `style-src 'self'; script-src 'self'`，瀏覽器不套用 `style="..."`，也不執行 `onclick=` 等行內事件。樣式寫成 class（`styles/app.css` 或 `web/workspace-theme.css`，修改後執行 `npm run build:css`），動態樣式以切換 class 或 `element.style` 設定，事件以 `addEventListener` 綁定。`web/inline-styles.css` 是由舊行內樣式轉出的對照表（`data-s` 屬性），新程式不要再新增。不得放寬 CSP。
 
 ## 品牌與可讀性
 

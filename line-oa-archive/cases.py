@@ -209,7 +209,7 @@ def create_case(conn: sqlite3.Connection, payload: dict, actor: str) -> dict:
     if priority not in ALLOWED_PRIORITIES:
         priority = 'medium'
         
-    category = (payload.get('category') or '一般').strip()
+    category = (payload.get('category') or '一般備忘').strip()
     description = (payload.get('description') or '').strip()
     if len(description) > 2000:
         raise ValueError('案件說明請限制在 2000 字以內。')
@@ -251,6 +251,25 @@ def create_case(conn: sqlite3.Connection, payload: dict, actor: str) -> dict:
     add_activity(conn, case_id, 'create_case', actor, activity_note,
                  source_message_id=source_message_id, source_snapshot=source_snapshot)
     return get_case(conn, case_id)
+
+
+def update_case_task(conn, payload, actor):
+    from chat_notes import set_markdown_task
+    c = get_case(conn, payload.get('case_id'))
+    if not c:
+        raise ValueError('找不到該案件。')
+    if c['is_locked'] or c['status'] == 'closed':
+        raise ValueError('鎖定或已結案的案件不能修改待辦項目。')
+    if payload.get('expected_content') != c['description']:
+        raise ValueError('案件已被修改，請重新開啟預覽後再操作。')
+    updated = set_markdown_task(c['description'], payload.get('task_index'), payload.get('checked'))
+    changed = conn.execute("""UPDATE cases SET description=?,updated_at=?
+        WHERE channel_id=current_channel() AND case_id=? AND description=? AND is_locked=0 AND status!='closed'""",
+        (updated, now_iso(), c['case_id'], c['description'])).rowcount
+    if not changed:
+        raise ValueError('案件已被修改，請重新開啟預覽後再操作。')
+    add_activity(conn, c['case_id'], 'note', actor, '勾選待辦項目' if payload['checked'] else '取消勾選待辦項目')
+    return get_case(conn, c['case_id'])
 
 
 def update_case(conn: sqlite3.Connection, case_id: str, payload: dict, actor: str) -> dict:
@@ -319,10 +338,19 @@ def update_case(conn: sqlite3.Connection, case_id: str, payload: dict, actor: st
     return get_case(conn, case_id)
 
 
-def toggle_case_lock(conn: sqlite3.Connection, case_id: str, actor: str) -> dict:
+def toggle_case_lock(conn: sqlite3.Connection, case_id: str, actor: str, actor_role: str = "") -> dict:
     c = get_case(conn, case_id)
     if not c:
         raise ValueError('找不到該案件。')
+    from chat_notes import get_org_note_policies
+    policy = get_org_note_policies(conn).get('note_lock_policy', 'disabled')
+    if policy == 'collaborative':
+        if actor_role == 'collaborator':
+            raise ValueError('全員協作防護模式下，協作人員不能鎖定或解鎖案件。')
+        if actor_role == 'operator' and c['is_locked'] and (not actor or actor != c.get('created_by')):
+            raise ValueError('全員協作防護模式下，操作人員只能解鎖自己建立的案件。')
+    if policy == 'strict_admin' and actor_role not in {'org_admin', 'platform_admin'}:
+        raise ValueError('嚴格管控模式下，只有管理員可以鎖定或解鎖案件。')
     new_locked = 0 if c['is_locked'] else 1
     ts = now_iso()
     conn.execute(
@@ -425,7 +453,7 @@ def add_activity(conn: sqlite3.Connection, case_id: str, activity_type: str, act
 def get_case(conn: sqlite3.Connection, case_id: str) -> dict | None:
     conn.row_factory = sqlite3.Row
     row = conn.execute(
-        """SELECT c.*, r.display_name as subject_display_name, r.custom_name as subject_custom_name, r.kind as subject_kind,
+        """SELECT c.*, (SELECT a.actor FROM case_activities a WHERE a.case_id=c.case_id AND a.channel_id=c.channel_id AND a.activity_type='create_case' ORDER BY a.created_at, a.activity_id LIMIT 1) AS created_by, r.display_name as subject_display_name, r.custom_name as subject_custom_name, r.kind as subject_kind,
                   r.contact_type as subject_contact_type, r.organization_name as subject_org_name
         FROM cases c
         LEFT JOIN recipients r ON c.case_subject_id=r.recipient_id AND r.channel_id=c.channel_id
@@ -477,7 +505,7 @@ def list_cases(conn: sqlite3.Connection, status: str = None, subject_id: str = N
                category: str = None, start_date: str = None, end_date: str = None, limit: int = limits.CASE_EXPORT_MAX) -> list:
     conn.row_factory = sqlite3.Row
     sql = """
-        SELECT c.*, r.display_name as subject_display_name, r.custom_name as subject_custom_name, r.kind as subject_kind,
+        SELECT c.*, (SELECT a.actor FROM case_activities a WHERE a.case_id=c.case_id AND a.channel_id=c.channel_id AND a.activity_type='create_case' ORDER BY a.created_at, a.activity_id LIMIT 1) AS created_by, r.display_name as subject_display_name, r.custom_name as subject_custom_name, r.kind as subject_kind,
                r.contact_type as subject_contact_type, r.organization_name as subject_org_name,
                (SELECT COUNT(*) FROM case_activities ca WHERE ca.case_id=c.case_id) as activity_count,
                (SELECT MAX(ca.created_at) FROM case_activities ca WHERE ca.case_id=c.case_id) as last_activity_at

@@ -81,6 +81,9 @@ class ProfileRefresher:
             if self.stopping.is_set():
                 break
             refresh_profile(rid)
+        if not self.stopping.is_set():
+            import member_profiles
+            member_profiles.tick(self.stopping)
 
     def start(self):
         def run():

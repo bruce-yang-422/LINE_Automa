@@ -153,6 +153,10 @@ function renderAvatarHtml(pictureUrl, name, isGroup, recipientId = "", extraClas
   return `<div class="${cls}"><span class="avatar-text">${esc(initial)}</span></div>`;
 }
 
+function roomMarkerIcon(kind){
+  const paths={pin:'M9 3h6l-1 5 3 3v2h-4v7l-1 2-1-2v-7H7v-2l3-3-1-5Z',star:'m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2L12 17.3l-5.6 2.9 1.1-6.2L3 9.6l6.2-.9L12 3Z',flag:'M5 21V3m0 1c5-4 9 4 14 0v10c-5 4-9-4-14 0'};
+  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="${paths[kind]}"></path></svg>`;
+}
 function renderChatRoomItems() {
   const filtered = chatUI.rooms.filter(r => {
     if (chatUI.filter === "unread" && r.unread_count === 0) return false;
@@ -168,6 +172,7 @@ function renderChatRoomItems() {
     return true;
   });
 
+  filtered.sort((a,b)=>Number(Boolean(b.is_pinned))-Number(Boolean(a.is_pinned)) || (a.is_pinned && b.is_pinned ? ({flag:2,star:1}[b.marker]||0)-({flag:2,star:1}[a.marker]||0):0));
   if (!filtered.length) {
     return `<div class="empty section-space">${icon("message")}<p class="muted">沒有符合條件的聊天室</p></div>`;
   }
@@ -179,7 +184,7 @@ function renderChatRoomItems() {
     const isGroup = r.kind !== 'user';
     const name = r.name || r.display_name;
 
-    return `<div class="chat-room-item ${isSelected ? 'active' : ''} ${unread ? 'has-unread' : ''}" data-action="select-chat-room" data-id="${esc(r.recipient_id)}">
+    return `<div class="chat-room-item ${isSelected ? 'active' : ''} ${unread ? 'has-unread' : ''} ${r.is_pinned?'room-pinned':''} room-marker-${r.marker||'none'}" data-action="select-chat-room" data-id="${esc(r.recipient_id)}">
       ${renderAvatarHtml(r.picture_url, name, isGroup, r.recipient_id)}
       <div class="chat-room-body">
         <div class="chat-room-top">
@@ -194,6 +199,7 @@ function renderChatRoomItems() {
             ${unread ? `<span class="unread-pill">${r.unread_count}</span>` : ''}
           </div>
         </div>
+        <div class="chat-room-markers" role="group" aria-label="聯絡人釘選與標記">${[['pin','釘選'],['star','星號'],['flag','紅旗']].map(([kind,text])=>`<button type="button" data-action="chat-room-marker" data-id="${esc(r.recipient_id)}" data-marker="${kind}" aria-label="${text}" aria-pressed="${kind==='pin'?Boolean(r.is_pinned):r.marker===kind}" class="${kind} ${(kind==='pin'?r.is_pinned:r.marker===kind)?'active':''}" ${r._saving?'disabled':''} title="${text}">${roomMarkerIcon(kind)}</button>`).join('')}</div>
       </div>
     </div>`;
   }).join("");
@@ -405,7 +411,7 @@ function renderMessageBubbles() {
     html += `<div class="chat-message-row ${isOutbound ? 'outbound' : 'inbound'}">
       <div class="chat-bubble-container">
         <div class="chat-bubble-meta">
-          <strong>${esc(m.sender_name || (isOutbound ? '管理員' : '使用者'))}</strong>
+          <strong title="${esc(m.sender_user_id || '')}">${esc(m.sender_name_resolved === false ? '成員（名稱待同步）' : (m.sender_name || (isOutbound ? '管理員' : '使用者')))}</strong>
         </div>
         <div class="chat-bubble ${isOutbound ? 'outbound' : 'inbound'} ${m.is_unsent ? 'unsent' : ''} ${isMediaBubble ? 'has-media' : ''}">
           ${bubbleContent}
@@ -422,44 +428,52 @@ function renderMessageBubbles() {
 
 function renderChatInfoContent(r) {
   const tags = r.tags || [];
-  const tagsHtml = tags.length ? tags.map(t => tagBadge(t)).join(" ") : '<span class="muted">無標籤</span>';
+  const tagsHtml = tags.length ? tags.map(t => tagBadge(t)).join(" ") : '<span class="chat-contact-untagged">未分組</span>';
+  const primary = label(r);
+  const hasCustom = Boolean(r.custom_name);
+  const showLineName = hasCustom && r.display_name && r.display_name !== primary;
+  const truncatedId = r.recipient_id ? (r.recipient_id.length > 12 ? r.recipient_id.slice(0, 4) + '...' + r.recipient_id.slice(-4) : r.recipient_id) : '';
+  const isGroup = r.kind !== "user";
+  const initial = primary.slice(0, 1).toUpperCase();
+  const avatarHtml = `<span class="avatar chat-profile-avatar ${isGroup ? "group" : ""}"><span class="avatar-text">${esc(initial)}</span>${r.picture_url ? `<img src="/api/chat/avatar/${encodeURIComponent(r.recipient_id)}" class="avatar-img" alt="${esc(primary)}">` : ''}</span>`;
 
   return `<div class="chat-info-header">
     <h3>聯絡資訊與歷程</h3>
     <button class="icon-button" data-action="toggle-chat-info" aria-label="關閉面板">${icon("close")}</button>
   </div>
   <div class="chat-info-body">
-    ${person(r)}
-    <div class="section-space">
-      <h4 class="info-section-title">對象資訊</h4>
-      <dl class="chat-info-dl">
-        <dt>類型</dt><dd>${contactTypeBadge(r.contact_type)}</dd>
-        ${r.organization_name ? `<dt>對方組織</dt><dd>${esc(r.organization_name)}</dd>` : ''}
-        ${r.job_title ? `<dt>職稱</dt><dd>${esc(r.job_title)}</dd>` : ''}
-        ${r.phone ? `<dt>電話</dt><dd><a href="tel:${esc(r.phone)}">${esc(r.phone)}</a></dd>` : ''}
-        ${r.email ? `<dt>Email</dt><dd><a href="mailto:${esc(r.email)}">${esc(r.email)}</a></dd>` : ''}
-        <dt>分類標籤</dt><dd class="contact-tags">${tagsHtml}</dd>
-      </dl>
-      ${manager() ? button("編輯聯絡資訊", "edit-contact", "btn small section-space", `data-id="${esc(r.recipient_id)}"`) : ''}
+    <!-- 1. Contact Profile Card -->
+    <div class="chat-info-card chat-profile-card">
+      <div class="chat-profile-head">
+        ${avatarHtml}
+        <div class="chat-profile-meta">
+          <div class="chat-profile-title-row"><div class="chat-profile-name" title="${esc(primary)}">${esc(primary)}</div>${contactTypeBadge(r.contact_type)}</div>
+          <div class="chat-profile-sub">
+            <span class="muted">${isGroup ? "LINE 群組" : "個人聊天室"}</span>
+            ${showLineName ? `<span class="muted">· LINE: ${esc(r.display_name)}</span>` : ''}
+            ${truncatedId ? `<span class="line-id-chip" title="${esc(r.recipient_id)}">${esc(truncatedId)}</span>` : ''}
+          </div>
+        </div>
+        ${manager() ? `<button type="button" class="btn small text chat-profile-edit-btn" data-action="edit-contact" data-id="${esc(r.recipient_id)}" title="編輯聯絡資訊">${icon("edit")} 編輯資料</button>` : ''}
+      </div>
+
+      <div class="chat-profile-tags"><span class="muted">標籤</span><div class="contact-tags">${tagsHtml}</div>${manager() ? `<button type="button" class="btn small text" data-action="edit-contact" data-id="${esc(r.recipient_id)}" aria-label="編輯聯絡人標籤">${icon("plus")} 編輯標籤</button>` : ''}</div>
+      ${(r.phone || r.email) ? `<div class="chat-profile-channels">
+        ${r.phone ? `<div>${icon("phone")}<span class="muted">手機</span><a href="tel:${esc(r.phone)}">${esc(r.phone)}</a></div>` : ''}
+        ${r.email ? `<div>${icon("mail")}<span class="muted">信箱</span><a href="mailto:${esc(r.email)}">${esc(r.email)}</a></div>` : ''}
+      </div>` : ''}
+      <div class="chat-contact-note" aria-label="聯絡人備註"><strong>${icon("file")} 備註</strong><div>${r.notes ? esc(r.notes) : '<span class="muted">尚未填寫備註</span>'}</div></div>
+      ${(r.organization_name || r.job_title) ? `<details class="chat-profile-details"><summary>組織與職稱</summary><div class="chat-info-kv-grid">
+        ${r.organization_name ? `
+        <div class="chat-info-k">對方組織</div>
+        <div class="chat-info-v">${esc(r.organization_name)}</div>` : ''}
+        ${r.job_title ? `
+        <div class="chat-info-k">職稱</div>
+        <div class="chat-info-v">${esc(r.job_title)}</div>` : ''}
+      </div></details>` : ''}
     </div>
 
-    <div class="chat-notes-box section-space">
-      <div class="case-context-header">
-        <strong>${icon("file")} 對話記事本</strong>
-        ${button(icon("plus") + "新增記事", "new-chat-note", "btn small", `data-id="${esc(r.recipient_id)}"`)}
-      </div>
-      <div id="chat-notes-list-container">
-        ${renderChatNotesList(r.recipient_id)}
-      </div>
-    </div>
-
-    <div class="case-context-box section-space">
-      <div class="case-context-header">
-        <strong>${icon("folder")} 關聯案件</strong>
-        ${button(icon("plus") + "建立案件", "new-case-modal", "btn small", `data-id="${esc(r.recipient_id)}"`)}
-      </div>
-      ${renderContactCases(r.recipient_id)}
-    </div>
+    ${renderChatWorkPanel(r.recipient_id)}
   </div>`;
 }
 
@@ -657,16 +671,22 @@ function chatAction(action, id, target) {
     selectChatRoom(id);
     return true;
   }
-  if (action === "copy-chat-note-content") {
-    const el = document.getElementById("chat-note-content-" + id);
-    const content = el ? el.innerText : "";
-    if (content) {
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(content).then(() => notice("記事內容已複製至剪貼簿。")).catch(() => fallbackCopy(content));
+  if (action === "toggle-chat-note-expand") {
+    const contentEl = document.getElementById("chat-note-content-" + id);
+    if (contentEl) {
+      const isCollapsed = contentEl.classList.contains("collapsed");
+      if (isCollapsed) {
+        contentEl.classList.remove("collapsed");
+        target.innerHTML = `${icon("chevron-up")} 收合內容`;
       } else {
-        fallbackCopy(content);
+        contentEl.classList.add("collapsed");
+        target.innerHTML = `${icon("chevron-down")} 展開全文`;
       }
     }
+    return true;
+  }
+  if (action === "copy-chat-note-content") {
+    noteCopyOptions(id).catch(error => notice(error.message, true));
     return true;
   }
   if (action === "toggle-chat-note-complete") {
@@ -729,7 +749,7 @@ function chatAction(action, id, target) {
       createCaseModal(recId, {
         title: note.title || "從記事建立案件",
         description: note.content || "",
-        category: note.category_name || note.note_type || "一般"
+        category: note.category_name || note.note_type || "一般備忘"
       });
     }
     return true;
@@ -1028,11 +1048,37 @@ async function pollChat() {
       render();
     }
     // 聯絡對象頁：新加入的對象與背景查到的 LINE 名稱會自動出現；使用者正在輸入或開著視窗時不重畫。
+    if (viewingChat && chatUI.selectedId && !$("modal").open && chatUI.messages.some(m => m.sender_name_resolved === false)) {
+      await refreshVisibleMemberNames();
+    }
     if (viewingContacts) await refreshContactsIfChanged();
   } catch (e) {
     console.warn("Chat polling failed:", e);
   } finally {
     chatNotify.polling = false;
+  }
+}
+
+async function refreshVisibleMemberNames() {
+  const recipientId = chatUI.selectedId, channel = lineUI.channel;
+  const res = await api(`/api/chat/messages?recipient_id=${encodeURIComponent(recipientId)}`);
+  if (chatUI.selectedId !== recipientId || lineUI.channel !== channel || state.view !== "chat") return;
+  const names = new Map((res.messages || []).map(m => [m.sender_user_id, m]));
+  let changed = false;
+  chatUI.messages.forEach(message => {
+    const cachedName = res.member_names?.[message.sender_user_id];
+    const fresh = cachedName ? {sender_name: cachedName, sender_name_resolved: true} : names.get(message.sender_user_id);
+    if (message.sender_name_resolved === false && fresh?.sender_name_resolved) {
+      message.sender_name = fresh.sender_name;
+      message.sender_name_resolved = true;
+      changed = true;
+    }
+  });
+  const stream = $("chat-messages-stream");
+  if (changed && stream) {
+    const scroll = stream.scrollTop;
+    stream.innerHTML = renderMessageBubbles();
+    stream.scrollTop = scroll;
   }
 }
 

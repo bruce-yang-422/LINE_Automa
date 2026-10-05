@@ -69,7 +69,7 @@ LINE OA 憑證、客製模組（天氣訂閱）與後台帳號一律在管理後
 
 ## 介面樣式
 
-全站使用 Tailwind CSS 4 本機編譯，入口為 `styles/app.css`，輸出 `line-oa-archive/web/app.css`（部署時需包含）。修改樣式後重新建置；一般啟動不需要 Node.js：
+全站使用 Tailwind CSS 4 本機編譯，入口為 `styles/app.css`，輸出 `line-oa-archive/web/app.css`（部署時需包含）；密集版面另載入 `line-oa-archive/web/density.css`（不經編譯）。修改樣式後重新建置；一般啟動不需要 Node.js：
 
 ```powershell
 npm ci
@@ -87,14 +87,15 @@ Pop-Location
 powershell.exe -NoProfile -File .\tests\control_lifecycle.ps1
 # 瀏覽器測試需要 Playwright 與 Chrome
 node tests/workspace_browser.cjs
+node tests/compact_browser.cjs
+node tests/chat_notes_preview.cjs
 ```
 
 測試使用臨時設定、資料庫與連接埠，不呼叫真實 LINE API，也不控制正式 Cloudflared。
 
 ## 文件
 
-- [專案文件索引](docs/README.md)
-- [權限與角色規格](docs/功能規格/權限與角色規格.md)、[網站登入](docs/功能規格/網站登入.md)、[對話記事本管理規格](docs/功能規格/對話記事本管理規格.md)
+- [專案文件索引](docs/README.md)（功能規格、權限、UI 規範）
 - [Bot 功能與資料庫說明](line-oa-archive/README.md)
 - [LINE OA 申請與設定](line-oa-archive/LINE_OA申請與設定.md)
 - `line-bot-sdk-python/` 只供本機參考，不納入 Git。

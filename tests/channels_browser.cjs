@@ -38,7 +38,7 @@ async function contrast(page,label){
   return {label,...result};
 }
 (async()=>{
- const dir=path.resolve('line-oa-archive/instance');fs.mkdirSync(dir,{recursive:true});
+ const dir=path.resolve('test-results/channels_browser');fs.mkdirSync(dir,{recursive:true});
  const file=path.join(dir,`oa-fixture-${Date.now()}.json`),stop=file.replace(/\.json$/,'.stop');
  const child=spawn(path.resolve('.venv/Scripts/python.exe'),['tests/workspace_fixture.py',file,'--multi-oa'],{windowsHide:true,stdio:['ignore','ignore','pipe']});
  let stderr='',browser;child.stderr.on('data',v=>stderr+=v);

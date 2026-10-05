@@ -26,7 +26,7 @@ LINE OA → https://<PUBLIC_BASE_URL>/webhook/<OA 識別碼>
 
 ## 資料庫
 
-- `schema.sql` 是唯一的資料結構來源；`app.initialize_database()` 只執行此檔並寫入 `PRAGMA user_version`，可重複執行，不改動既有資料。之後若需變更結構，以編號的升級檔處理，不在啟動時補欄位。
+- `schema.sql` 是唯一的資料結構來源；`app.initialize_database()` 僅在全新建庫時執行此檔並寫入 `PRAGMA user_version = 2`；同版重啟不重建、不補欄位、不搬移舊資料。其他版本必須先備份並重置。
 - 第七階段以前的舊版資料庫沒有結構版本，服務會拒絕啟動並提示先備份、重建。
 - 所有營運資料都帶 OA 範圍（`channel_id`）；組織 ID 欄位一律為 `organization_id`。
 - OA 憑證以 `instance/line-credentials.key` 加密保存。**請連同資料庫一起備份金鑰檔**，遺失就無法解密已保存的憑證，只能在網頁重新輸入。

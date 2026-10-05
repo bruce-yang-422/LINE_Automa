@@ -8,6 +8,7 @@
 import csv
 import io
 import json
+import re
 import sqlite3
 import uuid
 from datetime import datetime, timezone, timedelta
@@ -30,25 +31,21 @@ def get_taipei_now() -> datetime:
 # ----------------- 預設 Apple HIG 分類與標籤 -----------------
 
 DEFAULT_CATEGORIES = [
-    {"name": "商務商談", "color": "#007AFF", "sort_order": 1},
-    {"name": "工程工務", "color": "#FF9500", "sort_order": 2},
-    {"name": "政策民意", "color": "#AF52DE", "sort_order": 3},
-    {"name": "商務協商", "color": "#30B0C7", "sort_order": 4},
-    {"name": "學校教務", "color": "#34C759", "sort_order": 5},
-    {"name": "售後客服", "color": "#FF3B30", "sort_order": 6},
-    {"name": "學生筆記", "color": "#FFCC00", "sort_order": 7},
-    {"name": "一般備忘", "color": "#8E8E93", "sort_order": 8},
+    {"name": "一般備忘", "color": "#8E8E93", "sort_order": 1},
+    {"name": "商務往來", "color": "#007AFF", "sort_order": 2},
+    {"name": "問題處理", "color": "#FF9500", "sort_order": 3},
+    {"name": "待辦交接", "color": "#34C759", "sort_order": 4},
 ]
 
 DEFAULT_TAGS = [
     {"name": "急件優先", "color": "#FF3B30", "category": "優先等級"},
-    {"name": "待主管確認", "color": "#FFCC00", "category": "審核流程"},
-    {"name": "已報價", "color": "#007AFF", "category": "商務進度"},
-    {"name": "重要協議", "color": "#5856D6", "category": "法律合約"},
-    {"name": "需二次回訪", "color": "#30B0C7", "category": "追蹤進度"},
-    {"name": "現場勘查", "color": "#FF9500", "category": "工務執行"},
-    {"name": "交接待辦", "color": "#34C759", "category": "內部協作"},
-    {"name": "處理中", "color": "#8E8E93", "category": "任務狀態"},
+    {"name": "待確認", "color": "#FFCC00", "category": "追蹤"},
+    {"name": "待追蹤", "color": "#30B0C7", "category": "追蹤"},
+    {"name": "需回覆", "color": "#AF52DE", "category": "追蹤"},
+    {"name": "已報價", "color": "#007AFF", "category": "商務"},
+    {"name": "合約文件", "color": "#5856D6", "category": "文件"},
+    {"name": "技術支援", "color": "#FF9500", "category": "服務"},
+    {"name": "交接事項", "color": "#34C759", "category": "協作"},
 ]
 
 
@@ -346,6 +343,45 @@ def list_global_chat_notes(conn: sqlite3.Connection, query_params: dict, user_ro
     }
 
 
+def set_markdown_task(content, task_index, checked):
+    if type(task_index) is not int or task_index < 0 or type(checked) is not bool:
+        raise ValueError('待辦項目格式不正確。')
+    code_spans = [m.span() for m in re.finditer(r'```[a-zA-Z0-9_-]*\r?\n[\s\S]*?```', content)]
+    tasks = [m for m in re.finditer(r'^[ \t]*[-*][ \t]+\[([ xX])\][ \t]*[^\r\n]*', content, re.MULTILINE)
+             if not any(start <= m.start() < end for start, end in code_spans)]
+    if task_index >= len(tasks):
+        raise ValueError('找不到此待辦項目。')
+    start, end = tasks[task_index].span(1)
+    return content[:start] + ('x' if checked else ' ') + content[end:]
+
+
+def update_note_task(conn, payload, actor):
+    """Change one Markdown task while preserving metadata and concurrent edits."""
+    note_id = payload.get('note_id')
+    task_index = payload.get('task_index')
+    checked = payload.get('checked')
+    if type(task_index) is not int or task_index < 0 or type(checked) is not bool:
+        raise ValueError('待辦項目格式不正確。')
+    conn.row_factory = sqlite3.Row
+    note = conn.execute("SELECT * FROM chat_notes WHERE channel_id=current_channel() AND note_id=? AND (deleted_at='' OR deleted_at IS NULL)", (note_id,)).fetchone()
+    if not note:
+        raise ValueError('找不到此記事。')
+    if note['is_locked']:
+        raise ValueError('此記事已鎖定，請先解除鎖定。')
+    if payload.get('expected_content') != note['content']:
+        raise ValueError('記事已被修改，請重新開啟預覽後再操作。')
+    content = note['content']
+    updated = set_markdown_task(content, task_index, checked)
+    ts = now_iso()
+    changed = conn.execute("""UPDATE chat_notes SET content=?,updated_at=?
+        WHERE channel_id=current_channel() AND note_id=? AND content=? AND is_locked=0
+        AND (deleted_at='' OR deleted_at IS NULL)""", (updated, ts, note_id, content)).rowcount
+    if not changed:
+        raise ValueError('記事已被修改，請重新開啟預覽後再操作。')
+    reports.audit(conn, actor, 'chat_note.task', note_id, '勾選待辦項目' if checked else '取消勾選待辦項目')
+    return {'note_id': note_id, 'content': updated, 'updated_at': ts}
+
+
 def save_chat_note(conn: sqlite3.Connection, payload: dict, actor: str, actor_role: str = '') -> dict:
     """新增或修改記事（明確手動儲存）。"""
     note_id = (payload.get('note_id') or payload.get('id') or '').strip()
@@ -353,7 +389,7 @@ def save_chat_note(conn: sqlite3.Connection, payload: dict, actor: str, actor_ro
     title = (payload.get('title') or '').strip()[:100]
     content = (payload.get('content') or '').strip()
     category_id = (payload.get('category_id') or '').strip()
-    note_type = (payload.get('note_type') or '一般').strip()[:40]
+    note_type = (payload.get('note_type') or '一般備忘').strip()[:40]
     target_user_id = (payload.get('target_user_id') or payload.get('about_member_id') or '').strip()
     due_date = (payload.get('due_date') or '').strip()
     source_message_id = (payload.get('source_message_id') or '').strip()
@@ -394,25 +430,12 @@ def save_chat_note(conn: sqlite3.Connection, payload: dict, actor: str, actor_ro
     else:
         tags = []
 
-    # 檢查標籤政策與數量上限
+    # 記事僅選用治理清單中的標籤，新增標籤須經標籤管理。
+    ensure_default_tags(conn, channels.current_id())
     if tags:
-        policies = get_org_note_policies(conn)
-        existing_tags = set(t['name'] for t in list_note_tags(conn)['tags'])
-        new_tags_attempt = set(tags) - existing_tags
-
-        if len(existing_tags | set(tags)) > limits.NOTE_TAGS_PER_OA and new_tags_attempt:
-            raise ValueError(f'此 OA 的記事標籤已達上限（{limits.NOTE_TAGS_PER_OA} 個），請沿用既有標籤或先刪除不用的標籤。')
-
-        if new_tags_attempt:
-            if actor_role == 'collaborator':
-                raise ValueError('協作人員僅能選用既有標準標籤，無法自創新標籤。')
-            for nt in new_tags_attempt:
-                tag_id = uuid.uuid4().hex
-                conn.execute(
-                    """INSERT OR IGNORE INTO chat_note_tags (tag_id, channel_id, name, color, category, created_at)
-                    VALUES (?, current_channel(), ?, '#007AFF', 'general', ?)""",
-                    (tag_id, nt, now_iso())
-                )
+        existing_tags = {t['name'] for t in list_note_tags(conn)['tags']}
+        if set(tags) - existing_tags:
+            raise ValueError('請選用清單中的既有標籤；新增標籤請至分類與標籤管理。')
 
     tags_json = json.dumps(tags, ensure_ascii=False)
     ts = now_iso()
@@ -448,7 +471,7 @@ def save_chat_note(conn: sqlite3.Connection, payload: dict, actor: str, actor_ro
         )
 
         # 更新多對多標籤關聯表
-        _sync_note_tags_assignments(conn, note_id, tags)
+
 
         return {
             'note_id': note_id,
@@ -490,7 +513,7 @@ def save_chat_note(conn: sqlite3.Connection, payload: dict, actor: str, actor_ro
         )
 
         # 寫入標籤關聯
-        _sync_note_tags_assignments(conn, new_id, tags)
+
 
         return {
             'note_id': new_id,
@@ -513,28 +536,6 @@ def save_chat_note(conn: sqlite3.Connection, payload: dict, actor: str, actor_ro
             'created_at': ts,
             'updated_at': ts
         }
-
-
-def _sync_note_tags_assignments(conn: sqlite3.Connection, note_id: str, tags: list) -> None:
-    cid = channels.current_id()
-    conn.execute(
-        "DELETE FROM chat_note_tag_assignments WHERE channel_id=? AND note_id=?",
-        (cid, note_id)
-    )
-    if not tags:
-        return
-    ts = now_iso()
-    for tag_name in tags:
-        tag_row = conn.execute(
-            "SELECT tag_id FROM chat_note_tags WHERE channel_id=? AND name=?",
-            (cid, tag_name)
-        ).fetchone()
-        if tag_row:
-            conn.execute(
-                """INSERT OR IGNORE INTO chat_note_tag_assignments (channel_id, note_id, tag_id, created_at)
-                VALUES (?, ?, ?, ?)""",
-                (cid, note_id, tag_row[0], ts)
-            )
 
 
 def toggle_note_pin(conn: sqlite3.Connection, note_id: str) -> dict:
@@ -564,22 +565,25 @@ def toggle_note_pin(conn: sqlite3.Connection, note_id: str) -> dict:
     return {'note_id': note_id, 'is_pinned': new_pin}
 
 
-def toggle_note_lock(conn: sqlite3.Connection, note_id: str, actor_role: str = '') -> dict:
+def toggle_note_lock(conn: sqlite3.Connection, note_id: str, actor_role: str = '', actor: str = '') -> dict:
     """切換記事鎖定狀態（依據組織 note_lock_policy 嚴格校驗）。"""
     policies = get_org_note_policies(conn)
     lock_policy = policies.get('note_lock_policy', 'disabled')
 
-    if lock_policy == 'disabled':
-        raise ValueError('組織目前設定為自由編輯模式，無需使用鎖定功能。')
-    elif lock_policy == 'strict_admin' and actor_role not in {'org_admin', 'platform_admin'}:
+    if lock_policy == 'collaborative' and actor_role == 'collaborator':
+        raise ValueError('全員協作防護模式下，協作人員不能鎖定或解鎖記事。')
+    if lock_policy == 'strict_admin' and actor_role not in {'org_admin', 'platform_admin'}:
         raise ValueError('組織設定為嚴格合規模式，僅組織管理員可以鎖定或解鎖記事。')
 
     note = conn.execute(
-        "SELECT is_locked FROM chat_notes WHERE channel_id=current_channel() AND note_id=?",
+        "SELECT is_locked, author FROM chat_notes WHERE channel_id=current_channel() AND note_id=?",
         (note_id,)
     ).fetchone()
     if not note:
         raise ValueError('找不到此記事。')
+
+    if lock_policy == 'collaborative' and actor_role == 'operator' and note[0] and (not actor or actor != note[1]):
+        raise ValueError('全員協作防護模式下，操作人員只能解鎖自己建立的記事。')
 
     new_locked = 0 if note[0] else 1
     ts = now_iso()
@@ -613,7 +617,7 @@ def toggle_note_completed(conn: sqlite3.Connection, note_id: str) -> dict:
 def delete_chat_note(conn: sqlite3.Connection, note_id: str, actor_role: str = '') -> bool:
     """軟刪除記事（移入垃圾桶）。"""
     note = conn.execute(
-        "SELECT is_locked FROM chat_notes WHERE channel_id=current_channel() AND note_id=?",
+        "SELECT is_locked, author FROM chat_notes WHERE channel_id=current_channel() AND note_id=?",
         (note_id,)
     ).fetchone()
     if not note:
@@ -645,10 +649,6 @@ def purge_chat_note(conn: sqlite3.Connection, note_id: str, actor_role: str = ''
         raise ValueError('只有管理員可以永久刪除記事。')
     
     cid = channels.current_id()
-    conn.execute(
-        "DELETE FROM chat_note_tag_assignments WHERE channel_id=? AND note_id=?",
-        (cid, note_id)
-    )
     res = conn.execute(
         "DELETE FROM chat_notes WHERE channel_id=? AND note_id=? AND deleted_at<>''",
         (cid, note_id)
@@ -1079,7 +1079,7 @@ def merge_note_tags(conn: sqlite3.Connection, source_names: list, target_name: s
                 "UPDATE chat_notes SET tags_json=? WHERE channel_id=? AND note_id=?",
                 (json.dumps(new_tags, ensure_ascii=False), cid, nid)
             )
-            _sync_note_tags_assignments(conn, nid, new_tags)
+
 
     # 刪除被合併的來源標籤
     placeholders = ",".join("?" for _ in clean_sources)
@@ -1132,7 +1132,7 @@ def delete_note_tag(conn: sqlite3.Connection, name: str, actor_role: str = '') -
                 "UPDATE chat_notes SET tags_json=? WHERE channel_id=? AND note_id=?",
                 (json.dumps(new_tags, ensure_ascii=False), cid, nid)
             )
-            _sync_note_tags_assignments(conn, nid, new_tags)
+
 
     conn.execute(
         "DELETE FROM chat_note_tags WHERE channel_id=? AND name=?",

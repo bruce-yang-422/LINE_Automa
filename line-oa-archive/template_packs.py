@@ -15,8 +15,8 @@ PRESET_PACKS = {
         'name': '通用',
         'description': '適用於各類諮詢、問題處理、聯絡備忘與日常工作流程（新 OA 預設）',
         'is_preset': True,
-        'note_types': ['一般', '待辦', '備忘', '重點提醒', '交接事項'],
-        'case_categories': ['一般', '諮詢', '申請', '報修', '反映'],
+        'note_types': ['一般備忘', '待辦', '備忘', '重點提醒', '交接事項'],
+        'case_categories': ['一般備忘', '諮詢', '申請', '報修', '反映', '售後'],
         'case_templates': [
             {
                 'template_id': 'preset_u_case_1',
@@ -49,13 +49,21 @@ PRESET_PACKS = {
                 'title': '{聯絡對象} - 客戶反映',
                 'body': '### 1. 反映事項\n* **發生時間與地點**：\n* **事件緣由**：\n\n### 2. 處置與回覆\n- [ ] 釐清狀況與原因\n- [ ] 研擬處置或改善方案\n- [ ] 專人回覆客戶說明',
                 'defaults': {'priority': 'high', 'due_days': 2, 'ref_prompt': ''}
+            },
+            {
+                'template_id': 'preset_u_case_5',
+                'name': '退換補寄與售後',
+                'category_name': '售後',
+                'title': '{聯絡對象} - 訂單售後/退換補寄處理',
+                'body': '### 1. 訂單與售後類別\n* **訂單編號 / 平台**：\n* **購買品項與數量**：\n* **申請類別**：\n  - [ ] 缺貨通知 / 換款 / 差額退款\n  - [ ] 數量短缺 / 漏發補寄\n  - [ ] 瑕疵破損 / 新品換貨\n  - [ ] 售後維修 / 保固送修（購買後維修）\n  - [ ] 鑑賞期退貨退款\n\n### 2. 狀況說明與佐證\n* **問題狀況描述**：\n* **照片/影片佐證**：\n  - [ ] 外包裝完整度照片\n  - [ ] 寄件託運單照片\n  - [ ] 瑕疵/損壞處特寫照片\n\n### 3. SOP 處理檢核清單\n- [ ] 1. 系統核對訂單與購買紀錄\n- [ ] 2. 判定責任歸屬（商品瑕疵／物流毀損／缺件）\n- [ ] 3. 與顧客確認處置方案（補寄／換貨／退款／維修）\n- [ ] 4. 派案物流收回或補寄新品（填寫單號）\n- [ ] 5. 倉庫驗退 / 維修檢測完成\n- [ ] 6. 財務退款或完修寄回通知',
+                'defaults': {'priority': 'high', 'due_days': 3, 'ref_prompt': '訂單編號'}
             }
         ],
         'note_templates': [
             {
                 'template_id': 'preset_u_note_1',
                 'name': '聯絡紀錄',
-                'category_name': '一般',
+                'category_name': '一般備忘',
                 'title': '聯絡紀錄 - {今天}',
                 'body': '### 溝通大綱\n* **對話對象**：{聯絡對象}\n* **溝通重點**：\n\n### 後續追蹤\n- [ ] 待回覆項目\n- [ ] 預計跟進日期：',
                 'defaults': {'tags': ['聯絡紀錄']}
@@ -81,26 +89,36 @@ PRESET_PACKS = {
 }
 
 
+# Six reusable workflows share the same four categories as the notebook.
+# Retain stable IDs so saved selections and edited preset overrides still work.
+_universal = PRESET_PACKS['universal']
+_universal['note_types'] = ['一般備忘', '商務往來', '問題處理', '待辦交接']
+_universal['case_categories'] = list(_universal['note_types'])
+_universal['case_templates'] = [t for t in _universal['case_templates']
+                               if t['template_id'] in {'preset_u_case_1', 'preset_u_case_3', 'preset_u_case_5'}]
+for _template, _category in zip(_universal['case_templates'], ['商務往來', '問題處理', '問題處理']):
+    _template['category_name'] = _category
+for _template, _category, _tags in zip(_universal['note_templates'],
+                                     ['一般備忘', '待辦交接', '待辦交接'],
+                                     [['待追蹤'], ['待確認'], []]):
+    _template['category_name'] = _category
+    _template['defaults']['tags'] = _tags
+
+
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
 def ensure_oa_default_categories(conn: sqlite3.Connection, channel_id: str):
-    """Ensure OA has at least '一般' in categories and 'universal' enabled by default."""
+    """Ensure OA has at least '一般備忘' in categories and 'universal' enabled by default."""
     # Check enabled packs
     row = conn.execute("SELECT 1 FROM oa_enabled_packs WHERE channel_id=?", (channel_id,)).fetchone()
     if not row:
         conn.execute("INSERT OR IGNORE INTO oa_enabled_packs (channel_id, pack_key) VALUES (?, 'universal')", (channel_id,))
 
-    # Note categories
-    n_row = conn.execute("SELECT 1 FROM oa_note_categories WHERE channel_id=?", (channel_id,)).fetchone()
-    if not n_row:
-        for idx, name in enumerate(PRESET_PACKS['universal']['note_types']):
-            cid = uuid.uuid4().hex
-            conn.execute(
-                "INSERT OR IGNORE INTO oa_note_categories (category_id, channel_id, name, sort_order) VALUES (?, ?, ?, ?)",
-                (cid, channel_id, name, idx)
-            )
+    # A single note category catalogue is shared by notes and templates.
+    import chat_notes
+    chat_notes.ensure_default_categories(conn, channel_id)
 
     # Case categories
     c_row = conn.execute("SELECT 1 FROM oa_case_categories WHERE channel_id=?", (channel_id,)).fetchone()
@@ -123,7 +141,7 @@ def list_oa_categories(conn: sqlite3.Connection, channel_id: str = None) -> dict
     note_cats = conn.execute(
         """SELECT nc.category_id, nc.name, nc.sort_order,
                   (SELECT COUNT(*) FROM chat_notes n WHERE n.channel_id=nc.channel_id AND n.note_type=nc.name AND (n.deleted_at='' OR n.deleted_at IS NULL)) as usage_count
-        FROM oa_note_categories nc
+        FROM chat_note_categories nc
         WHERE nc.channel_id=?
         ORDER BY nc.sort_order ASC, nc.name ASC""",
         (channel_id,)
@@ -245,13 +263,13 @@ def preview_apply_category_set(conn: sqlite3.Connection, channel_id: str, pack_k
     if not pack:
         raise ValueError('找不到指定的範本包。')
 
-    target_notes = pack.get('note_types', ['一般'])
-    if '一般' not in target_notes:
-        target_notes.insert(0, '一般')
+    target_notes = pack.get('note_types', ['一般備忘'])
+    if '一般備忘' not in target_notes:
+        target_notes.insert(0, '一般備忘')
         
-    target_cases = pack.get('case_categories', ['一般'])
-    if '一般' not in target_cases:
-        target_cases.insert(0, '一般')
+    target_cases = pack.get('case_categories', ['一般備忘'])
+    if '一般備忘' not in target_cases:
+        target_cases.insert(0, '一般備忘')
 
     current_data = list_oa_categories(conn, channel_id)
     curr_notes = {c['name']: c for c in current_data['note_categories']}
@@ -270,7 +288,7 @@ def preview_apply_category_set(conn: sqlite3.Connection, channel_id: str, pack_k
         # Non-target existing items
         for name, info in current_dict.items():
             if name not in [x['name'] for x in result_items]:
-                if mode == 'merge' or name == '一般' or info['usage_count'] > 0:
+                if mode == 'merge' or name == '一般備忘' or info['usage_count'] > 0:
                     result_items.append({'name': name, 'action': 'keep', 'usage': info['usage_count']})
                 else:
                     result_items.append({'name': name, 'action': 'remove', 'usage': 0})
@@ -299,19 +317,23 @@ def apply_category_set(conn: sqlite3.Connection, channel_id: str, pack_key_or_id
     final_notes = [x for x in preview['note_types'] if x['action'] in ('keep', 'add')]
     removed_notes = [x['name'] for x in preview['note_types'] if x['action'] == 'remove']
 
-    # Reassign removed notes to '一般'
+    # Reassign removed notes to '一般備忘'
     for rm in removed_notes:
         conn.execute(
-            "UPDATE chat_notes SET note_type='一般' WHERE channel_id=? AND note_type=?",
-            (channel_id, rm)
+            "UPDATE chat_notes SET note_type='一般備忘', category_id=COALESCE((SELECT category_id FROM chat_note_categories WHERE channel_id=? AND name='一般備忘'), '') WHERE channel_id=? AND note_type=?",
+            (channel_id, channel_id, rm)
         )
-    conn.execute("DELETE FROM oa_note_categories WHERE channel_id=?", (channel_id,))
+    conn.execute("DELETE FROM chat_note_categories WHERE channel_id=?", (channel_id,))
     for idx, it in enumerate(final_notes):
         cid = uuid.uuid4().hex
         conn.execute(
-            "INSERT INTO oa_note_categories (category_id, channel_id, name, sort_order) VALUES (?, ?, ?, ?)",
+            "INSERT INTO chat_note_categories (category_id, channel_id, name, sort_order) VALUES (?, ?, ?, ?)",
             (cid, channel_id, it['name'], idx)
         )
+
+    conn.execute("""UPDATE chat_notes SET category_id=COALESCE(
+        (SELECT category_id FROM chat_note_categories c WHERE c.channel_id=chat_notes.channel_id AND c.name=chat_notes.note_type), '')
+        WHERE channel_id=?""", (channel_id,))
 
     # 2. Update Case Categories
     final_cases = [x for x in preview['case_categories'] if x['action'] in ('keep', 'add')]
@@ -319,7 +341,7 @@ def apply_category_set(conn: sqlite3.Connection, channel_id: str, pack_key_or_id
 
     for rm in removed_cases:
         conn.execute(
-            "UPDATE cases SET category='一般' WHERE channel_id=? AND category=?",
+            "UPDATE cases SET category='一般備忘' WHERE channel_id=? AND category=?",
             (channel_id, rm)
         )
     conn.execute("DELETE FROM oa_case_categories WHERE channel_id=?", (channel_id,))
@@ -435,17 +457,17 @@ def save_custom_pack(conn: sqlite3.Connection, workspace_id: str, payload: dict,
     if len(desc) > 100:
         raise ValueError('範本包說明請在 100 字以內。')
 
-    note_types = payload.get('note_types', ['一般'])
+    note_types = payload.get('note_types', ['一般備忘'])
     if not isinstance(note_types, list) or len(note_types) > limits.CATEGORIES_PER_OA:
         raise ValueError(f'記事類型最多 {limits.CATEGORIES_PER_OA} 項。')
-    if '一般' not in note_types:
-        note_types.insert(0, '一般')
+    if '一般備忘' not in note_types:
+        note_types.insert(0, '一般備忘')
 
-    case_categories = payload.get('case_categories', ['一般'])
+    case_categories = payload.get('case_categories', ['一般備忘'])
     if not isinstance(case_categories, list) or len(case_categories) > limits.CATEGORIES_PER_OA:
         raise ValueError(f'案件類別最多 {limits.CATEGORIES_PER_OA} 項。')
-    if '一般' not in case_categories:
-        case_categories.insert(0, '一般')
+    if '一般備忘' not in case_categories:
+        case_categories.insert(0, '一般備忘')
 
     pack_id = payload.get('pack_id')
     now = now_iso()
@@ -526,8 +548,8 @@ def copy_pack(conn: sqlite3.Connection, workspace_id: str, source_pack_key: str,
     if source_pack_key in PRESET_PACKS:
         src = PRESET_PACKS[source_pack_key]
         desc = src.get('description', '')
-        note_types = src.get('note_types', ['一般'])
-        case_cats = src.get('case_categories', ['一般'])
+        note_types = src.get('note_types', ['一般備忘'])
+        case_cats = src.get('case_categories', ['一般備忘'])
         case_tmpls = src.get('case_templates', [])
         note_tmpls = src.get('note_templates', [])
     else:
@@ -553,7 +575,7 @@ def copy_pack(conn: sqlite3.Connection, workspace_id: str, source_pack_key: str,
         conn.execute(
             """INSERT INTO case_templates (template_id, pack_id, name, category_name, title, body, defaults_json, sort_order, is_locked, created_by, updated_by, created_at, updated_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)""",
-            (tid, new_pack_id, ct.get('name', ''), ct.get('category_name', '一般'), ct.get('title', ''), ct.get('body', ''), d_json, idx, actor, actor, now, now)
+            (tid, new_pack_id, ct.get('name', ''), ct.get('category_name', '一般備忘'), ct.get('title', ''), ct.get('body', ''), d_json, idx, actor, actor, now, now)
         )
 
     for idx, nt in enumerate(note_tmpls):
@@ -562,7 +584,7 @@ def copy_pack(conn: sqlite3.Connection, workspace_id: str, source_pack_key: str,
         conn.execute(
             """INSERT INTO note_templates (template_id, pack_id, name, category_name, title, body, defaults_json, sort_order, is_locked, created_by, updated_by, created_at, updated_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)""",
-            (tid, new_pack_id, nt.get('name', ''), nt.get('category_name', '一般'), nt.get('title', ''), nt.get('body', ''), d_json, idx, actor, actor, now, now)
+            (tid, new_pack_id, nt.get('name', ''), nt.get('category_name', '一般備忘'), nt.get('title', ''), nt.get('body', ''), d_json, idx, actor, actor, now, now)
         )
 
     import reports
@@ -643,7 +665,7 @@ def save_template(conn: sqlite3.Connection, workspace_id: str, template_type: st
     body = str(payload.get('body', '')).strip()
     if len(body) > 1000:
         raise ValueError('內容骨架請在 1,000 字以內。')
-    category_name = str(payload.get('category_name', '一般')).strip() or '一般'
+    category_name = str(payload.get('category_name', '一般備忘')).strip() or '一般備忘'
     defaults = payload.get('defaults', {})
     if not isinstance(defaults, dict):
         defaults = {}
@@ -796,7 +818,7 @@ def copy_template(conn: sqlite3.Connection, workspace_id: str, template_type: st
     conn.execute(
         f"""INSERT INTO {table} (template_id, pack_id, name, category_name, title, body, defaults_json, sort_order, is_locked, created_by, updated_by, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)""",
-        (new_id, target_pack_id, new_name, src_tmpl.get('category_name', '一般'), src_tmpl.get('title', ''), src_tmpl.get('body', ''),
+        (new_id, target_pack_id, new_name, src_tmpl.get('category_name', '一般備忘'), src_tmpl.get('title', ''), src_tmpl.get('body', ''),
          json.dumps(src_tmpl.get('defaults', {}), ensure_ascii=False), cnt, actor, actor, now, now)
     )
 
@@ -864,7 +886,7 @@ def create_template_from_source(conn: sqlite3.Connection, workspace_id: str, sou
         case_row = conn.execute("SELECT * FROM cases WHERE case_id=?", (source_id,)).fetchone()
         if not case_row:
             raise ValueError('找不到指定的來源案件。')
-        category = case_row['category'] or '一般'
+        category = case_row['category'] or '一般備忘'
         title = case_row['title'] or ''
         body = case_row['description'] or ''
         defaults = {'priority': case_row['priority'] or 'medium'}
@@ -880,7 +902,7 @@ def create_template_from_source(conn: sqlite3.Connection, workspace_id: str, sou
         note_row = conn.execute("SELECT * FROM chat_notes WHERE note_id=?", (source_id,)).fetchone()
         if not note_row:
             raise ValueError('找不到指定的來源記事。')
-        category = note_row['note_type'] or '一般'
+        category = note_row['note_type'] or '一般備忘'
         title = note_row['title'] or ''
         body = note_row['content'] or ''
         tags = json.loads(note_row['tags_json'] or '[]')
@@ -902,7 +924,7 @@ def create_template_from_source(conn: sqlite3.Connection, workspace_id: str, sou
 def save_single_category(conn: sqlite3.Connection, channel_id: str, category_type: str, name: str, old_name: str = '', actor: str = '') -> dict:
     if category_type not in ('case', 'note'):
         raise ValueError('分類類型不正確。')
-    table = 'oa_case_categories' if category_type == 'case' else 'oa_note_categories'
+    table = 'oa_case_categories' if category_type == 'case' else 'chat_note_categories'
     name = str(name).strip()
     if not name or len(name) > 20:
         raise ValueError('分類名稱需在 1 至 20 字以內。')
@@ -910,8 +932,8 @@ def save_single_category(conn: sqlite3.Connection, channel_id: str, category_typ
     ensure_oa_default_categories(conn, channel_id)
 
     if old_name and old_name != name:
-        if old_name == '一般':
-            raise ValueError('「一般」為系統保留項目，不可改名。')
+        if old_name == '一般備忘':
+            raise ValueError('「一般備忘」為系統保留項目，不可改名。')
         dup = conn.execute(f"SELECT 1 FROM {table} WHERE channel_id=? AND name=?", (channel_id, name)).fetchone()
         if dup:
             raise ValueError('已有相同名稱的分類。')
@@ -940,25 +962,25 @@ def save_single_category(conn: sqlite3.Connection, channel_id: str, category_typ
 def delete_single_category(conn: sqlite3.Connection, channel_id: str, category_type: str, name: str, actor: str) -> dict:
     if category_type not in ('case', 'note'):
         raise ValueError('分類類型不正確。')
-    if name == '一般':
-        raise ValueError('「一般」為系統保留項目，不可刪除。')
-    table = 'oa_case_categories' if category_type == 'case' else 'oa_note_categories'
+    if name == '一般備忘':
+        raise ValueError('「一般備忘」為系統保留項目，不可刪除。')
+    table = 'oa_case_categories' if category_type == 'case' else 'chat_note_categories'
     
     conn.execute(f"DELETE FROM {table} WHERE channel_id=? AND name=?", (channel_id, name))
     if category_type == 'case':
-        conn.execute("UPDATE cases SET category='一般' WHERE channel_id=? AND category=?", (channel_id, name))
+        conn.execute("UPDATE cases SET category='一般備忘' WHERE channel_id=? AND category=?", (channel_id, name))
     else:
-        conn.execute("UPDATE chat_notes SET note_type='一般' WHERE channel_id=? AND note_type=?", (channel_id, name))
+        conn.execute("UPDATE chat_notes SET note_type='一般備忘', category_id=COALESCE((SELECT category_id FROM chat_note_categories WHERE channel_id=? AND name='一般備忘'), '') WHERE channel_id=? AND note_type=?", (channel_id, channel_id, name))
 
     import reports
-    reports.audit(conn, actor, f'category_{category_type}.delete', channel_id, f"刪除{'案件類別' if category_type=='case' else '記事類型'}「{name}」（既有項目已轉為一般）")
+    reports.audit(conn, actor, f'category_{category_type}.delete', channel_id, f"刪除{'案件類別' if category_type=='case' else '記事類型'}「{name}」（既有項目已轉為一般備忘）")
     return list_oa_categories(conn, channel_id)
 
 
 def reorder_categories(conn: sqlite3.Connection, channel_id: str, category_type: str, names: list, actor: str) -> dict:
     if category_type not in ('case', 'note'):
         raise ValueError('分類類型不正確。')
-    table = 'oa_case_categories' if category_type == 'case' else 'oa_note_categories'
+    table = 'oa_case_categories' if category_type == 'case' else 'chat_note_categories'
     for idx, name in enumerate(names):
         conn.execute(f"UPDATE {table} SET sort_order=? WHERE channel_id=? AND name=?", (idx, channel_id, name))
     return list_oa_categories(conn, channel_id)

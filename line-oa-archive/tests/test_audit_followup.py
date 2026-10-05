@@ -56,8 +56,8 @@ class AuditFollowupTests(unittest.TestCase):
             pack = template_packs.save_custom_pack(conn, 'org_A', {
                 'name': '客製化服務流程',
                 'description': '適用於特定專案服務',
-                'note_types': ['一般', '專案備忘', '會議'],
-                'case_categories': ['一般', '諮詢', '報價']
+                'note_types': ['一般備忘', '專案備忘', '會議'],
+                'case_categories': ['一般備忘', '諮詢', '報價']
             }, 'admin@test.com')
             pack_id = pack['pack_id']
             self.assertTrue(bool(pack_id))
@@ -103,7 +103,7 @@ class AuditFollowupTests(unittest.TestCase):
             nt = template_packs.save_template(conn, 'org_A', 'note', {
                 'pack_id': pack_id,
                 'name': '會議備忘範本',
-                'category_name': '一般',
+                'category_name': '一般備忘',
                 'title': '專案會議 - {今天}',
                 'body': '會議重點：\n決議事項：'
             }, 'admin@test.com')
@@ -154,20 +154,22 @@ class AuditFollowupTests(unittest.TestCase):
             c_updated = cases.get_case(conn, c['case_id'])
             self.assertEqual(c_updated['category'], '頂級 VIP 諮詢')
 
-            # 3. Delete category -> defaults to '一般'
+            # 3. Delete category -> defaults to '一般備忘'
             cats = template_packs.delete_single_category(conn, CHANNEL, 'case', '頂級 VIP 諮詢', actor='admin@test.com')
             c_after_delete = cases.get_case(conn, c['case_id'])
-            self.assertEqual(c_after_delete['category'], '一般')
+            self.assertEqual(c_after_delete['category'], '一般備忘')
 
-            # 4. '一般' cannot be deleted or renamed
+            # 4. '一般備忘' cannot be deleted or renamed
             with self.assertRaises(ValueError):
-                template_packs.delete_single_category(conn, CHANNEL, 'case', '一般', actor='admin@test.com')
+                template_packs.delete_single_category(conn, CHANNEL, 'case', '一般備忘', actor='admin@test.com')
             with self.assertRaises(ValueError):
-                template_packs.save_single_category(conn, CHANNEL, 'case', '修改一般', old_name='一般', actor='admin@test.com')
+                template_packs.save_single_category(conn, CHANNEL, 'case', '修改一般', old_name='一般備忘', actor='admin@test.com')
 
     def test_note_tags_and_completion_and_conflict(self):
         with app.database_connection() as conn:
             # 1. Save note with tags
+            for name in ['交接', '早班']:
+                chat_notes.save_note_tag(conn, name, actor_role='org_admin')
             n = chat_notes.save_chat_note(conn, {
                 'recipient_id': 'U_test_1',
                 'title': '交接筆記',

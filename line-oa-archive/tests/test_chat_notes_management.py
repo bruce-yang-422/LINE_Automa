@@ -41,27 +41,27 @@ class ChatNotesManagementTests(unittest.TestCase):
                 pass
 
     def test_default_categories_and_tags_seeding(self):
-        """驗證初始預設 8 大通用分類與 8 大通用標籤（Apple HIG 色彩）可正確初始化。"""
+        """驗證初始預設 4 個共用分類與 8 個標籤（Apple HIG 色彩）可正確初始化。"""
         with app.database_connection() as conn:
             chat_notes.ensure_default_categories(conn, CHANNEL)
             chat_notes.ensure_default_tags(conn, CHANNEL)
             
             cat_data = chat_notes.list_note_categories(conn)
-            self.assertEqual(cat_data['count'], 8)
+            self.assertEqual(cat_data['count'], 4)
             cat_names = [c['name'] for c in cat_data['categories']]
-            self.assertIn('商務商談', cat_names)
-            self.assertIn('工程工務', cat_names)
+            self.assertIn('商務往來', cat_names)
+            self.assertIn('問題處理', cat_names)
             self.assertIn('一般備忘', cat_names)
             # 檢查 Apple System Blue 色票
-            blue_cat = next(c for c in cat_data['categories'] if c['name'] == '商務商談')
+            blue_cat = next(c for c in cat_data['categories'] if c['name'] == '商務往來')
             self.assertEqual(blue_cat['color'], '#007AFF')
 
             tag_data = chat_notes.list_note_tags(conn)
             self.assertEqual(tag_data['count'], 8)
             tag_names = [t['name'] for t in tag_data['tags']]
             self.assertIn('急件優先', tag_names)
-            self.assertIn('已報價', tag_names)
-            self.assertIn('處理中', tag_names)
+            self.assertIn('待追蹤', tag_names)
+            self.assertIn('待確認', tag_names)
 
     def test_explicit_manual_save_and_crud(self):
         """驗證手動明確儲存、編輯、置頂上限(5)與單室記事上限(100)。"""
@@ -71,14 +71,14 @@ class ChatNotesManagementTests(unittest.TestCase):
                 'recipient_id': 'U_customer_1',
                 'title': '專案初步需求洽談',
                 'content': '討論自動化備份與多 OA 整合細節。',
-                'note_type': '商務商談',
-                'tags': ['已報價', '重要協議'],
+                'note_type': '商務往來',
+                'tags': ['待追蹤', '待確認'],
                 'due_date': '2026-10-15'
             }, 'op@test.com', 'operator')
             
             note_id = note['note_id']
             self.assertEqual(note['title'], '專案初步需求洽談')
-            self.assertEqual(note['tags'], ['已報價', '重要協議'])
+            self.assertEqual(note['tags'], ['待追蹤', '待確認'])
             self.assertEqual(note['author'], 'op@test.com')
 
             # 2. 查閱側欄清單
@@ -117,25 +117,46 @@ class ChatNotesManagementTests(unittest.TestCase):
             n_status2 = chat_notes.list_chat_notes(conn, 'U_customer_1')
             self.assertEqual(n_status2['completed_count'], 0)
 
+    def test_collaborative_unlock_requires_creator(self):
+        import cases
+        with app.database_connection() as conn:
+            conn.execute("UPDATE organizations SET note_lock_policy='collaborative' WHERE org_id='org_test'")
+            note = chat_notes.save_chat_note(conn, {'recipient_id':'U_customer_1','content':'Ownership'}, 'owner@test.com','operator')
+            chat_notes.toggle_note_lock(conn,note['note_id'],'operator','other@test.com')
+            with self.assertRaisesRegex(ValueError,'自己建立'):
+                chat_notes.toggle_note_lock(conn,note['note_id'],'operator','other@test.com')
+            self.assertEqual(chat_notes.toggle_note_lock(conn,note['note_id'],'operator','owner@test.com')['is_locked'],0)
+            case = cases.create_case(conn,{'case_subject_id':'U_customer_1','title':'Ownership'},'owner@test.com')
+            self.assertEqual(case['created_by'],'owner@test.com')
+            cases.toggle_case_lock(conn,case['case_id'],'other@test.com','operator')
+            with self.assertRaisesRegex(ValueError,'自己建立'):
+                cases.toggle_case_lock(conn,case['case_id'],'other@test.com','operator')
+            with self.assertRaisesRegex(ValueError,'協作人員不能'):
+                cases.toggle_case_lock(conn,case['case_id'],'owner@test.com','collaborator')
+            self.assertEqual(cases.toggle_case_lock(conn,case['case_id'],'owner@test.com','operator')['is_locked'],0)
+            cases.toggle_case_lock(conn,case['case_id'],'other@test.com','operator')
+            self.assertEqual(cases.toggle_case_lock(conn,case['case_id'],'admin@test.com','org_admin')['is_locked'],0)
+
     def test_note_lock_policies(self):
         """驗證三種組織鎖定政策 (disabled, collaborative, strict_admin) 及鎖定後防篡改唯讀保護。"""
         with app.database_connection() as conn:
             note = chat_notes.save_chat_note(conn, {
                 'recipient_id': 'U_customer_1',
-                'title': '重要協議備忘',
+                'title': '待確認備忘',
                 'content': '此合約條款經雙方律師確認。'
             }, 'admin@test.com', 'org_admin')
             note_id = note['note_id']
 
-            # 模式 A: disabled (預設) - 鎖定操作被拒絕
-            with self.assertRaisesRegex(ValueError, '自由編輯模式'):
-                chat_notes.toggle_note_lock(conn, note_id, 'org_admin')
+            # Free mode permits every authorized role to lock and unlock.
+            self.assertEqual(chat_notes.toggle_note_lock(conn, note_id, 'operator')['is_locked'], 1)
+            self.assertEqual(chat_notes.toggle_note_lock(conn, note_id, 'collaborator')['is_locked'], 0)
 
             # 切換至 模式 B: collaborative (協作鎖定模式)
             conn.execute("UPDATE organizations SET note_lock_policy='collaborative' WHERE org_id='org_test'")
             
-            # 任何角色（包括協作人員）皆可鎖定
-            res = chat_notes.toggle_note_lock(conn, note_id, 'collaborator')
+            with self.assertRaisesRegex(ValueError, '協作人員不能'):
+                chat_notes.toggle_note_lock(conn, note_id, 'collaborator')
+            res = chat_notes.toggle_note_lock(conn, note_id, 'operator')
             self.assertEqual(res['is_locked'], 1)
 
             # 鎖定狀態下，嘗試編輯或刪除必須被拒絕（唯讀保護，防止誤改）
@@ -149,8 +170,9 @@ class ChatNotesManagementTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, '已鎖定'):
                 chat_notes.delete_chat_note(conn, note_id, 'operator')
 
-            # 協作人員可解鎖
-            res_unlock = chat_notes.toggle_note_lock(conn, note_id, 'collaborator')
+            with self.assertRaisesRegex(ValueError, '協作人員不能'):
+                chat_notes.toggle_note_lock(conn, note_id, 'collaborator')
+            res_unlock = chat_notes.toggle_note_lock(conn, note_id, 'org_admin')
             self.assertEqual(res_unlock['is_locked'], 0)
 
             # 切換至 模式 C: strict_admin (管理員嚴格合規模式)
@@ -235,7 +257,7 @@ class ChatNotesManagementTests(unittest.TestCase):
             # 建立兩個自訂分類
             c1 = chat_notes.save_note_category(conn, {'name': '客戶洽談', 'color': '#007AFF'}, 'operator')
             c2 = chat_notes.save_note_category(conn, {'name': '商務拜訪', 'color': '#30B0C7'}, 'operator')
-            target = chat_notes.save_note_category(conn, {'name': '商務商談', 'color': '#007AFF'}, 'operator')
+            target = chat_notes.save_note_category(conn, {'name': '商務往來', 'color': '#007AFF'}, 'operator')
 
             # 建立關聯至 c1, c2 的記事
             n1 = chat_notes.save_chat_note(conn, {
@@ -255,9 +277,9 @@ class ChatNotesManagementTests(unittest.TestCase):
             row1 = conn.execute("SELECT category_id, note_type FROM chat_notes WHERE note_id=?", (n1['note_id'],)).fetchone()
             row2 = conn.execute("SELECT category_id, note_type FROM chat_notes WHERE note_id=?", (n2['note_id'],)).fetchone()
             self.assertEqual(row1[0], target['category_id'])
-            self.assertEqual(row1[1], '商務商談')
+            self.assertEqual(row1[1], '商務往來')
             self.assertEqual(row2[0], target['category_id'])
-            self.assertEqual(row2[1], '商務商談')
+            self.assertEqual(row2[1], '商務往來')
 
             # 舊分類已自動刪除
             rem = conn.execute("SELECT COUNT(*) FROM chat_note_categories WHERE category_id IN (?, ?)", (c1['category_id'], c2['category_id'])).fetchone()[0]
@@ -272,6 +294,7 @@ class ChatNotesManagementTests(unittest.TestCase):
             chat_notes.save_note_tag(conn, '報價確認', color='#007AFF', actor_role='operator')
             chat_notes.save_note_tag(conn, '無人使用的孤立標籤', color='#8E8E93', actor_role='operator')
 
+            chat_notes.save_note_tag(conn, '急件', actor_role='org_admin')
             # 記事使用標籤
             n1 = chat_notes.save_chat_note(conn, {'recipient_id': 'U_customer_1', 'content': '記事A', 'tags': ['報價單', '急件']}, 'admin@test.com')
             n2 = chat_notes.save_chat_note(conn, {'recipient_id': 'U_customer_1', 'content': '記事B', 'tags': ['客戶報價']}, 'admin@test.com')
@@ -295,7 +318,8 @@ class ChatNotesManagementTests(unittest.TestCase):
     def test_global_search_and_export(self):
         """驗證全域多條件檢索與 CSV / Markdown / JSON 匯出功能。"""
         with app.database_connection() as conn:
-            cat = chat_notes.save_note_category(conn, {'name': '工程工務', 'color': '#FF9500'}, 'operator')
+            cat = chat_notes.save_note_category(conn, {'name': '問題處理', 'color': '#FF9500'}, 'operator')
+            chat_notes.save_note_tag(conn, '現場勘查', actor_role='org_admin')
             chat_notes.save_chat_note(conn, {
                 'recipient_id': 'U_customer_1',
                 'title': '現場機房施工勘查',
@@ -311,7 +335,7 @@ class ChatNotesManagementTests(unittest.TestCase):
             self.assertEqual(res['notes'][0]['title'], '現場機房施工勘查')
 
             # 2. 全域分類過濾
-            res_cat = chat_notes.list_global_chat_notes(conn, {'category_name': '工程工務'})
+            res_cat = chat_notes.list_global_chat_notes(conn, {'category_name': '問題處理'})
             self.assertEqual(res_cat['total'], 1)
 
             # 3. 匯出 CSV / Markdown / JSON
@@ -354,7 +378,7 @@ class ChatNotesManagementTests(unittest.TestCase):
         current_user = {"email": "admin@test.com", "role": "org_admin", "organization_id": "org_test", "display_name": "管理員"}
         
         # POST /api/chat-notes/categories/save
-        req = Request(f"{base}/api/chat-notes/categories/save", data=json.dumps({"name": "商務商談", "color": "#007AFF"}).encode(), headers=headers)
+        req = Request(f"{base}/api/chat-notes/categories/save", data=json.dumps({"name": "商務往來", "color": "#007AFF"}).encode(), headers=headers)
         with urlopen(req) as resp:
             data = json.load(resp)
             self.assertTrue(data.get("ok"))

@@ -1,6 +1,6 @@
--- LINE 自動化平台資料結構（PRAGMA user_version = 1，由 app.initialize_database() 寫入）。
+-- LINE 自動化平台資料結構（PRAGMA user_version = 2，由 app.initialize_database() 寫入）。
 -- 這是唯一的資料結構來源：全新安裝直接建表，啟動不搬移、不補欄位、不修補舊版資料。
--- 之後若需變更，以編號的升級檔處理並遞增 app.SCHEMA_VERSION；IF NOT EXISTS 只讓重啟保留本版資料。
+-- 結構改版須備份並重置；程式僅接受相同 user_version，不提供舊版升級補丁。
 -- 業務時間採 UTC ISO 8601；登入與快取期限採 Unix seconds。
 -- 所有營運資料都屬於某個 OA：channel_id 為 line_channels.channel_id 或共用範圍 line_channel_shares.share_id。
 -- 角色值（權限與角色規格第 2 節）：platform_admin 平台管理員、org_admin 管理員、operator 操作人員、collaborator 協作人員。
@@ -173,6 +173,17 @@ CREATE TABLE IF NOT EXISTS group_member_cache (
     PRIMARY KEY (channel_id, group_id, user_id)
 );
 
+-- Durable leases and retry backoff for member names, scoped to each OA and conversation.
+CREATE TABLE IF NOT EXISTS member_profile_jobs (
+    channel_id TEXT NOT NULL,
+    conversation_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    next_at INTEGER NOT NULL DEFAULT 0,
+    failures INTEGER NOT NULL DEFAULT 0,
+    lease_until INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (channel_id, conversation_id, user_id)
+);
+
 CREATE TABLE IF NOT EXISTS canned_replies (
     channel_id TEXT NOT NULL,
     reply_id TEXT NOT NULL,
@@ -296,7 +307,7 @@ CREATE INDEX IF NOT EXISTS idx_chat_notes_lookup ON chat_notes(channel_id, recip
 CREATE INDEX IF NOT EXISTS idx_chat_notes_global ON chat_notes(channel_id, deleted_at, is_completed, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_chat_notes_case ON chat_notes(channel_id, linked_case_id) WHERE linked_case_id != '';
 
--- 記事分類主表 (預設 8 大通用分類，乙丙級可自訂增刪改)
+-- 記事分類主表 (預設 4 個通用分類，乙丙級可自訂增刪改)
 CREATE TABLE IF NOT EXISTS chat_note_categories (
     category_id TEXT PRIMARY KEY,
     channel_id TEXT NOT NULL,
@@ -318,15 +329,7 @@ CREATE TABLE IF NOT EXISTS chat_note_tags (
     UNIQUE(channel_id, name)
 );
 
--- 記事與標籤多對多關聯表
-CREATE TABLE IF NOT EXISTS chat_note_tag_assignments (
-    channel_id TEXT NOT NULL,
-    note_id TEXT NOT NULL,
-    tag_id TEXT NOT NULL,
-    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-    PRIMARY KEY (channel_id, note_id, tag_id)
-);
-
+-- 記事標籤僅儲存於 chat_notes.tags_json，避免雙份同步。
 -- ============ 案件 ============
 
 CREATE TABLE IF NOT EXISTS cases (
@@ -451,14 +454,6 @@ CREATE TABLE IF NOT EXISTS oa_case_categories (
     UNIQUE (channel_id, name)
 );
 
-CREATE TABLE IF NOT EXISTS oa_note_categories (
-    category_id TEXT PRIMARY KEY,
-    channel_id TEXT NOT NULL,
-    name TEXT NOT NULL,
-    sort_order INTEGER NOT NULL DEFAULT 0,
-    UNIQUE (channel_id, name)
-);
-
 -- ============ 報告與發送 ============
 
 -- category：company 組織報表、other 其他；scope：company 全組織、department 部門、personal 指定個人。
@@ -550,4 +545,11 @@ CREATE TABLE IF NOT EXISTS sender_grants (
     reports INTEGER NOT NULL DEFAULT 0 CHECK (reports IN (0, 1)),
     weather INTEGER NOT NULL DEFAULT 0 CHECK (weather IN (0, 1)),
     PRIMARY KEY (channel_id, email, organization_id)
+);
+
+CREATE TABLE IF NOT EXISTS chat_room_preferences (
+ channel_id TEXT NOT NULL, actor TEXT NOT NULL, recipient_id TEXT NOT NULL,
+ is_pinned INTEGER NOT NULL DEFAULT 0 CHECK(is_pinned IN (0,1)),
+ marker TEXT NOT NULL DEFAULT '' CHECK(marker IN ('','star','flag')),
+ PRIMARY KEY(channel_id,actor,recipient_id)
 );

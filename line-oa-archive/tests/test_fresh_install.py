@@ -119,6 +119,17 @@ class FreshInstallTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             app.initialize_database()
 
+    def test_previous_version_is_refused_and_current_restart_preserves_data(self):
+        app.initialize_database()
+        with app.database_connection() as conn:
+            conn.execute("INSERT INTO organizations(org_id,name) VALUES ('retained','保留測試')")
+        app.initialize_database()
+        with app.database_connection() as conn:
+            self.assertEqual(conn.execute("SELECT name FROM organizations WHERE org_id='retained'").fetchone()[0], '保留測試')
+            conn.execute('PRAGMA user_version = 1')
+        with self.assertRaises(RuntimeError):
+            app.initialize_database()
+
 
 if __name__ == '__main__':
     unittest.main()

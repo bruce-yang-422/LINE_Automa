@@ -30,7 +30,7 @@ def _parse_ts(val):
         return 0.0
 
 
-def list_chat_rooms(conn, status=None, query=None, limit=limits.ROOMS_PAGE_SIZE, offset=0):
+def list_chat_rooms(conn, status=None, query=None, limit=limits.ROOMS_PAGE_SIZE, offset=0, actor=""):
     """List chat rooms for the current channel with unread count and latest message preview."""
     limit = min(max(1, int(limit or 50)), 100)
     offset = max(0, int(offset or 0))
@@ -157,8 +157,13 @@ def list_chat_rooms(conn, status=None, query=None, limit=limits.ROOMS_PAGE_SIZE,
             "last_activity_at": (last_m.get("sent_at") if last_m else None) or last_seen,
         })
 
-    # Sort rooms by latest activity DESC
+    preferences = {row[0]: {'is_pinned': bool(row[1]), 'marker': row[2]} for row in conn.execute(
+        'SELECT recipient_id,is_pinned,marker FROM chat_room_preferences WHERE channel_id=current_channel() AND actor=?',(actor,))}
+    for room in rooms:
+        room.update(preferences.get(room['recipient_id'], {'is_pinned':False,'marker':''}))
+    # Latest activity breaks ties; unpinned markers never alter ordering.
     rooms.sort(key=lambda x: str(x.get("last_activity_at") or ""), reverse=True)
+    rooms.sort(key=lambda r:(bool(r["is_pinned"]), {"flag":2,"star":1}.get(r["marker"],0) if r["is_pinned"] else 0),reverse=True)
     total_count = len(rooms)
     paginated_rooms = rooms[offset:offset + limit]
 
@@ -285,6 +290,7 @@ def list_messages(conn, chat_id, limit=limits.MESSAGES_PAGE_SIZE, before_id=None
             "direction": direction,
             "sender_user_id": sender_uid,
             "sender_name": sender_name,
+            "sender_name_resolved": direction == "outbound" or kind == "user" or bool(members_cache.get(sender_uid, {}).get("name")),
             "message_type": m_type,
             "text_content": "[對方已收回訊息]" if is_unsent else display_text,
             "sent_at": msg_time,
@@ -303,6 +309,7 @@ def list_messages(conn, chat_id, limit=limits.MESSAGES_PAGE_SIZE, before_id=None
 
     return {
         "messages": messages,
+        "member_names": {uid: member["name"] for uid, member in members_cache.items() if member["name"]},
         "has_more": has_more,
         "chat_status": st_row[0] if st_row else "open",
         "last_read_at": st_row[1] if st_row else None,
@@ -970,3 +977,15 @@ def export_chat_history(conn, chat_id: str, format: str = "txt", actor: str = "�
         filename = f"chat_{clean_name}_{date_slug}.txt"
         return data, mime, filename
 
+
+
+def save_room_preference(conn,payload,actor):
+    recipient=payload.get('recipient_id')
+    if not conn.execute('SELECT 1 FROM recipients WHERE channel_id=current_channel() AND recipient_id=?',(recipient,)).fetchone():
+        raise ValueError('找不到聯絡對象。')
+    pinned=payload.get('is_pinned')
+    marker=payload.get('marker','')
+    if not isinstance(pinned,bool) or marker not in ('','star','flag'):
+        raise ValueError('無效的釘選或標記狀態。')
+    conn.execute('INSERT INTO chat_room_preferences(channel_id,actor,recipient_id,is_pinned,marker) VALUES(current_channel(),?,?,?,?) ON CONFLICT(channel_id,actor,recipient_id) DO UPDATE SET is_pinned=excluded.is_pinned,marker=excluded.marker',(actor,recipient,int(pinned),marker))
+    return {'recipient_id':recipient,'is_pinned':pinned,'marker':marker}

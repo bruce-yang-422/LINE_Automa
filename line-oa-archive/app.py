@@ -42,43 +42,22 @@ def database_connection():
         conn.close()
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 def initialize_database() -> None:
-    """建立資料夾並執行 schema.sql（可重複執行，不改動既有資料）。
-
-    schema.sql 是唯一的資料結構來源；之後若需變更，以編號的升級檔處理並遞增 SCHEMA_VERSION，
-    不在這裡寫補欄位或重建表的程式。
-    """
+    """Only create a fresh database or open the exact current schema; no legacy migration."""
     DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
     with database_connection() as conn:
         version = conn.execute("PRAGMA user_version").fetchone()[0]
-        if version > SCHEMA_VERSION:
-            raise RuntimeError("資料庫結構版本比程式新，請更新程式。")
-        if version == 0 and conn.execute("SELECT 1 FROM sqlite_master WHERE type='table'").fetchone():
-            # 第七階段以前的資料庫沒有結構版本，欄位與目前程式不同；不能沿用，須備份後重建。
-            raise RuntimeError("這是舊版結構的資料庫，請先備份並依安裝說明重建資料庫。")
+        populated = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table'").fetchone()
+        if populated and version != SCHEMA_VERSION:
+            raise RuntimeError("資料庫版本不符；本版不相容舊結構，請先備份並重置資料庫。")
+        if not populated and version not in (0, SCHEMA_VERSION):
+            raise RuntimeError("資料庫版本不符，請先備份並重置資料庫。")
         conn.execute("PRAGMA journal_mode=WAL")
-        for alter_sql in (
-            "ALTER TABLE recipients ADD COLUMN picture_url TEXT NOT NULL DEFAULT ''",
-            "ALTER TABLE organizations ADD COLUMN note_lock_policy TEXT NOT NULL DEFAULT 'disabled'",
-            "ALTER TABLE organizations ADD COLUMN note_tag_policy TEXT NOT NULL DEFAULT 'controlled'",
-            "ALTER TABLE chat_notes ADD COLUMN target_user_id TEXT NOT NULL DEFAULT ''",
-            "ALTER TABLE chat_notes ADD COLUMN category_id TEXT NOT NULL DEFAULT ''",
-            "ALTER TABLE chat_notes ADD COLUMN source_message_id TEXT NOT NULL DEFAULT ''",
-            "ALTER TABLE chat_notes ADD COLUMN linked_case_id TEXT NOT NULL DEFAULT ''",
-        ):
-            try:
-                conn.execute(alter_sql)
-            except Exception:
-                pass
-        conn.executescript((BASE_DIR / "schema.sql").read_text(encoding="utf-8"))
-        try:
-            conn.execute("UPDATE recipients SET profile_next_at = 0 WHERE picture_url = ''")
-        except Exception:
-            pass
-        if version == 0:
+        if not populated:
+            conn.executescript((BASE_DIR / "schema.sql").read_text(encoding="utf-8"))
             conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
 

@@ -21,6 +21,8 @@ const paths = {
   shield:'<path d="m12 2 8 3v6c0 6-8 11-8 11S4 17 4 11V5zM8 12l3 3 5-6"/>',
   folder:'<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>',
   message:'<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+  phone:'<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 2 .7 2.9a2 2 0 0 1-.5 2.1L8 10a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.5c.9.3 1.9.6 2.9.7a2 2 0 0 1 1.7 2z"/>',
+  mail:'<rect x="2" y="4" width="20" height="16" rx="2"/><path d="m2 6 10 7L22 6"/>',
   download:'<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>',
   pdf:'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 13h2a1.5 1.5 0 0 0 0-3H9v6"/><path d="M13 16v-6h2a2 2 0 0 1 0 4h-2"/>',
   doc:'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>',
@@ -80,7 +82,7 @@ const token = remote ? "" : location.hash.slice(1) || sessionStorage.getItem("li
 if(location.hash){if(!remote)sessionStorage.setItem("lineAdminToken",token);history.replaceState(null,"",location.pathname+location.search);}
 $("logout").hidden=!remote;
 const state={session:null,view:new URLSearchParams(location.search).get("view")||"overview",reports:[],contacts:[],tags:[],jobs:[],cases:[],caseFilter:"all",casePriority:"all",caseQuery:"",savedFilters:[],chatNotes:new Map(),noteCategories:[],noteTags:[],globalNotes:[],globalNotesStats:null,globalNotesCategories:[],globalNotesTags:[],noteHubQuery:"",noteHubCategory:"",noteHubTag:"",noteHubStatus:"all",noteHubChannel:"",noteHubViewMode:"grid",settings:{users:[]},events:[],previews:new Map(),selected:new Set(),tagAudienceMode:"any",selectedAudienceTags:new Set(),selectedFilterId:"",orgSettingsTab:"general",report:null,step:1,audience:"selected",search:"",kind:"all",organization_id:"",department:"",tagFilter:"",page:1,reportFilter:"all",historyFilter:"all",subFilter:"all",busy:false,loaded:false,authLost:false};
-const titles={overview:"工作總覽","oa-list":"OA 一覽",chat:"聊天對話","chat-notes":"對話記事本",reports:"報告中心",send:"建立發送",cases:"案件管理",templates:"範本與分類管理",contacts:"聯絡對象",subscriptions:"天氣訂閱",history:"發送紀錄",schedule:"排程管理",personnel:"人員與權限","org-settings":"組織設定",organizations:"組織管理",channels:"LINE OA 管理"};
+const titles={"personal-settings":"個人化設定",overview:"工作總覽","oa-list":"OA 一覽",chat:"聊天對話","chat-notes":"對話記事本",reports:"報告中心",send:"建立發送",cases:"案件管理",templates:"範本與分類管理",contacts:"聯絡對象",subscriptions:"天氣訂閱",history:"發送紀錄",schedule:"排程管理",personnel:"人員與權限","org-settings":"組織設定",organizations:"組織管理",channels:"LINE OA 管理"};
 const admin=()=>["platform_admin","org_admin","operator","collaborator"].includes(state.session?.role);
 const manager=()=>["platform_admin","org_admin"].includes(state.session?.role);
 // 數量上限只由後端 limits.py 定義，經 /api/session 取得
@@ -112,13 +114,8 @@ const APPLE_TAG_COLORS=[
 ];
 window.DEFAULT_TAG_COLORS = window.DEFAULT_TAG_COLORS || {
   "急件優先": "#FF3B30",
-  "待主管確認": "#FFCC00",
-  "已報價": "#007AFF",
-  "重要協議": "#5856D6",
-  "需二次回訪": "#30B0C7",
-  "現場勘查": "#FF9500",
-  "交接待辦": "#34C759",
-  "處理中": "#8E8E93"
+  "待確認": "#FFCC00",
+  "待追蹤": "#30B0C7"
 };
 var DEFAULT_TAG_COLORS = window.DEFAULT_TAG_COLORS;
 const contactTypeNames={organization:"組織／團體",person_business:"公務對象個人",person_private:"一般個人"};
@@ -182,7 +179,7 @@ function formatAuditAction(action){
 function formatAuditDetail(detail, action){
   if(!detail) return "";
   let s = String(detail);
-  
+
   // 1. 聊天狀態轉換
   s = s.replace(/變更聊天狀態為\s*\[?(done|pending|in_progress|open)\]?/gi, (match, st) => {
     const statusMap = { done: "已完成", pending: "待處理", in_progress: "處理中", open: "一般（無狀態）" };
@@ -223,12 +220,45 @@ const person=r=>{
 const scope=r=>r.category==="composition"?(r.organization_id?orgName(r.organization_id):"平台個人素材"):r.scope==="module"?"天氣模組（依帳號／組織授權）":r.category==="text"?"自訂文字訊息":r.scope==="all"?"所有登入使用者":r.scope==="personal"?`${orgName(r.organization_id)} · 個人專屬`:r.scope==="department"?`${orgName(r.organization_id)} / ${r.department}`:`${orgName(r.organization_id)} · 全組織`;
 const reportBadge=r=>r.status!=="ready"?badge(r.status==="missing"?"等待報告":"無法使用","bad"):r.stale?badge("非今日更新","warn"):badge(admin()?"可發送":"可查看","good");
 let noticeTimeout = null;
+const personalDefaults={corner:'bottom-right',duration:5,reading:'standard',motion:'standard'};
+function personalSettingsKey(){return 'linePersonalSettings:'+(principalSession?.identity||state.session?.identity||'local');}
+function personalSettings(){
+  let saved={};try{saved=JSON.parse(localStorage.getItem(personalSettingsKey())||'{}')||{};}catch(_){}
+  return {
+    corner:['bottom-right','bottom-left','top-right','top-left'].includes(saved.corner)?saved.corner:personalDefaults.corner,
+    duration:[1,3,5,8,10,0].includes(Number(saved.duration))?Number(saved.duration):personalDefaults.duration,
+    reading:['small','standard','large'].includes(saved.reading)?saved.reading:'standard',motion:saved.motion==='reduced'?'reduced':'standard'
+  };
+}
+function applyPersonalSettings(){
+  const settings=personalSettings();
+  document.documentElement.dataset.reading=settings.reading;
+  document.documentElement.dataset.motion=settings.motion;
+  document.querySelectorAll('#floating-toast,.tmpl-undo-toast').forEach(toast=>toast.dataset.corner=settings.corner);
+}
+function personalSettingsPage(){
+  const prefs=personalSettings();
+  const options=(items,value)=>items.map(([id,label])=>`<option value="${id}" ${String(value)===String(id)?'selected':''}>${label}</option>`).join('');
+  return heading('個人化設定','調整通知與閱讀體驗，變更後自動儲存於此瀏覽器，依登入帳號分開記住。')+`
+    <div class="personal-settings-grid">
+      <section class="panel"><div class="panel-head"><h2>${icon('bell')} 通知</h2></div><div class="panel-body">
+        <label class="field">顯示位置<select data-personal-setting="corner">${options([['bottom-right','右下角（預設）'],['bottom-left','左下角'],['top-right','右上角'],['top-left','左上角']],prefs.corner)}</select></label>
+        <label class="field section-space">顯示時間<select data-personal-setting="duration">${options([[1,'1 秒'],[3,'3 秒'],[5,'5 秒（預設）'],[8,'8 秒'],[10,'10 秒'],[0,'手動關閉']],prefs.duration)}</select></label>
+        <p class="muted">適用於所有頁面的操作結果與警告通知。</p>
+        <div class="form-actions">${button('預覽資訊通知','personal-preview-info')}${button('預覽警告通知','personal-preview-warning')}</div>
+      </div></section>
+      <section class="panel"><div class="panel-head"><h2>${icon('settings')} 閱讀與動態效果</h2></div><div class="panel-body">
+        <label class="field">文字大小<select data-personal-setting="reading">${options([['small','小'],['standard','中（預設，依螢幕調整）'],['large','大']],prefs.reading)}</select></label>
+        <label class="field section-space">動態效果<select data-personal-setting="motion">${options([['standard','標準'],['reduced','減少動畫']],prefs.motion)}</select></label>
+        <p class="muted">放大文字會同步調整內文、控制項與功能選單。</p>
+      </div></section>
+    </div><div class="form-actions">${button('還原預設設定','personal-reset')}</div>`;
+}
 function notice(message, error=false){
   const el = $("notice");
   if(el){
-    el.textContent = message;
-    el.className = "notice" + (error ? " error" : "");
-    el.hidden = !message;
+    el.textContent = "";
+    el.hidden = true;
   }
   let toast = $("floating-toast");
   if(!toast){
@@ -244,12 +274,15 @@ function notice(message, error=false){
   const toastSvg = error ? solidIcons64.toast_bad : solidIcons64.toast_good;
   toast.innerHTML = `<span class="toast-icon">${toastSvg}</span><span class="toast-text">${esc(message)}</span><button class="toast-close" type="button" aria-label="關閉通知">${icon("close")}</button>`;
   toast.className = "floating-toast visible" + (error ? " error" : "");
+  toast.dataset.corner=personalSettings().corner;
+  toast.setAttribute('role',error?'alert':'status');
   const closeBtn = toast.querySelector(".toast-close");
   if(closeBtn) closeBtn.onclick = () => toast.classList.remove("visible");
   if(noticeTimeout) clearTimeout(noticeTimeout);
-  noticeTimeout = setTimeout(() => {
+  const seconds=personalSettings().duration;
+  noticeTimeout = seconds ? setTimeout(() => {
     toast.classList.remove("visible");
-  }, 4500);
+  }, seconds*1000) : null;
 }
 async function api(path,payload,original=false,root=false){
   const headers={"Content-Type":"application/json"};if(!remote)headers.Authorization=`Bearer ${token}`;
@@ -316,8 +349,8 @@ async function load(){
   if(state.view==="organizations"&&!superAdmin())state.view="reports";
   if(["personnel","org-settings","templates"].includes(state.view)&&!orgAdmin&&!admin())state.view="overview";
   if(state.view==="channels"&&!navAllowed["platform-org"])state.view="overview";
-  if(!lineDataReady()&&!["organizations","channels","oa-list","personnel","org-settings","templates"].includes(state.view))state.view=superAdmin()?"organizations":"channels";
-  if(superAdmin()&&!["organizations","channels"].includes(state.view))state.view="organizations";
+  if(!lineDataReady()&&!["organizations","channels","oa-list","personnel","org-settings","templates","personal-settings"].includes(state.view))state.view=superAdmin()?"organizations":"channels";
+  if(superAdmin()&&!["organizations","channels","personal-settings"].includes(state.view))state.view="organizations";
   workspaceHeader();
   state.loaded=true;state.authLost=false;$("connection").innerHTML='<span class="status-dot"></span>已連線';
   $("sync-time").textContent="最後更新 "+new Date().toLocaleTimeString("zh-TW",{hour12:false});
@@ -410,7 +443,7 @@ function contactsMatchingFilter(criteria){
 function renderAudienceTagsSelector(){
   const selectedTagIds=Array.from(state.selectedAudienceTags||[]);
   const matched=contactsMatchingTags(selectedTagIds,state.tagAudienceMode||"any");
-  
+
   return `<div class="audience-filter-panel" data-s="sa4e96ca">
     <div data-s="sea15b2f">
       <div>
@@ -450,7 +483,7 @@ function renderAudienceTagsSelector(){
 function renderAudienceSavedFiltersSelector(){
   const chosenFilter=(state.savedFilters||[]).find(f=>f.filter_id===state.selectedFilterId);
   const matched=chosenFilter?contactsMatchingFilter(chosenFilter.criteria):[];
-  
+
   return `<div class="audience-filter-panel" data-s="sa4e96ca">
     <div data-s="s79a1c5a">
       <h3 data-s="s49d7aa6">依自訂篩選條件傳訊</h3>
@@ -544,12 +577,12 @@ function caseCard(c){
   const subject=state.contacts.find(x=>x.recipient_id===c.case_subject_id);
   const subjectName=subject?label(subject):(c.case_subject_id||"未知對象");
 
-  return `<article class="case-card ${c.is_locked?'locked':''}">
+  return `<article class="case-card ${c.is_locked?'locked':''}" data-case-preview="${esc(c.case_id)}" tabindex="0">
     <div class="case-card-head">
       <div class="case-card-main-title">
         <span class="case-no-badge">${esc(c.case_no)}</span>
         <h3 class="case-title">${esc(c.title)}</h3>
-        ${c.is_locked?'<span class="badge warn" style="font-size:10px;">已鎖定</span>':''}
+        ${recordLockControl(c,true)}
       </div>
       <div class="case-card-badges">
         ${c.category?`<span class="badge">${esc(c.category)}</span>`:""}
@@ -568,12 +601,12 @@ function caseCard(c){
     ${c.status==="waiting"?`<div class="case-waiting-info"><p><strong>等待對象：</strong>${waitingPartyNames[c.waiting_party]||c.waiting_party||"未指定"}（自 ${when(c.waiting_since)}）</p><p><strong>原因：</strong>${esc(c.waiting_reason||"無")}</p></div>`:""}
     ${c.status==="closed"?`<div class="case-closed-info"><p><strong>結案說明：</strong>${esc(c.resolution||"已結案")}（結案於 ${when(c.closed_at)}）</p></div>`:""}
     <div class="case-card-actions">
-      ${c.status==="pending"?button("開始處理","case-to-processing","primary small",`data-id="${esc(c.case_id)}"`):""}
-      ${c.status==="processing"?button("進入等待","open-case-waiting-modal","small",`data-id="${esc(c.case_id)}"`)+button("進入待結案","case-to-ready","primary small",`data-id="${esc(c.case_id)}"`):""}
-      ${c.status==="waiting"?button("恢復處理","case-resume-processing","primary small",`data-id="${esc(c.case_id)}"`):""}
-      ${c.status==="ready_to_close"?button("退回處理","case-back-processing","small",`data-id="${esc(c.case_id)}"`)+button("執行結案","open-case-close-modal","good primary small",`data-id="${esc(c.case_id)}"`):""}
+      ${!recordReadonly(c,true) && c.status==="pending"?button("開始處理","case-to-processing","primary small",`data-id="${esc(c.case_id)}"`):""}
+      ${!recordReadonly(c,true) && c.status==="processing"?button("進入等待","open-case-waiting-modal","small",`data-id="${esc(c.case_id)}"`)+button("進入待結案","case-to-ready","primary small",`data-id="${esc(c.case_id)}"`):""}
+      ${!recordReadonly(c,true) && c.status==="waiting"?button("恢復處理","case-resume-processing","primary small",`data-id="${esc(c.case_id)}"`):""}
+      ${!recordReadonly(c,true) && c.status==="ready_to_close"?button("退回處理","case-back-processing","small",`data-id="${esc(c.case_id)}"`)+button("執行結案","open-case-close-modal","good primary small",`data-id="${esc(c.case_id)}"`):""}
       ${c.status==="closed"?badge("已完成結案","good"):""}
-      <button class="btn text small" data-action="toggle-case-lock" data-id="${esc(c.case_id)}">${c.is_locked?'解鎖':'鎖定'}</button>
+
       <button class="btn text small" data-action="create-continuation-case" data-id="${esc(c.case_id)}">+ 延續案件</button>
       ${button("完整歷程","open-case-detail","small",`data-id="${esc(c.case_id)}"`)}
     </div>
@@ -622,7 +655,7 @@ function createCaseModal(subject_id="", prefill={}){
   const contactOpts=[["","請選擇關聯的聯絡對象"],...state.contacts.filter(r=>r.active).map(r=>[r.recipient_id,label(r)+(r.kind==="user"?" (個人)":" (群組)")])];
   const title = prefill.title || "";
   const desc = prefill.description || "";
-  const cat = prefill.category || "一般";
+  const cat = prefill.category || "一般備忘";
   const continuedFrom = prefill.continued_from_id || "";
 
   modal(continuedFrom ? "建立延續案件" : "建立新案件", `<form id="case-create-form">
@@ -634,15 +667,28 @@ function createCaseModal(subject_id="", prefill={}){
     <div class="form-grid">
       <div class="full">${field("案件標題","title",title,'required maxlength="100" placeholder="例如：詢問 10 月發票開立方式、報表格式問題"')}</div>
       ${selectField("案件主體（聯絡對象）","case_subject_id",contactOpts,subject_id)}
-      ${field("案件類別","category",cat,'maxlength="50" placeholder="例如：一般、諮詢、維修、訂單"')}
+      ${field("案件類別","category",cat,'maxlength="50" placeholder="例如：一般備忘、商務往來、問題處理、待辦交接"')}
       ${selectField("優先度","priority",[["medium","一般"],["low","低"],["high","高"],["urgent","緊急"]],prefill.priority||"medium")}
       ${field("參考編號（選填）","ref_no",prefill.ref_no||"",'maxlength="50" placeholder="例如：訂單號 #202610-A01、發票號"')}
       ${field("預計完成期限（選填）","due_date",prefill.due_date||"",'type="date"')}
-      <div class="full"><label class="field">問題或需求描述（選填）<textarea name="description" rows="4" maxlength="2000" placeholder="詳細說明對方需求、對話重點、目前已知資訊...">${esc(desc)}</textarea></label></div>
+      ${renderDualFormatEditor("description", "case-description-input", desc, null, "問題或需求描述（選填）", 12, "詳細說明對方需求、對話重點、目前已知資訊...", false)}
     </div>
     <p class="callout">建立案件後初始狀態為「待處理」，自動編號格式為 {前綴}-{年月}-{4位流水號}。</p>
     <div class="form-actions"><button class="btn primary" type="submit">確認建立案件</button></div>
   </form>`);
+}
+
+function editCaseModal(case_id){
+  const c=state.casePreview?.case_id===case_id?state.casePreview:state.cases.find(x=>x.case_id===case_id);
+  if(!c || c.is_locked || c.status==="closed" || state.preview || state.session?.role==="platform_admin")return;
+  modal("編輯案件",`<form id="case-edit-form" data-id="${esc(case_id)}"><div class="form-grid">
+    <div class="full">${field("案件標題","title",c.title,'required maxlength="100"')}</div>
+    ${field("分類","category",c.category||"",'maxlength="50"')}
+    ${selectField("優先度","priority",[["medium","一般"],["low","低"],["high","高"],["urgent","緊急"]],c.priority||"medium")}
+    ${field("參考編號","ref_no",c.ref_no||"",'maxlength="60"')}
+    ${field("預計完成期限","due_date",c.due_date||"",'type="date"')}
+      ${renderDualFormatEditor("description","case-edit-description",c.description||"",null,"需求描述",8,"記錄需求、進度與待辦事項",false,true)}
+    </div><div class="form-actions">${button("返回預覽","open-case-detail","",`data-id="${esc(case_id)}" type="button"`)}<button type="submit" class="btn primary">儲存變更</button></div></form>`);
 }
 
 function caseWaitingModal(case_id){
@@ -675,15 +721,16 @@ async function caseDetailModal(case_id){
   try{
     const res=await api(`/api/cases/${case_id}`);
     const c=res.case;
-    const activities=res.activities||[];
+    state.casePreview = c;
+    const activities=res.activities||c.activities||[];
     const subject=state.contacts.find(x=>x.recipient_id===c.case_subject_id);
-    const subjectName=subject?label(subject):(c.case_subject_id||"未知對象");
+    const subjectName=subject?label(subject):"未命名聯絡對象";
 
     const timelineHtml=activities.length?activities.map(a=>{
       let desc="";
       if(a.action==="create_case")desc="建立案件";
       else if(a.action==="status_change")desc=`狀態變更：${caseStatusNames[a.details?.old_status]||a.details?.old_status} <span class="status-change-arrow" aria-hidden="true">${icon("arrow")}</span> <strong>${caseStatusNames[a.details?.new_status]||a.details?.new_status}</strong>${a.details?.waiting_party?`（等待：${waitingPartyNames[a.details.waiting_party]||a.details.waiting_party}，原因：${esc(a.details.waiting_reason||"")}）`:""}${a.details?.resolution?`（結案說明：${esc(a.details.resolution)}）`:""}`;
-      else if(a.action==="add_note")desc=`處理記事：${esc(a.details?.note||"")}`;
+      else if(a.action==="add_note" || a.action==="note")desc=`處理記事：${esc(a.content || a.details?.note || "")}`;
       else desc=esc(a.action);
 
       return `<div class="case-timeline-item">
@@ -700,7 +747,7 @@ async function caseDetailModal(case_id){
         <div>
           <span class="case-no-badge">${esc(c.case_no)}</span>
           <h2>${esc(c.title)}</h2>
-          ${c.is_locked?'<span class="badge warn" style="font-size:10px;">已鎖定</span>':''}
+          ${recordLockControl(c,true)}
         </div>
         <div data-s="sbabd711">
           ${c.category?`<span class="badge">${esc(c.category)}</span>`:""}
@@ -717,9 +764,11 @@ async function caseDetailModal(case_id){
         ${c.status==="waiting"?`<dt>等待對象</dt><dd>${waitingPartyNames[c.waiting_party]||c.waiting_party}（自 ${when(c.waiting_since)}）</dd><dt>等待原因</dt><dd>${esc(c.waiting_reason)}</dd>`:""}
         ${c.status==="closed"?`<dt>結案時間</dt><dd>${when(c.closed_at)}</dd><dt>結案說明</dt><dd>${esc(c.resolution)}</dd>`:""}
       </dl>
-      ${c.description?`<div class="section-space"><h4>需求描述</h4><p class="case-desc-box">${esc(c.description)}</p></div>`:""}
-      
+      ${c.description?`<div class="section-space"><h4>需求描述</h4><div class="case-desc-box case-description-preview md-preview-area">${renderCaseContent(c)}</div></div>`:""}
+
       <div class="section-space" data-s="s78cead6">
+        ${button(icon('copy')+'複製內容','copy-case-content','small',`data-id="${esc(c.case_id)}"`)}
+        ${!c.is_locked && c.status!=="closed" && !state.preview && state.session?.role!=="platform_admin" ? button(icon("edit")+"編輯案件","edit-case-modal","primary small",`data-id="${esc(c.case_id)}"`):""}
         ${canSend() && c.status !== "closed" ? `<button class="btn primary small" data-action="open-case-notify-modal" data-id="${esc(c.case_id)}">通知案件對象</button>` : ''}
         <button class="btn small" data-action="save-case-as-template" data-id="${esc(c.case_id)}">存為案件範本</button>
       </div>
@@ -729,7 +778,7 @@ async function caseDetailModal(case_id){
         <div class="case-timeline">${timelineHtml}</div>
       </div>
 
-      ${c.status!=="closed" && !c.is_locked ? `<form id="case-add-note-form" data-id="${esc(c.case_id)}" class="section-space">
+      ${!recordReadonly(c,true) ? `<form id="case-add-note-form" data-id="${esc(c.case_id)}" class="section-space">
         <label class="field">新增處理紀錄 / 備忘<textarea name="note" rows="2" required maxlength="1000" placeholder="記錄最新溝通進度、待辦項目或內部確認事項..."></textarea></label>
         <div class="form-actions">${button("送出紀錄","","primary small",'type="submit"')}</div>
       </form>` : ''}
@@ -775,7 +824,8 @@ async function loadChatNotes(recipient_id){
     const res=await api(`/api/chat-notes?recipient_id=${encodeURIComponent(recipient_id)}`);
     state.chatNotes.set(recipient_id,res.notes||[]);
     const container=$("chat-notes-list-container");
-    if(container)container.innerHTML=renderChatNotesList(recipient_id);
+    if(document.querySelector(".chat-work-panel"))refreshChatWorkPanel();
+    else if(container)container.innerHTML=renderChatNotesList(recipient_id);
   }catch(e){
     console.error("Failed to load chat notes:",e);
   }
@@ -795,13 +845,13 @@ async function loadTaxonomyCaches(){
 function renderCategoryScopedTagsHtml(categoryId, selectedTagsList = []){
   const cat = (state.noteCategories||[]).find(c => c.category_id === categoryId);
   const catName = cat?.name || "";
-  
+
   const sortedTags = [...(state.noteTags||[])].sort((a,b) => {
     const aCatScore = (a.category_usage?.[categoryId] || (catName && a.category_usage?.[catName]) || 0);
     const bCatScore = (b.category_usage?.[categoryId] || (catName && b.category_usage?.[catName]) || 0);
     const aTotal = a.note_count || a.usage_count || 0;
     const bTotal = b.note_count || b.usage_count || 0;
-    
+
     // 優先依照該分類下的專屬熱門度（引用次數）排序；次之依照 OA 總次數
     if(bCatScore !== aCatScore) return bCatScore - aCatScore;
     return bTotal - aTotal;
@@ -815,7 +865,7 @@ function renderCategoryScopedTagsHtml(categoryId, selectedTagsList = []){
     <div class="quick-tag-wrapper">
       <div class="quick-tag-label">
         <div class="quick-tag-label-left">${icon("tag")} <span>${catName ? `「${esc(catName)}」常用推薦標籤：` : '常用熱門標籤（點選帶入）：'}</span></div>
-        <small class="muted" style="font-size:11px;">${hintText}</small>
+        <small class="muted" style="font-size:11px;">${esc(hintText)}</small>
       </div>
       <div class="quick-tag-pills">
         ${sortedTags.map(t => {
@@ -832,7 +882,7 @@ function renderCategoryScopedTagsHtml(categoryId, selectedTagsList = []){
           const catCount = (t.category_usage?.[categoryId] || (catName && t.category_usage?.[catName]) || 0);
           const totalCount = t.note_count || t.usage_count || 0;
           const tip = catName && catCount > 0 ? `${catName}分類引用 ${catCount} 次 · 全OA總計 ${totalCount} 次` : `全OA引用 ${totalCount} 次`;
-          return `<button type="button" class="apple-tag-pill ${isSelected?'active-selected':''}" data-action="quick-add-note-tag" data-tag="${esc(t.name)}" data-color="${esc(color)}" style="background-color:${esc(isSelected ? color : bg)}!important;color:${esc(isSelected ? '#ffffff' : color)}!important;border-color:${esc(isSelected ? color : border)}!important;" title="${esc(tip)}">${isSelected ? '✓ ' : ''}${esc(t.name)}</button>`;
+          return `<button type="button" class="apple-tag-pill ${isSelected?'active-selected':''}" aria-pressed="${isSelected}" data-action="quick-add-note-tag" data-tag="${esc(t.name)}" data-color="${esc(color)}" style="background-color:${esc(isSelected ? color : bg)}!important;color:${esc(isSelected ? '#ffffff' : color)}!important;border-color:${esc(isSelected ? color : border)}!important;" title="${esc(tip)}">${isSelected ? '✓ ' : ''}${esc(t.name)}</button>`;
         }).join("")}
       </div>
     </div>
@@ -844,10 +894,10 @@ async function chatNoteModal(recipient_id,note_id="",prefill={}){
     await loadTaxonomyCaches();
   }
   const notes=recipient_id? (state.chatNotes.get(recipient_id)||[]) : [];
-  const existing=note_id?notes.find(n=>n.note_id===note_id):null;
+  const existing=note_id?(notes.find(n=>n.note_id===note_id) || state.globalNotes?.find(n=>n.note_id===note_id) || (state.notePreview?.note_id===note_id?state.notePreview:null)):null;
   const title = prefill.title || existing?.title || "";
   const content = prefill.content || existing?.content || "";
-  
+
   let category_id = prefill.category_id || existing?.category_id || "";
   if(!category_id && prefill.category_name){
     const matchedCat = (state.noteCategories||[]).find(c => c.name === prefill.category_name);
@@ -863,7 +913,7 @@ async function chatNoteModal(recipient_id,note_id="",prefill={}){
   const updated_at = existing?.updated_at || "";
 
   const catOptions = (state.noteCategories||[]).map(c => [c.category_id, c.name]);
-  if(!catOptions.length) catOptions.push(["", "一般"]);
+  if(!catOptions.length) catOptions.push(["", "一般備忘"]);
 
   const contactOpts = [["", "請選擇關聯的聯絡對象 / 聊天室"], ...state.contacts.filter(r => r.active).map(r => [r.recipient_id, label(r) + (r.kind === "user" ? " (個人)" : " (群組)")])];
 
@@ -879,14 +929,14 @@ async function chatNoteModal(recipient_id,note_id="",prefill={}){
       ${selectField("記事分類", "category_id", catOptions, category_id)}
       ${field("完成期限（選填）", "due_date", due_date, 'type="date"')}
       <div class="full">
-        <label class="field">記事標籤（以逗號分隔，最多 ${cap("TAGS_PER_NOTE")} 個）
-          <input name="tags" id="chat-note-tags-input" value="${esc(tagsStr)}" maxlength="100" placeholder="例如：重要, 緊急, 已報價">
+        <label class="field">記事標籤（從清單選擇，最多 ${cap("TAGS_PER_NOTE")} 個）
+          <input type="hidden" name="tags" id="chat-note-tags-input" value="${esc(tagsStr)}"><span id="chat-note-selected-tags" class="muted">${esc(tagsStr || "尚未選擇標籤")}</span>
         </label>
         <div id="chat-note-quick-tags-container">
           ${renderCategoryScopedTagsHtml(category_id, tagsList)}
         </div>
       </div>
-      <div class="full"><label class="field">記事內容（1–2,000 字）<textarea name="content" rows="4" required minlength="1" maxlength="2000" placeholder="記錄該對話的重要交辦、協商細節、政策討論、客戶訴求...">${esc(content)}</textarea></label></div>
+      ${renderDualFormatEditor("content", "chat-note-content-input", content, null, "記事內容（1–2,000 字）", 12, "記錄該對話的重要交辦、協商細節、政策討論、客戶訴求...", true,Boolean(existing))}
     </div>
     <p class="callout" style="font-size:12px;">手動點選「儲存」以生效。未儲存前離開將彈出防呆警示；鎖定後支援唯讀複製，防止其他人誤改。</p>
     <div class="form-actions"><button class="btn primary" type="submit">${existing ? "儲存變更" : "新增記事"}</button></div>
@@ -896,7 +946,7 @@ async function chatNoteModal(recipient_id,note_id="",prefill={}){
   if(form){
     form.addEventListener("input", () => { form.dataset.dirty = "true"; });
     form.addEventListener("change", () => { form.dataset.dirty = "true"; });
-    
+
     // 切換分類時，智慧重排專屬熱門標籤
     const catSelect = form.querySelector('select[name="category_id"]');
     if(catSelect){
@@ -910,6 +960,180 @@ async function chatNoteModal(recipient_id,note_id="",prefill={}){
       });
     }
   }
+}
+
+function noteRecipientLabel(note){
+  const contact = state.contacts.find(r => r.recipient_id === note.recipient_id);
+  if(contact) {
+    const name = label(contact);
+    return name === note.recipient_id ? "未命名聯絡對象" : name;
+  }
+  return note.recipient_name && note.recipient_name !== note.recipient_id ? note.recipient_name : "未命名聯絡對象";
+}
+
+function notePreviewMetadata(note){
+  return `<dl class="note-preview-meta">
+    <div><dt>關聯對象</dt><dd><button type="button" class="note-recipient-link" data-action="open-chat-from-contact" data-id="${esc(note.recipient_id)}">${esc(noteRecipientLabel(note))}</button></dd></div>
+    <div><dt>建立時間</dt><dd>${when(note.created_at)}</dd></div>
+    <div><dt>分類</dt><dd>${categoryPillHtml(note.category_name || note.note_type || "未分類")}</dd></div>
+    <div><dt>標籤</dt><dd>${(note.tags || []).length ? note.tags.map(tagPillHtml).join(" ") : '<span class="muted">無標籤</span>'}</dd></div>
+  </dl>`;
+}
+
+function recordReadonly(record,isCase=false){
+  return Boolean(record.is_locked || (isCase && record.status==="closed") || state.preview || state.session?.role==="platform_admin");
+}
+function readonlyIcon(record,isCase=false){
+  if(!recordReadonly(record,isCase))return "";
+  const reason=record.is_locked?"已上鎖，僅可閱覽":isCase && record.status==="closed"?"已結案，僅可閱覽":"目前視角僅可閱覽";
+  return `<span class="record-readonly" title="${reason}" aria-label="${reason}">${icon("lock")}</span>`;
+}
+function noteLockPolicy(){
+  const orgId=state.session?.user?.organization_id;
+  const org=(state.organizations||[]).find(o=>o.org_id===orgId);
+  return org?.note_lock_policy || state.session?.org_settings?.note_lock_policy || 'disabled';
+}
+function canToggleNoteLock(record=null){
+  const role=state.session?.role, policy=noteLockPolicy();
+  if(state.preview || role==='platform_admin')return false;
+  if(policy==='strict_admin')return role==='org_admin';
+  if(policy==='collaborative' && role==='operator' && record?.is_locked && record.author!==state.session?.identity)return false;
+  return policy!=='collaborative' || role!=='collaborator';
+}
+function recordLockControl(record,isCase=false){
+  if(state.preview || state.session?.role==="platform_admin" || (isCase && record.status==="closed"))return readonlyIcon(record,isCase);
+  const policy=noteLockPolicy();
+  if(policy==="collaborative" && state.session?.role==="collaborator")return readonlyIcon(record,isCase);
+  if(policy==="strict_admin" && state.session?.role!=="org_admin")return readonlyIcon(record,isCase);
+  if(policy==="collaborative" && record.is_locked && state.session?.role==="operator" && (isCase?record.created_by:record.author)!==state.session?.identity)return readonlyIcon(record,isCase);
+  if(!isCase && !canToggleNoteLock(record))return readonlyIcon(record);
+  const action=isCase?"record-lock-case":"record-lock-note";
+  const label=record.is_locked?"解除鎖定":"鎖定";
+  return `<button type="button" class="record-lock-control ${record.is_locked?'locked':''}" data-action="${action}" data-id="${esc(record.case_id||record.note_id)}" data-recipient="${esc(record.recipient_id||record.case_subject_id||'')}" title="${label}" aria-label="${label}" aria-pressed="${Boolean(record.is_locked)}">${icon(record.is_locked?'lock':'unlock')}</button>`;
+}
+
+function renderNoteContent(note){
+  return renderMarkdown(note.content, {noteId: note.note_id, editable: !note.is_locked && !state.preview && state.session?.role !== "platform_admin"});
+}
+
+function noteReadingCopy(content){
+  const preserved=[];
+  const marker=`COPY${Math.random().toString(36).slice(2)}BLOCK`;
+  const preserve=text=>{const token=`${marker}${preserved.length}END`;preserved.push([token,text]);return token;};
+  const protectedContent=content.replace(/^```[^\r\n]*\r?\n[\s\S]*?^```[ \t]*$/gm,block=>preserve(block));
+  const root=document.createElement('div');
+  root.innerHTML=renderMarkdown(protectedContent,{noteId:'copy',editable:false});
+  root.querySelectorAll('input[type="checkbox"]').forEach(input=>input.replaceWith(document.createTextNode(input.checked?'☑ ':'☐ ')));
+  root.querySelectorAll('li').forEach(li=>{
+    const prefix=li.parentElement.tagName==='OL'?`${li.hasAttribute('value')?li.value:Number(li.parentElement.getAttribute('start')||1)+Array.from(li.parentElement.children).indexOf(li)}. `:'• ';
+    li.prepend(document.createTextNode(prefix));
+  });
+  root.querySelectorAll('img').forEach(img=>img.replaceWith(document.createTextNode(img.alt||'')));
+  root.querySelectorAll('table').forEach(table=>{
+    const csvCell=text=>/[",\r\n]/.test(text)?`"${text.replace(/"/g,'""')}"`:text;
+    const csv=Array.from(table.rows).map(row=>Array.from(row.cells).map(cell=>csvCell(cell.textContent.trim())).join(',')).join('\n');
+    table.replaceWith(document.createTextNode(`\n${preserve(csv)}\n\n`));
+  });
+  root.querySelectorAll('p,h2,h3,h4,h5,blockquote,pre,ul,ol,.md-gap').forEach(el=>el.append(document.createTextNode('\n\n')));
+  root.querySelectorAll('li,.md-check-item').forEach(el=>el.append(document.createTextNode('\n')));
+  root.querySelectorAll('br,hr').forEach(el=>el.replaceWith(document.createTextNode('\n')));
+  let text=root.textContent.replace(/\n{3,}/g,'\n\n').trim();
+  preserved.forEach(([token,value])=>{text=text.replace(token,()=>value);});
+  return text;
+}
+
+async function copyNoteText(text){
+  if(navigator.clipboard?.writeText){
+    try { await navigator.clipboard.writeText(text);notice('記事內容已複製至剪貼簿。');return; } catch (_) {}
+  }
+  fallbackCopy(text);
+}
+
+async function noteCopyOptions(noteId){
+  let note=[state.notePreview,...(state.globalNotes||[]),...Array.from(state.chatNotes?.values()||[]).flat()].find(n=>n?.note_id===noteId);
+  if(!note) note=(await api(`/api/chat-notes/detail?note_id=${encodeURIComponent(noteId)}`)).note;
+  if(!note) throw new Error('找不到記事內容。');
+  await recordCopyOptions(note.content||'','記事');
+}
+
+async function recordCopyOptions(content,label){
+  if(!/(^\s*(?:#{1,6}\s|[-*]\s|\d+[.)]\s|>\s|```|\|)|\*\*|\[[^\]]+\]\()/m.test(content)){
+    await copyNoteText(content);return;
+  }
+  state.noteCopyContent=content;
+  modal(`複製${label}內容`,`<p>閱讀版保留 ☐／☑ 與程式碼區塊，表格轉為 CSV；Markdown 原文保留完整語法。</p><div class="form-actions"><button type="button" class="btn primary" data-action="copy-note-version" data-id="reading">${icon('copy')} 閱讀版</button><button type="button" class="btn" data-action="copy-note-version" data-id="markdown">${icon('file')} Markdown 原文</button><button type="button" class="btn" data-action="close-modal">關閉</button></div>`);
+}
+
+function renderCaseContent(c){
+  return renderMarkdown(c.description, {caseId: c.case_id, editable: !c.is_locked && c.status !== "closed" && !state.preview && state.session?.role !== "platform_admin"});
+}
+
+async function chatNoteDetailModal(note_id){
+  let note = null;
+  if(state.globalNotes){
+    note = state.globalNotes.find(n => n.note_id === note_id);
+  }
+  if(!note && state.chatNotes){
+    for(const list of state.chatNotes.values()){
+      const found = (list || []).find(n => n.note_id === note_id);
+      if(found){ note = found; break; }
+    }
+  }
+
+  if(!note){
+    try {
+      const res = await api(`/api/chat-notes/detail?note_id=${encodeURIComponent(note_id)}`);
+      note = res.note;
+    } catch(_){}
+  }
+
+  if(!note){
+    notice("找不到該筆記事資料。", true);
+    return;
+  }
+
+  const isCompleted = note.status === "completed";
+  const isLocked = Boolean(note.is_locked);
+  const orgLockPolicy = noteLockPolicy();
+  const canUnlock = orgLockPolicy === "collaborative" || (orgLockPolicy === "strict_admin" && manager()) || orgLockPolicy === "disabled";
+  const canEdit = !isLocked || canUnlock;
+
+  state.notePreview = note;
+  const mdHtml = renderNoteContent(note);
+
+  modal("記事預覽", `
+    <div class="note-detail-view" style="display:flex;flex-direction:column;gap:14px;">
+      <div class="note-detail-header" style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;border-bottom:1px solid var(--line);padding-bottom:12px;">
+        <div style="min-width:0;flex:1 1 200px;">
+          <h3 style="margin:0 0 6px 0;font-size:16px;font-weight:700;color:var(--ink);line-height:1.35;word-break:break-word;">${esc(note.title || "無標題記事")}</h3>
+          <div style="font-size:12px;color:var(--muted);display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            ${note.due_date ? `<span>· ${icon("clock")} 期限：<strong style="color:var(--ink);">${esc(note.due_date)}</strong></span>` : ''}
+          </div>
+        </div>
+        <div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center;flex-shrink:0;">
+          ${note.is_pinned ? `<span class="apple-pill" style="background:rgba(234,179,8,.18);color:#b45309;border-color:rgba(234,179,8,.3);">${icon("pin")} 置頂</span>` : ''}
+          ${recordLockControl(note)}
+          ${isCompleted ? `<span class="apple-pill" style="background:rgba(34,197,94,.18);color:#16a34a;border-color:rgba(34,197,94,.3);">${icon("check")} 已完成</span>` : ''}
+        </div>
+      </div>
+
+      ${notePreviewMetadata(note)}
+
+      <div class="note-detail-body" style="background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:14px 16px;max-height:420px;overflow-y:auto;">
+        <div class="md-preview-area">${mdHtml}</div>
+      </div>
+
+      <div class="form-actions" style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;gap:8px;flex-wrap:wrap;">
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          <button type="button" class="btn small" data-action="copy-chat-note-content" data-id="${esc(note.note_id)}">${icon("copy")} 複製內容</button>
+          <button type="button" class="btn small" data-action="convert-note-to-case" data-id="${esc(note.note_id)}" data-recipient="${esc(note.recipient_id)}">${icon("folder")} 轉為案件</button>
+          ${!recordReadonly(note) ? `<button type="button" class="btn small" data-action="edit-chat-note" data-id="${esc(note.note_id)}" data-recipient="${esc(note.recipient_id)}">${icon("edit")} 編輯記事</button>` : ''}
+        </div>
+        ${!recordReadonly(note)?button(icon("trash")+"刪除記事","delete-chat-note","small danger",`data-id="${esc(note.note_id)}" data-recipient="${esc(note.recipient_id)}"`):""}
+        <button type="button" class="btn primary small" data-action="close-modal">關閉</button>
+      </div>
+    </div>
+  `);
 }
 
 async function manageNotesTaxonomyModal(initialTab = "categories"){
@@ -1028,7 +1252,7 @@ async function loadGlobalChatNotes(){
   const tag = state.noteHubTag || "";
   const status = state.noteHubStatus || "all";
   const channel = state.noteHubChannel || "";
-  
+
   const params = new URLSearchParams();
   if (query) params.set("query", query);
   if (cat) params.set("category_id", cat);
@@ -1045,6 +1269,7 @@ async function loadGlobalChatNotes(){
     if (state.view === "chat-notes") {
       const container = $("global-notes-content");
       if (container) container.innerHTML = renderGlobalNotesBody();
+      if($("notes-hub-browse"))$("notes-hub-browse").innerHTML=notesHubBrowse();
       if ($("nav-note-count")) $("nav-note-count").textContent = state.globalNotesStats.total || "0";
     }
   }catch(e){
@@ -1053,12 +1278,12 @@ async function loadGlobalChatNotes(){
 }
 
 function renderGlobalNotesBody(){
-  const notes = state.globalNotes || [];
+  const notes = [...(state.globalNotes || [])].sort((a,b)=>Number(Boolean(b.is_pinned))-Number(Boolean(a.is_pinned)) || (state.noteHubSort==="oldest"?1:-1)*String(a.created_at||"").localeCompare(String(b.created_at||"")));
   if(!notes.length){
     return empty("查無符合的對話記事", "請確認搜尋關鍵字或調整分類、標籤與狀態篩選條件。");
   }
 
-  const orgLockPolicy = state.session?.org_settings?.note_lock_policy || "disabled";
+  const orgLockPolicy = noteLockPolicy();
 
   if(state.noteHubViewMode === "table"){
     return `
@@ -1070,7 +1295,7 @@ function renderGlobalNotesBody(){
               <th>記事標題與內容</th>
               <th>分類與標籤</th>
               <th>對話對象 / OA</th>
-              <th>更新時間</th>
+              <th>建立時間</th>
               <th style="text-align:right;">操作</th>
             </tr>
           </thead>
@@ -1085,7 +1310,7 @@ function renderGlobalNotesBody(){
               <tr class="${n.is_pinned?'pinned':''} ${isLocked?'locked':''} ${isCompleted?'completed':''}">
                 <td>
                   ${n.is_pinned ? `<span style="color:#b45309;" title="置頂">${icon("pin")}</span>` : ''}
-                  ${isLocked ? `<span style="color:#64748b;" title="已鎖定">${icon("lock")}</span>` : ''}
+                  ${recordLockControl(n)}
                 </td>
                 <td style="max-width:320px;">
                   <strong style="display:block;margin-bottom:3px;">${esc(n.title || "記事")}</strong>
@@ -1099,19 +1324,19 @@ function renderGlobalNotesBody(){
                 </td>
                 <td>
                   <button type="button" class="btn text small" data-action="open-chat-from-contact" data-id="${esc(n.recipient_id)}" style="padding:0;font-size:12px;text-align:left;">
-                    <strong>${esc(n.recipient_name || n.recipient_id)}</strong>
+                    <strong>${esc(noteRecipientLabel(n))}</strong>
                     <small class="muted" style="display:block;">${esc(n.channel_name || "")}</small>
                   </button>
                 </td>
                 <td style="font-size:12px;color:var(--muted);white-space:nowrap;">
-                  ${when(n.updated_at || n.created_at)}
+                  ${when(n.created_at)}
                   <small style="display:block;">${esc(n.author||"")}</small>
                 </td>
                 <td style="text-align:right;white-space:nowrap;">
                   <button type="button" class="btn text small" data-action="copy-chat-note-content" data-id="${esc(n.note_id)}" title="一鍵複製內容">${icon("copy")}</button>
                   <button type="button" class="btn text small" data-action="toggle-chat-note-complete" data-id="${esc(n.note_id)}" data-recipient="${esc(n.recipient_id)}" title="${isCompleted?'標記未完成':'標記完成'}">${icon(isCompleted?"refresh":"check")}</button>
                   <button type="button" class="btn text small" data-action="toggle-chat-note-pin" data-id="${esc(n.note_id)}" data-recipient="${esc(n.recipient_id)}" title="${n.is_pinned?'取消置頂':'置頂'}">${icon(n.is_pinned?"unpin":"pin")}</button>
-                  ${orgLockPolicy !== "disabled" ? `<button type="button" class="btn text small" data-action="toggle-chat-note-lock" data-id="${esc(n.note_id)}" data-recipient="${esc(n.recipient_id)}" title="${isLocked?'解除鎖定':'鎖定防誤改'}">${icon(isLocked?"unlock":"lock")}</button>` : ''}
+                  ${canToggleNoteLock(n) ? `<button type="button" class="btn text small" data-action="toggle-chat-note-lock" data-id="${esc(n.note_id)}" data-recipient="${esc(n.recipient_id)}" title="${isLocked?'解除鎖定':'鎖定防誤改'}" aria-label="${isLocked?'解除鎖定':'鎖定防誤改'}" aria-pressed="${isLocked}">${isLocked?icon("unlock"):icon("lock")}</button>` : ''}
                   ${canEdit && !isLocked ? `<button type="button" class="btn text small" data-action="edit-chat-note" data-id="${esc(n.note_id)}" data-recipient="${esc(n.recipient_id)}" title="編輯">${icon("edit")}</button>` : ''}
                   <button type="button" class="btn text small" data-action="convert-note-to-case" data-id="${esc(n.note_id)}" data-recipient="${esc(n.recipient_id)}" title="轉為案件">${icon("folder")}</button>
                   ${canEdit && !isLocked ? `<button type="button" class="btn text small danger" data-action="delete-chat-note" data-id="${esc(n.note_id)}" data-recipient="${esc(n.recipient_id)}" title="刪除">${icon("trash")}</button>` : ''}
@@ -1132,35 +1357,35 @@ function renderGlobalNotesBody(){
         const canUnlock = orgLockPolicy === "collaborative" || (orgLockPolicy === "strict_admin" && manager()) || orgLockPolicy === "disabled";
         const canEdit = !isLocked || canUnlock;
 
+        const isLongContent = Boolean(n.content && (n.content.length > 180 || (n.content.match(/\n/g) || []).length >= 4));
         return `
-        <div class="notes-hub-card ${n.is_pinned?'pinned':''} ${isLocked?'locked':''} ${isCompleted?'completed':''}">
+        <div class="notes-hub-card ${n.is_pinned?'pinned':''} ${isLocked?'locked':''} ${isCompleted?'completed':''}" data-id="${esc(n.note_id)}">
           <div class="notes-hub-card-header">
             <div>
-              <span class="notes-hub-card-recipient" data-action="open-chat-from-contact" data-id="${esc(n.recipient_id)}" title="前往聊天室">
-                ${icon("message")} ${esc(n.recipient_name || n.recipient_id)}
-                ${n.channel_name ? `<span class="muted">· ${esc(n.channel_name)}</span>` : ''}
-              </span>
               <h4 class="notes-hub-card-title">${esc(n.title || "記事")}</h4>
             </div>
-            <div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end;align-items:center;">
+            <div class="notes-hub-card-badges">
               ${n.is_pinned ? `<span class="apple-pill" style="background:rgba(234,179,8,.18);color:#b45309;border-color:rgba(234,179,8,.3);">${icon("pin")} 置頂</span>` : ''}
-              ${isLocked ? `<span class="apple-pill" style="background:rgba(100,116,139,.18);color:#475569;border-color:rgba(100,116,139,.3);">${icon("lock")} 已鎖定</span>` : ''}
+              ${recordLockControl(n)}
               ${isCompleted ? `<span class="apple-pill" style="background:rgba(34,197,94,.18);color:#16a34a;border-color:rgba(34,197,94,.3);">${icon("check")} 已完成</span>` : ''}
-              ${n.category_name ? categoryPillHtml(n.category_name) : ''}
             </div>
           </div>
-          <div class="notes-hub-card-body" id="chat-note-content-${esc(n.note_id)}">${esc(n.content)}</div>
+          <div class="notes-card-meta">${icon("users")}<span>${esc(noteRecipientLabel(n))}</span>${icon("calendar")}<time>${esc(sidebarRecordDate(n.created_at))}</time></div><div class="notes-card-tags">${categoryPillHtml(n.category_name)}${(n.tags||[]).map(tagPillHtml).join('')}</div>
+          <div class="chat-note-content-wrapper">
+            <div class="notes-hub-card-body ${isLongContent ? 'collapsed' : ''}" id="chat-note-content-${esc(n.note_id)}">${renderNoteContent(n)}</div>
+            ${isLongContent ? `<button type="button" class="chat-note-expand-btn" data-action="toggle-chat-note-expand" data-id="${esc(n.note_id)}">${icon("chevron-down")} 展開全文</button>` : ''}
+          </div>
           <div class="notes-hub-card-footer">
             <div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;">
-              ${(n.tags || []).map(t => tagPillHtml(t)).join("")}
               ${n.due_date ? `<span class="muted" style="display:inline-flex;align-items:center;gap:3px;font-size:11px;">${icon("clock")} 期限：${esc(n.due_date)}</span>` : ''}
               ${n.linked_case_id ? `<span class="apple-pill" style="background:rgba(88,86,214,.12);color:#5856D6;cursor:pointer;" data-action="open-case-detail" data-id="${esc(n.linked_case_id)}">${icon("folder")} 關聯案件</span>` : ''}
             </div>
             <div class="notes-hub-card-actions">
+              <button type="button" class="btn text small" data-action="open-note-detail" data-id="${esc(n.note_id)}" title="查看完整記事詳情">${icon("eye")}</button>
               <button type="button" class="btn text small" data-action="copy-chat-note-content" data-id="${esc(n.note_id)}" title="一鍵複製內容">${icon("copy")}</button>
               <button type="button" class="btn text small" data-action="toggle-chat-note-complete" data-id="${esc(n.note_id)}" data-recipient="${esc(n.recipient_id)}" title="${isCompleted?'標記未完成':'標記完成'}">${icon(isCompleted?"refresh":"check")}</button>
               <button type="button" class="btn text small" data-action="toggle-chat-note-pin" data-id="${esc(n.note_id)}" data-recipient="${esc(n.recipient_id)}" title="${n.is_pinned?'取消置頂':'置頂'}">${icon(n.is_pinned?"unpin":"pin")}</button>
-              ${orgLockPolicy !== "disabled" ? `<button type="button" class="btn text small" data-action="toggle-chat-note-lock" data-id="${esc(n.note_id)}" data-recipient="${esc(n.recipient_id)}" title="${isLocked?'解除鎖定':'鎖定防誤改'}">${icon(isLocked?"unlock":"lock")}</button>` : ''}
+              ${canToggleNoteLock(n) ? `<button type="button" class="btn text small" data-action="toggle-chat-note-lock" data-id="${esc(n.note_id)}" data-recipient="${esc(n.recipient_id)}" title="${isLocked?'解除鎖定':'鎖定防誤改'}" aria-label="${isLocked?'解除鎖定':'鎖定防誤改'}" aria-pressed="${isLocked}">${isLocked?icon("unlock"):icon("lock")}</button>` : ''}
               ${canEdit && !isLocked ? `<button type="button" class="btn text small" data-action="edit-chat-note" data-id="${esc(n.note_id)}" data-recipient="${esc(n.recipient_id)}" title="編輯">${icon("edit")}</button>` : ''}
               <button type="button" class="btn text small" data-action="convert-note-to-case" data-id="${esc(n.note_id)}" data-recipient="${esc(n.recipient_id)}" title="轉為案件">${icon("folder")}</button>
               ${canEdit && !isLocked ? `<button type="button" class="btn text small danger" data-action="delete-chat-note" data-id="${esc(n.note_id)}" data-recipient="${esc(n.recipient_id)}" title="刪除">${icon("trash")}</button>` : ''}
@@ -1172,6 +1397,10 @@ function renderGlobalNotesBody(){
   `;
 }
 
+function notesHubBrowse(){
+  const stats=state.globalNotesStats||{total:0,pinned:0,completed:0};
+  return `<div class="notes-browse-bar"><div class="notes-status-tabs" role="group" aria-label="記事狀態">${[['all','全部',stats.total],['active','待追蹤',Math.max(0,stats.total-stats.completed)],['completed','已完成',stats.completed],['pinned','已釘選',stats.pinned]].map(([id,title,count])=>`<button type="button" data-action="notes-status-tab" data-id="${id}" aria-pressed="${(state.noteHubStatus||'all')===id}" class="${(state.noteHubStatus||'all')===id?'active':''}">${title} (${count})</button>`).join('')}</div><select id="notes-hub-sort" aria-label="記事排序"><option value="newest" ${state.noteHubSort!=='oldest'?'selected':''}>建立時間（新→舊）</option><option value="oldest" ${state.noteHubSort==='oldest'?'selected':''}>建立時間（舊→新）</option></select></div>`;
+}
 function chatNotesPage(){
   if (!state.globalNotesLoaded) {
     state.globalNotesLoaded = true;
@@ -1192,7 +1421,7 @@ function chatNotesPage(){
   <div class="notes-hub-stats">
     ${stat("全部記事", stats.total, "則", "所有已記錄的對話記事", "file")}
     ${stat("重要置頂", stats.pinned, "則", "置頂於對話頂端", "pin")}
-    ${stat("唯讀鎖定", stats.locked, "則", "鎖定防誤改", "lock")}
+    ${stat("待追蹤", Math.max(0,stats.total-stats.completed), "則", "需要後續跟進的記事", "clock")}
     ${stat("處理完畢", stats.completed, "則", "已標記完成事項", "check")}
   </div>
 
@@ -1226,6 +1455,7 @@ function chatNotesPage(){
     </div>
   </div>
 
+  <div id="notes-hub-browse">${notesHubBrowse()}</div>
   <div id="global-notes-content">
     ${renderGlobalNotesBody()}
   </div>
@@ -1269,7 +1499,7 @@ async function templatePickerModal(subject_id="", target_type="case"){
   try{
     const res = await api('/api/template-packs/templates');
     const groups = (target_type === "note" ? res.note_template_groups : res.case_template_groups) || [];
-    
+
     let totalCount = 0;
     groups.forEach(g => { totalCount += (g.templates || []).length; });
 
@@ -1282,7 +1512,7 @@ async function templatePickerModal(subject_id="", target_type="case"){
       ${groups.map(g => (g.templates || []).map(t => {
         const title = t.rendered_title || t.title || "";
         const body = t.rendered_body || t.body || "";
-        const cat = t.category_name || "一般";
+        const cat = t.category_name || "一般備忘";
         const pri = t.defaults?.priority || "medium";
         const tags = (t.defaults?.tags || []).join(", ");
         const isNote = target_type === "note";
@@ -1374,7 +1604,7 @@ async function saveAsTemplateModal(source_type, source_id){
       return;
     }
     const packOpts = customPacks.map(p=>[p.pack_id, p.name]);
-    
+
     let defaultName = "";
     if(source_type === "case"){
       const c = (state.cases||[]).find(x=>x.case_id===source_id);
@@ -1422,7 +1652,7 @@ function parseMdInline(str){
   return s;
 }
 
-function renderMarkdown(md){
+function renderMarkdown(md, taskOptions = null){
   if(!md || !md.trim()) return '<span class="muted">（無內容）</span>';
 
   // 1. Extract fenced code blocks
@@ -1436,6 +1666,7 @@ function renderMarkdown(md){
   const lines = processed.split(/\r?\n/);
   const out = [];
   let currentList = null; // 'ul' | 'ol'
+  let taskIndex = 0;
 
   function closeList(){
     if(currentList === 'ul'){
@@ -1445,6 +1676,10 @@ function renderMarkdown(md){
       out.push('</ol>');
       currentList = null;
     }
+  }
+
+  function tableCells(line){
+    return line.trim().replace(/^\|/,'').replace(/(?<!\\)\|$/,'').split(/(?<!\\)\|/).map(cell=>cell.trim().replace(/\\\|/g,'|'));
   }
 
   for(let i = 0; i < lines.length; i++){
@@ -1466,6 +1701,23 @@ function renderMarkdown(md){
         out.push('<div class="md-gap"></div>');
       }
       continue;
+    }
+
+    // Pipe tables: render header, alignment and body instead of raw Markdown.
+    if(trimmed.includes('|') && i+1<lines.length){
+      const heads=tableCells(trimmed), separators=tableCells(lines[i+1]);
+      if(heads.length===separators.length && separators.every(cell=>/^:?-{3,}:?$/.test(cell))){
+        closeList();
+        const alignment=separators.map(cell=>cell.startsWith(':')&&cell.endsWith(':')?'center':cell.endsWith(':')?'right':'left');
+        const cells=(row,tag)=>heads.map((_,idx)=>`<${tag} class="md-align-${alignment[idx]}">${parseMdInline(row[idx]||'')}</${tag}>`).join('');
+        out.push(`<div class="md-table-scroll"><table class="md-table"><thead><tr>${cells(heads,'th')}</tr></thead><tbody>`);
+        i+=2;
+        while(i<lines.length && lines[i].trim() && lines[i].includes('|')){
+          out.push(`<tr>${cells(tableCells(lines[i]),'td')}</tr>`);i++;
+        }
+        i--;
+        out.push('</tbody></table></div>');continue;
+      }
     }
 
     // Horizontal Rule: ---, ***, ___
@@ -1499,11 +1751,15 @@ function renderMarkdown(md){
       closeList();
       const isDone = checkMatch[1].toLowerCase() === 'x';
       const itemContent = parseMdInline(checkMatch[2]);
-      if(isDone){
+      if(taskOptions){
+        const taskAttrs = taskOptions.caseId ? `data-case-task="${taskIndex}" data-case-id="${esc(taskOptions.caseId)}"` : `data-note-task="${taskIndex}" data-note-id="${esc(taskOptions.noteId)}"`;
+        out.push(`<label class="md-check-item ${isDone ? 'done' : ''}"><input type="checkbox" ${taskAttrs} ${isDone ? 'checked' : ''} ${taskOptions.editable ? '' : 'disabled'} aria-label="${esc(checkMatch[2] || '待辦項目')}"><span>${itemContent}</span></label>`);
+      } else if(isDone){
         out.push(`<div class="md-check-item done"><span class="md-checkbox done">✓</span> <s>${itemContent}</s></div>`);
       } else {
         out.push(`<div class="md-check-item"><span class="md-checkbox">○</span> ${itemContent}</div>`);
       }
+      taskIndex++;
       continue;
     }
 
@@ -1520,14 +1776,14 @@ function renderMarkdown(md){
     }
 
     // Ordered List: 1. item or 1) item
-    const olMatch = trimmed.match(/^\d+[\.\)]\s+(.+)$/);
+    const olMatch = trimmed.match(/^(\d+)[\.\)]\s+(.+)$/);
     if(olMatch){
       if(currentList === 'ul') closeList();
       if(!currentList){
-        out.push('<ol class="md-ol">');
+        out.push(`<ol class="md-ol" start="${Number(olMatch[1])}">`);
         currentList = 'ol';
       }
-      out.push(`<li class="md-oli">${parseMdInline(olMatch[1])}</li>`);
+      out.push(`<li class="md-oli" value="${Number(olMatch[1])}">${parseMdInline(olMatch[2])}</li>`);
       continue;
     }
 
@@ -1551,20 +1807,25 @@ function setPreferredEditorFormat(fmt){
   return f;
 }
 
-function renderDualFormatEditor(fieldName, fieldId, value = "", format = null){
+function renderDualFormatEditor(fieldName, fieldId, value = "", format = null, labelText = "內容骨架 / 檢查清單", rows = 6, placeholder = "", isRequired = false, existing = false){
   let chosenFormat = format;
   if(!chosenFormat){
-    if(value && (/^#{1,6}\s|^- \[[ xX]\]|^\* |\*\*|```/m.test(value))){
+    if(value && (/^\s*(?:#{1,6}\s|[-*]\s|\d+[.)]\s|>\s|\|)|\*\*|```/m.test(value))){
       chosenFormat = "markdown";
     } else {
       chosenFormat = getPreferredEditorFormat();
     }
   }
   const isMd = chosenFormat === "markdown";
+  const previewFirst = existing && isMd && Boolean(value.trim());
+  const defaultPlaceholder = isMd
+    ? '支援 Markdown 語法，例如：\n### 1. 狀況確認\n- [ ] 詢問設備型號與故障現象\n- [ ] 拍照存證\n\n### 2. 處置措施\n* **優先等級**：重要處理\n* **備註**：安排工程窗口'
+    : '填寫標準內容流程或檢查清單...';
+  const finalPlaceholder = placeholder || defaultPlaceholder;
   return `
-    <div class="full tmpl-editor-container" data-field="${esc(fieldId)}" data-format="${isMd?'markdown':'plain'}" data-subtab="write">
+    <div class="full tmpl-editor-container" data-field="${esc(fieldId)}" data-format="${isMd?'markdown':'plain'}" data-subtab="${previewFirst?'preview':'write'}">
       <div class="tmpl-editor-header">
-        <label for="${esc(fieldId)}" class="tmpl-editor-label">內容骨架 / 檢查清單</label>
+        <label for="${esc(fieldId)}" class="tmpl-editor-label">${esc(labelText)}</label>
         <div class="tmpl-editor-controls">
           <div class="tmpl-format-pill-group" role="group" aria-label="格式選擇">
             <button type="button" class="tmpl-pill-btn ${!isMd?'active':''}" data-action="set-editor-format" data-target="${esc(fieldId)}" data-format="plain">純文字</button>
@@ -1572,18 +1833,18 @@ function renderDualFormatEditor(fieldName, fieldId, value = "", format = null){
           </div>
 
           <div class="tmpl-md-subtabs" role="group" aria-label="編輯模式切換">
-            <button type="button" class="tmpl-subtab-btn active" data-action="set-md-subtab" data-target="${esc(fieldId)}" data-tab="write">✍️ 編輯</button>
-            <button type="button" class="tmpl-subtab-btn" data-action="set-md-subtab" data-target="${esc(fieldId)}" data-tab="preview">👁️ 預覽</button>
+            <button type="button" class="tmpl-subtab-btn ${previewFirst?'':'active'}" data-action="set-md-subtab" data-target="${esc(fieldId)}" data-tab="write">✍️ 編輯</button>
+            <button type="button" class="tmpl-subtab-btn ${previewFirst?'active':''}" data-action="set-md-subtab" data-target="${esc(fieldId)}" data-tab="preview">👁️ 預覽</button>
           </div>
         </div>
       </div>
 
       <div class="tmpl-editor-write-box">
-        <textarea id="${esc(fieldId)}" name="${esc(fieldName)}" rows="6" maxlength="2000" placeholder="${isMd ? '支援 Markdown 語法，例如：\n### 1. 狀況確認\n- [ ] 詢問設備型號與故障現象\n- [ ] 拍照存證\n\n### 2. 處置措施\n* **優先等級**：重要處理\n* **備註**：安排工程窗口' : '填寫標準內容流程或檢查清單...'}">${esc(value)}</textarea>
+        <textarea id="${esc(fieldId)}" name="${esc(fieldName)}" rows="${rows}" ${isRequired ? 'required minlength="1"' : ''} maxlength="2000" placeholder="${esc(finalPlaceholder)}">${esc(value)}</textarea>
         <small class="muted tmpl-md-hint">💡 支援標題 (###)、檢查清單 (- [ ])、條列 (-)、粗體 (**文字**)、引用 (>)、程式碼區塊等 Markdown 語法</small>
       </div>
 
-      <div class="tmpl-editor-preview-box md-preview-area"></div>
+      <div class="tmpl-editor-preview-box md-preview-area">${previewFirst?renderMarkdown(value):''}</div>
     </div>
   `;
 }
@@ -1593,20 +1854,24 @@ function showUndoToast(msg, onUndo){
   if(existing) existing.remove();
   const toast = document.createElement("div");
   toast.className = "tmpl-undo-toast";
-  toast.innerHTML = `<span>${esc(msg)}</span><button type="button" class="tmpl-undo-btn">${icon("undo")} 復原</button>`;
+  toast.dataset.corner=personalSettings().corner;
+  toast.setAttribute('role','status');
+  toast.innerHTML = `<span>${esc(msg)}</span><button type="button" class="tmpl-undo-btn">${icon("undo")} 復原</button><button type="button" class="toast-close" aria-label="關閉通知">${icon('close')}</button>`;
+  toast.querySelector('.toast-close').onclick=()=>toast.remove();
   toast.querySelector(".tmpl-undo-btn").addEventListener("click", async () => {
     toast.remove();
     if(typeof onUndo === "function") await onUndo();
   });
   document.body.appendChild(toast);
-  setTimeout(() => { if(toast.parentNode) toast.remove(); }, 6000);
+  const seconds=personalSettings().duration;
+  if(seconds)setTimeout(() => { if(toast.parentNode) toast.remove(); }, seconds*1000);
 }
 
 function templatesAndCategoriesPage(){
   return `
     <div class="tmpl-mgmt-wrap">
       ${heading("範本與分類", "建立常用內容與標準流程，之後處理對話與案件時可一鍵快速套用。", `<div class="tmpl-heading-btns"><button class="btn primary small" data-action="open-template-wizard">${icon("plus")} 建立新範本</button>${manager()?`<button class="btn text small" data-action="templates-switch-tab" data-tab="packs">${icon("settings")} 進階群組</button>`:''}</div>`, "TEMPLATES & CATEGORIES")}
-      
+
       <div class="tmpl-search-bar">
         ${icon("search")}
         <input type="search" id="templates-search-input" value="${esc(templatesSearchQuery)}" placeholder="搜尋範本名稱、內容大綱或標籤關鍵字（例如：報修、客訴、報價、教務）…" autocomplete="off">
@@ -1656,7 +1921,7 @@ async function loadTemplatesTabContent(){
     const q = templatesSearchQuery.toLowerCase();
     let filtered = allTemplates;
     if(q){
-      filtered = allTemplates.filter(t => 
+      filtered = allTemplates.filter(t =>
         (t.name||"").toLowerCase().includes(q) ||
         (t.title||"").toLowerCase().includes(q) ||
         (t.body||"").toLowerCase().includes(q) ||
@@ -1768,10 +2033,10 @@ async function loadTemplatesTabContent(){
                   <div class="category-item-info">
                     <span class="muted category-idx">#${idx+1}</span>
                     <strong class="category-name">${esc(c.name)}</strong>
-                    ${c.name === '一般' ? '<span class="badge">系統保留</span>' : ''}
+                    ${c.name === '一般備忘' ? '<span class="badge">系統保留</span>' : ''}
                     <span class="muted category-count">(${c.usage_count||0} 筆)</span>
                   </div>
-                  ${manager() && c.name !== '一般' ? `
+                  ${manager() && c.name !== '一般備忘' ? `
                     <div class="category-item-actions">
                       <button class="btn text small" data-action="edit-single-category" data-type="note" data-name="${esc(c.name)}">${icon("edit")} 改名</button>
                       <button class="btn text small danger" data-action="delete-single-category" data-type="note" data-name="${esc(c.name)}">${icon("trash")} 刪除</button>
@@ -1797,10 +2062,10 @@ async function loadTemplatesTabContent(){
                   <div class="category-item-info">
                     <span class="muted category-idx">#${idx+1}</span>
                     <strong class="category-name">${esc(c.name)}</strong>
-                    ${c.name === '一般' ? '<span class="badge">系統保留</span>' : ''}
+                    ${c.name === '一般備忘' ? '<span class="badge">系統保留</span>' : ''}
                     <span class="muted category-count">(${c.usage_count||0} 筆)</span>
                   </div>
-                  ${manager() && c.name !== '一般' ? `
+                  ${manager() && c.name !== '一般備忘' ? `
                     <div class="category-item-actions">
                       <button class="btn text small" data-action="edit-single-category" data-type="case" data-name="${esc(c.name)}">${icon("edit")} 改名</button>
                       <button class="btn text small danger" data-action="delete-single-category" data-type="case" data-name="${esc(c.name)}">${icon("trash")} 刪除</button>
@@ -1878,10 +2143,9 @@ function renderTmplCard(t){
   const isCase = t.type === 'case';
   const iconHtml = isCase ? icon("case_icon") : icon("note_icon");
   const typeLabel = isCase ? "案件範本" : "記事範本";
-  const catName = t.category_name || "一般";
+  const catName = t.category_name || "一般備忘";
   const priority = t.priority || "medium";
-  const priLabels = { urgent: "🔴 緊急優先", high: "🟠 重要處理", medium: "⚪ 一般進度", low: "低優先度" };
-  const priText = isCase ? (priLabels[priority] || "⚪ 一般") : "";
+  const priNames = { urgent: "緊急優先", high: "重要處理", medium: "一般進度", low: "低優先度" };
 
   return `
     <article class="tmpl-card ${selectedTemplateItems.has(t.template_id)?'selected':''}">
@@ -1903,7 +2167,7 @@ function renderTmplCard(t){
 
       <div class="tmpl-card-meta">
         <span class="badge">${icon("folder")} ${esc(catName)}</span>
-        ${isCase ? `<span class="tmpl-priority-badge ${priority}">${priText}</span>` : ''}
+        ${isCase ? `<span class="badge tmpl-priority-badge ${priority}"><span class="priority-dot"></span>${priNames[priority]||"一般進度"}</span>` : ''}
         ${t.is_preset ? '<span class="badge">範本範例</span>' : '<span class="badge primary">自訂範本</span>'}
       </div>
 
@@ -1973,7 +2237,7 @@ async function openTemplateWizard(step = 1, wizardState = {}){
     name: wizardState.name || "",
     title: wizardState.title || "",
     body: wizardState.body || "",
-    category: wizardState.category || "一般",
+    category: wizardState.category || "一般備忘",
     priority: wizardState.priority || "medium",
     tags: wizardState.tags || [],
     packId: wizardState.packId || selectedPackKey || "universal",
@@ -2081,7 +2345,7 @@ async function openTemplateWizard(step = 1, wizardState = {}){
             所屬分類（單選：主要屬於哪一類業務）
             <select id="wz-category">
               ${cats.map(c => `<option value="${esc(c.name)}" ${stateData.category===c.name?'selected':''}>${esc(c.name)}</option>`).join("")}
-              ${!cats.some(c=>c.name==='一般')?'<option value="一般">一般</option>':''}
+              ${!cats.some(c=>c.name==='一般備忘')?'<option value="一般備忘">一般備忘</option>':''}
             </select>
           </label>
         </div>
@@ -2162,9 +2426,10 @@ document.addEventListener("submit",async event=>{
 });
 
 function render(){
+  applyPersonalSettings();
   if(state.session?.needs_setup){$("crumb").textContent="首次設定";document.title="首次設定 · LINE 自動化";$("page").innerHTML=firstAdminPage();return;}
-  if(!lineDataReady()&&!["organizations","channels","oa-list","personnel","org-settings","templates"].includes(state.view))state.view=superAdmin()?"organizations":"channels";
-  if(superAdmin()&&!["organizations","channels"].includes(state.view))state.view="organizations";
+  if(!lineDataReady()&&!["organizations","channels","oa-list","personnel","org-settings","templates","personal-settings"].includes(state.view))state.view=superAdmin()?"organizations":"channels";
+  if(superAdmin()&&!["organizations","channels","personal-settings"].includes(state.view))state.view="organizations";
   if(!titles[state.view])state.view="overview";
   $("crumb").textContent=titles[state.view]||"工作空間";document.title=(titles[state.view]||"工作台")+" · LINE 自動化";
   document.querySelectorAll("nav [data-view]").forEach(el=>{const current=el.dataset.view===state.view;el.classList.toggle("active",current);if(current)el.setAttribute("aria-current","page");else el.removeAttribute("aria-current");});
@@ -2184,6 +2449,7 @@ function render(){
     schedule:schedulePage,
     personnel:personnelPage,
     "org-settings":orgSettingsPage,
+    "personal-settings":personalSettingsPage,
     channels:channelsPage,
     organizations:organizationsPage
   };
@@ -2236,11 +2502,11 @@ function personnelPage(){
   const members = state.memberships.filter(m => m.org_id === org.org_id);
   const rows = members.filter(m => mgMatches(management.peopleQuery, m.email, mgUser(m.email)?.display_name, m.department));
   const orgChannels = state.channels.filter(c => c.org_id === org.org_id);
-  
+
   return heading("人員與權限", `管理「${esc(org.name)}」的操作與協作人員，指定可用 LINE OA。`, button("新增人員","new-personnel","primary"))+`
   <div class="management">
     <div class="mg-summary">
-      <div class="mg-stat"><strong>${members.filter(m=>m.active).length}</strong><span>位後台人員</span></div>
+      <div class="mg-stat"><strong>${members.filter(m=>m.active&&m.role==='org_admin').length}</strong><span>位管理員</span></div>
       <div class="mg-stat"><strong>${members.filter(m=>m.active&&m.role==='operator').length}</strong><span>位操作人員</span></div>
       <div class="mg-stat"><strong>${members.filter(m=>m.active&&m.role==='collaborator').length}</strong><span>位協作人員</span></div>
     </div>
@@ -2267,8 +2533,8 @@ function personnelPage(){
               </div>
             </div>
             <div class="mg-actions">
-              ${m.role !== 'platform_admin' ? button("編輯與 OA 授權", "edit-personnel", "small", `data-id="${key}"`) : ""}
-              ${u?.active ? button("產生登入連結", "unused", "small", `data-security="invite" data-email="${esc(m.email)}"`) : ""}
+              ${['operator','collaborator'].includes(m.role) ? button("編輯與 OA 授權", "edit-personnel", "small", `data-id="${key}"`) : ""}
+              ${u?.active && ['operator','collaborator'].includes(m.role) ? button("產生登入連結", "unused", "small", `data-security="invite" data-email="${esc(m.email)}"`) : ""}
             </div>
           </div>`;
         }).join("") || mgEmpty("尚無符合人員", "點選右上角「新增人員」開始指派夥伴。")}
@@ -2317,17 +2583,17 @@ function orgSettingsPage(){
         </div>
         <div class="mg-body" style="padding:22px 24px;">
           <form id="org-notes-policy-form" data-org="${esc(org.org_id)}">
-            
-            <!-- 1. 記事防護與防誤改模式 -->
+
+            <!-- 1. 記事與案件防護及防誤改模式 -->
             <div class="policy-group">
               <div class="policy-group-header">
                 <span class="policy-group-icon">${icon("shield")}</span>
                 <div>
-                  <h3 class="policy-group-title">記事防護與防誤改模式</h3>
-                  <p class="policy-group-desc">決定重要記事是否啟用上鎖機制，防止多人協作時誤改或誤刪已定案的內容。</p>
+                  <h3 class="policy-group-title">記事與案件防護及防誤改模式</h3>
+                  <p class="policy-group-desc">統一管理記事與案件的上鎖、解鎖權限。上鎖後內容為唯讀，避免多人協作時誤改或誤刪。</p>
                 </div>
               </div>
-              
+
               <div class="policy-cards-grid policy-cards-3">
                 <!-- 自由編輯模式 (disabled) -->
                 <label class="policy-card ${lockPolicy==='disabled'?'selected':''}">
@@ -2340,9 +2606,9 @@ function orgSettingsPage(){
                     </div>
                     <span class="policy-radio-indicator"></span>
                   </div>
-                  <p class="policy-card-desc">適合 1–3 人或即時溝通型團隊。介面隱藏鎖定按鈕，全員皆可自由新增與編輯記事，溝通最直覺流暢。</p>
+                  <p class="policy-card-desc">適合 1–3 人或即時溝通型團隊。全員可新增與編輯記事及案件，也可自由上鎖或解鎖；上鎖後內容為唯讀。</p>
                   <div class="policy-card-footer">
-                    <span class="policy-rule-tag">${icon("check")} 全員自由編輯 · 介面極簡無負擔</span>
+                    <span class="policy-rule-tag">${icon("check")} 全員可上鎖與解鎖 · 上鎖後唯讀</span>
                   </div>
                 </label>
 
@@ -2357,9 +2623,9 @@ function orgSettingsPage(){
                     </div>
                     <span class="policy-radio-indicator"></span>
                   </div>
-                  <p class="policy-card-desc">適合多人共編團隊。任何成員皆可對定案記事「上鎖保護」，鎖定後唯讀（可複製）；需要調整時任何成員亦可解鎖編輯。</p>
+                  <p class="policy-card-desc">適合多人共編團隊。組織管理員與操作人員可上鎖記事及案件；協作人員不可操作鎖頭；操作人員只能解鎖自己建立的記事或案件。上鎖後所有人僅能閱覽與複製。</p>
                   <div class="policy-card-footer">
-                    <span class="policy-rule-tag">${icon("check")} 全員皆可鎖定與解鎖 · 鎖定後唯讀</span>
+                    <span class="policy-rule-tag">${icon("check")} 管理員與操作人員可鎖定／解鎖 · 排除協作人員</span>
                   </div>
                 </label>
 
@@ -2374,7 +2640,7 @@ function orgSettingsPage(){
                     </div>
                     <span class="policy-radio-indicator"></span>
                   </div>
-                  <p class="policy-card-desc">適合分工嚴謹或具審查制度的團隊。僅「組織管理員」可執行上鎖與解鎖；操作人員對已鎖定記事僅能閱讀與複製。</p>
+                  <p class="policy-card-desc">適合分工嚴謹或具審查制度的團隊。僅「組織管理員」可對記事及案件執行上鎖與解鎖；其他成員對已鎖定內容僅能閱讀與複製。</p>
                   <div class="policy-card-footer">
                     <span class="policy-rule-tag">${icon("check")} 僅管理員可解鎖 · 操作人員唯讀</span>
                   </div>
@@ -2478,14 +2744,14 @@ function personnelForm(id){
   const u = m ? mgUser(m.email) : null;
   const orgChannels = state.channels.filter(c => c.org_id === org.org_id);
   const existingChannelIds = m?.channel_ids || orgChannels.map(c => c.channel_id);
-  
+
   const oaCheckboxes = orgChannels.map(c => `
     <label class="check-label" data-s="s15b9169">
       <input type="checkbox" name="channel_ids" value="${esc(c.channel_id)}" ${existingChannelIds.includes(c.channel_id) ? "checked" : ""}>
       <span><strong>${esc(c.name)}</strong> <small data-s="sbcc8653">${esc(c.basic_id||"")}</small></span>
     </label>
   `).join("") || '<p class="muted">此組織尚未連結任何 LINE OA。</p>';
-  
+
   modal(id ? "編輯組織人員" : "新增組織人員", `<form id="personnel-form" data-id="${esc(id||"")}">
     <input type="hidden" name="org_id" value="${esc(org.org_id)}">
     <div class="form-grid">
@@ -2519,7 +2785,7 @@ function myAccountModal(){
   const user = state.session?.user || {};
   const email = state.session?.identity || "";
   const role = state.session?.role || "";
-  
+
   modal("我的帳號", `<div data-s="s16b1638">
     <div data-s="sbcad3e4">
       <div class="avatar" data-s="s6341041">${esc((user.display_name||email).slice(0,1).toUpperCase())}</div>
@@ -2545,36 +2811,27 @@ function myAccountModal(){
       </div>
     </div>
     <div class="form-actions" data-s="s56ea235">
-      <button type="button" class="btn text" onclick="$('modal').close()">關閉</button>
+      <button type="button" class="btn text" data-action="close-modal">關閉</button>
       <button type="button" class="btn danger small" data-action="confirm-logout">登出帳號</button>
     </div>
   </div>`);
 }
 
 function openOaSwitcherModal(){
-  const allOas = lineUI.channels || state.channels || [];
-  const currentId = lineUI.channel;
-  modal("切換 LINE OA", `<div class="oa-switcher-modal">
-    <div data-s="s7142fa2">
-      <input type="search" id="oa-switcher-filter" placeholder="搜尋 LINE OA 名稱或組織…" data-s="sb48bce0">
-      <button type="button" class="btn" data-action="go-oa-list-from-switcher">OA 一覽</button>
-    </div>
-    <div id="oa-switcher-items" data-s="s1666731">
-      ${allOas.map(c => `
-        <button type="button" class="oa-switcher-item" data-action="switch-oa-direct" data-channel="${esc(c.channel_id)}" data-org="${esc(c.org_id)}" style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-radius:10px;border:1px solid ${c.channel_id===currentId?'#00B900':'var(--line,#e2e8f0)'};background:${c.channel_id===currentId?'#f0fdf4':'var(--card-bg,#fff)'};cursor:pointer;text-align:left;width:100%;">
-          <div data-s="s7e30d28">
-            <div class="avatar" data-s="sf02b47b">${esc(c.name.slice(0,1))}</div>
-            <div>
-              <strong data-s="s29fe999">${esc(c.name)} ${c.channel_id===currentId?'(目前)':''}</strong>
-              <small data-s="sd6859f9">${esc(orgName(c.org_id))}</small>
-            </div>
-          </div>
-          ${c.channel_id===currentId ? `<span class="oa-checked-badge" data-s="se6630c1">${icon("check")}</span>` : ''}
-        </button>
-      `).join("") || '<p class="muted">尚無可切換的 LINE OA。</p>'}
-    </div>
+  const allOas=lineUI.channels||state.channels||[],currentId=lineUI.channel;
+  modal("切換 LINE OA",`<div class="oa-switcher-modal">
+    <div class="oa-switcher-toolbar"><label class="oa-switcher-search">${icon('search')}<input type="search" id="oa-switcher-filter" placeholder="搜尋 LINE OA 名稱或組織…" aria-label="搜尋 LINE OA 名稱或組織"></label><button type="button" class="btn" data-action="go-oa-list-from-switcher">OA 一覽</button></div>
+    <div id="oa-switcher-items" class="oa-switcher-items">
+      ${allOas.map(c=>{const current=c.channel_id===currentId,orgId=c.org_id||c.workspace_id?.replace(/^o:/,'')||'';return `<button type="button" class="oa-switcher-item ${current?'is-current':''}" data-action="switch-oa-direct" data-channel="${esc(c.channel_id)}" data-org="${esc(orgId)}" aria-current="${current?'true':'false'}">
+        <span class="oa-switcher-avatar" aria-hidden="true">${esc(c.name.slice(0,1))}</span>
+        <span class="oa-switcher-text"><strong>${esc(c.name)}</strong><small>${esc(c.workspace_name||orgName(orgId))}</small></span>
+        <span class="oa-switcher-status">${current?`<span class="sr-only">目前使用</span>${icon('check')}`:''}</span>
+      </button>`;}).join('')||'<p class="muted">尚無可切換的 LINE OA。</p>'}
+    </div><p id="oa-switcher-empty" class="muted" hidden>找不到符合的 LINE OA。</p>
   </div>`);
+  $('oa-switcher-filter').focus({preventScroll:true});
 }
+
 function navigate(view){if(state.busy)return;notice("");state.view=view;state.search="";state.kind="all";state.organization_id="";state.department="";state.tagFilter="";state.page=1;setSidebarOpen(false);history.replaceState(null,"","/?view="+encodeURIComponent(view));render();window.scrollTo({top:0});}
 function modal(title,html){$("modal-title").textContent=title;$("modal-body").innerHTML=html;$("modal-error").hidden=true;if(!$("modal").open)$("modal").showModal();$("modal").scrollTop=0;$("modal-close").focus({preventScroll:true});}
 function editContact(id){
@@ -2692,14 +2949,76 @@ function switchView(email){
   // A full navigation discards in-flight previews and all previous-role data.
   location.replace(location.pathname+"?view="+(email?"reports":"overview"));
 }
+document.addEventListener("dblclick", async event => {
+  const caseCard=event.target.closest("[data-case-preview]");
+  if(caseCard){
+    if(state.busy || event.target.closest("button,a,input,label,select,textarea,summary"))return;
+    try{await caseDetailModal(caseCard.dataset.casePreview);}catch(error){notice(error.message,true);}
+    return;
+  }
+  const card = event.target.closest("[data-note-preview], .notes-hub-card");
+  if (!card || state.busy || event.target.closest("[data-action], button, a, input, select, textarea")) return;
+  try {
+    await chatNoteDetailModal(card.dataset.notePreview || card.dataset.id);
+  } catch (error) {
+    notice(error.message, true);
+  }
+});
+document.addEventListener("keydown",event=>{
+  if(event.key==="Enter" && event.target.matches("[data-note-preview]")){
+    event.preventDefault();chatNoteDetailModal(event.target.dataset.notePreview).catch(error=>notice(error.message,true));
+  }
+  if(event.key==="Enter" && event.target.matches("[data-case-preview]")){
+    event.preventDefault();caseDetailModal(event.target.dataset.casePreview).catch(error=>notice(error.message,true));
+  }
+});
 document.addEventListener("click",async event=>{
+  const touchPreview=event.pointerType==='touch'||window.matchMedia('(pointer:coarse)').matches||window.matchMedia('(max-width:850px)').matches;
+  if(touchPreview && !state.busy && !$("modal").open && !event.target.closest('button,a,input,label,select,textarea,summary')){
+    const card=event.target.closest('[data-case-preview],[data-note-preview],.notes-hub-card');
+    if(card){
+      try{
+        if(card.dataset.casePreview)await caseDetailModal(card.dataset.casePreview);
+        else await chatNoteDetailModal(card.dataset.notePreview||card.dataset.id);
+      }catch(error){notice(error.message,true);}
+      return;
+    }
+  }
   if(event.target.closest("#my-account-btn")){myAccountModal();return;}
   if(event.target.closest("#workspace-context")){openOaSwitcherModal();return;}
   const nav=event.target.closest("[data-view]");if(nav){navigate(nav.dataset.view);return;}
   const target=event.target.closest("[data-action]");if(!target||target.disabled||state.busy)return;
+  if(target.matches(".chat-note-item,.case-item") && event.target.closest("input, label, textarea, select, a, summary")) return;
   const action=target.dataset.action,id=target.dataset.id;
   try{
+    if(action==="personal-preview-info"){notice("這是資訊通知預覽。");return;}
+    if(action==="personal-preview-warning"){notice("這是警告通知預覽。",true);return;}
+    if(action==="personal-reset"){localStorage.removeItem(personalSettingsKey());render();notice("已還原個人化預設設定。");return;}
     if(workspaceAction(action,id))return;
+    if(action==='chat-room-marker'){
+      const room=chatUI.rooms.find(r=>r.recipient_id===id);if(!room || room._saving)return;
+      const kind=target.dataset.marker;
+      const payload={recipient_id:id,is_pinned:kind==='pin'?!room.is_pinned:Boolean(room.is_pinned),marker:kind==='pin'?(room.marker||''):room.marker===kind?'':kind};
+      room._saving=true;try{Object.assign(room,await api('/api/chat/room-preference',payload));}finally{room._saving=false;}
+      $('chat-room-list').innerHTML=renderChatRoomItems();return;
+    }
+
+    if(action==="record-lock-note"){
+      const previewOpen=Boolean(document.querySelector('#modal[open] .note-detail-view'));
+      const result=await api("/api/chat-notes/lock",{note_id:id});
+      const records=[...(state.globalNotes||[]),...Array.from(state.chatNotes?.values()||[]).flat(),state.notePreview].filter(Boolean);
+      records.filter(n=>n.note_id===id).forEach(n=>Object.assign(n,result));
+      await loadChatNotes(target.dataset.recipient);
+      if(state.view==="chat-notes")await loadGlobalChatNotes();
+      if(previewOpen)await chatNoteDetailModal(id);
+      notice(result.is_locked?"記事已上鎖，僅可閱覽。":"記事已解鎖，可編輯。");return;
+    }
+    if(action==="record-lock-case"){
+      const previewOpen=Boolean(document.querySelector('#modal[open] .case-detail-view'));
+      await api(`/api/cases/${id}/lock`,{});await load();render();
+      if(previewOpen)await caseDetailModal(id);return;
+    }
+    if(action==="notes-status-tab"){state.noteHubStatus=id;await loadGlobalChatNotes();return;}
     if(managementAction(action,id))return;
     if(composerAction(action,id))return;
     if(typeof chatAction==="function"&&chatAction(action,id,target))return;
@@ -2716,6 +3035,7 @@ document.addEventListener("click",async event=>{
         changeLineContext(targetWorkspace, channelId);
       }
     }
+    else if(action==="close-modal"){$("modal").close();}
     else if(action==="go-oa-list-from-switcher"){$("modal").close();navigate("oa-list");}
     else if(action==="dismiss-onboarding"){
       const orgId=state.session?.user?.organization_id||"";
@@ -2732,6 +3052,7 @@ document.addEventListener("click",async event=>{
     else if(action==="case-filter"){state.caseFilter=id;render();}
     else if(action==="new-case-modal")createCaseModal(id||"");
     else if(action==="open-case-detail")await caseDetailModal(id);
+    else if(action==="edit-case-modal")editCaseModal(id);
     else if(action==="contact-detail-from-case"){workspaceUI.contactDetail=id;navigate("contacts");await loadChatNotes(id);}
     else if(action==="export-cases-csv"){window.open('/api/cases/export?format=csv', '_blank');notice("已開始匯出 CSV。");}
     else if(action==="export-cases-xlsx"){window.open('/api/cases/export?format=xlsx', '_blank');notice("已開始匯出 XLSX。");}
@@ -2770,6 +3091,7 @@ document.addEventListener("click",async event=>{
     else if(action==="case-resume-processing"){await api(`/api/cases/${id}`,{status:"processing"});await load();render();notice("案件已恢復為「處理中」。");}
     else if(action==="case-back-processing"){await api(`/api/cases/${id}`,{status:"processing"});await load();render();notice("案件已退回為「處理中」。");}
     else if(action==="open-case-close-modal")caseCloseModal(id);
+    else if(action==="open-note-detail")await chatNoteDetailModal(id);
     else if(action==="new-chat-note")chatNoteModal(id);
     else if(action==="edit-chat-note")chatNoteModal(target.dataset.recipient||chatUI.selectedId, id);
     else if(action==="delete-chat-note"){
@@ -2804,16 +3126,28 @@ document.addEventListener("click",async event=>{
       if(state.view === "chat-notes") loadGlobalChatNotes();
       notice(res.status === "completed" ? "記事已標記為完成。" : "記事已重新開啟。");
     }
-    else if(action==="copy-chat-note-content"){
-      const el = document.getElementById("chat-note-content-" + id);
-      const text = el ? el.innerText : "";
-      if(text){
-        if(navigator.clipboard && navigator.clipboard.writeText){
-          navigator.clipboard.writeText(text).then(() => notice("記事內容已複製至剪貼簿。")).catch(() => fallbackCopy(text));
-        } else {
-          fallbackCopy(text);
-        }
+    else if(action==="toggle-chat-note-expand"){
+      const contentEl = document.getElementById("chat-note-content-" + id);
+      if(!contentEl) return;
+      const isCollapsed = contentEl.classList.contains("collapsed");
+      if(isCollapsed){
+        contentEl.classList.remove("collapsed");
+        target.innerHTML = `${icon("chevron-up")} 收合內容`;
+      } else {
+        contentEl.classList.add("collapsed");
+        target.innerHTML = `${icon("chevron-down")} 展開全文`;
       }
+    }
+    else if(action==="copy-chat-note-content"){
+      await noteCopyOptions(id);
+    }
+    else if(action==="copy-note-version"){
+      await copyNoteText(id==='markdown'?state.noteCopyContent:noteReadingCopy(state.noteCopyContent));
+    }
+    else if(action==="copy-case-content"){
+      const record=state.cases.find(c=>c.case_id===id)||(await api(`/api/cases/${encodeURIComponent(id)}`)).case;
+      if(!record)throw new Error('找不到案件內容。');
+      await recordCopyOptions(record.description||'','案件');
     }
     else if(action==="toggle-notes-view-mode"){
       state.noteHubViewMode = id;
@@ -2843,6 +3177,8 @@ document.addEventListener("click",async event=>{
             target.classList.add("active-selected");
           }
           input.value = current.join(", ");
+          $("chat-note-selected-tags").textContent=current.join("、") || "尚未選擇標籤";
+          $("chat-note-quick-tags-container").innerHTML=renderCategoryScopedTagsHtml(input.closest("form").querySelector('select[name="category_id"]').value,current);
           const form = input.closest("form");
           if(form) form.dataset.dirty = "true";
         }
@@ -2929,7 +3265,7 @@ document.addEventListener("click",async event=>{
     }
     else if(action==="edit-tag-modal"){
       const color = target.dataset.color || "#007AFF";
-      const colorOptionsHtml = APPLE_TAG_COLORS.map(c => 
+      const colorOptionsHtml = APPLE_TAG_COLORS.map(c =>
         `<button type="button" class="tax-color-dot ${c.hex===color?'selected':''}" data-action="pick-tax-color" data-color="${c.hex}" style="background:${c.hex};" title="${c.name}"></button>`
       ).join("");
       modal("編輯記事標籤", `<form id="tax-tag-edit-form" data-id="${esc(id)}" data-old-name="${esc(target.dataset.name)}">
@@ -3187,11 +3523,11 @@ document.addEventListener("click",async event=>{
       setPreferredEditorFormat(format);
       const editorWrap = target.closest(".tmpl-dual-editor-wrap") || target.closest(".tmpl-editor-container");
       if(!editorWrap) return;
-      
+
       editorWrap.dataset.format = format;
       editorWrap.dataset.subtab = "write";
       const isMd = format === "markdown";
-      
+
       // Update format switch button active state
       editorWrap.querySelectorAll('[data-action="set-editor-format"]').forEach(b => {
         b.classList.toggle("active", b.dataset.format === format);
@@ -3206,7 +3542,7 @@ document.addEventListener("click",async event=>{
 
       const textarea = editorWrap.querySelector("textarea");
       if(textarea){
-        textarea.placeholder = isMd 
+        textarea.placeholder = isMd
           ? '支援 Markdown 語法，例如：\n### 1. 狀況確認\n- [ ] 詢問設備型號與故障現象\n- [ ] 拍照存證\n\n### 2. 處置措施\n* **優先等級**：重要處理\n* **備註**：安排工程窗口'
           : '填寫標準內容流程或檢查清單...';
       }
@@ -3234,8 +3570,8 @@ document.addEventListener("click",async event=>{
       } else if(subtab === "preview"){
         if(previewBox){
           const text = textarea ? textarea.value : "";
-          previewBox.innerHTML = text.trim() 
-            ? renderMarkdown(text) 
+          previewBox.innerHTML = text.trim()
+            ? renderMarkdown(text)
             : '<span class="muted" style="font-size:12px;">（目前尚無內容可預覽，請切換回「✍️ 編輯」輸入文字）</span>';
         }
       }
@@ -3276,7 +3612,7 @@ document.addEventListener("click",async event=>{
       const tmplName = target.dataset.name;
       const packId = target.dataset.pack;
       const tmplType = target.dataset.type;
-      
+
       const packsRes = await api('/api/template-packs');
       const pack = (packsRes.packs || []).find(p => p.pack_id === packId || p.key === packId);
       const list = tmplType === 'case' ? pack?.case_templates : pack?.note_templates;
@@ -3288,7 +3624,7 @@ document.addEventListener("click",async event=>{
       }
 
       const isCase = tmplType === 'case';
-      const priLabels = { urgent: "🔴 緊急優先", high: "🟠 重要處理", medium: "⚪ 一般進度", low: "低優先度" };
+      const priNames = { urgent: "緊急優先", high: "重要處理", medium: "一般進度", low: "低優先度" };
 
       modal(`檢視範本：${esc(tmpl.name)}`, `
         <div class="case-detail-view">
@@ -3298,9 +3634,9 @@ document.addEventListener("click",async event=>{
               <h2 style="font-size:17px;margin:6px 0 2px 0;">${esc(tmpl.name)}</h2>
               <small class="muted">所屬群組：${esc(pack?.name||"通用範本群組")}</small>
             </div>
-            <div style="display:flex;gap:6px;align-items:center;">
+            <div class="modal-badge-group">
               <span class="badge">${icon("folder")} ${esc(tmpl.category_name||"一般")}</span>
-              ${isCase ? `<span class="tmpl-priority-badge ${tmpl.priority||'medium'}">${priLabels[tmpl.priority||'medium']}</span>` : ''}
+              ${isCase ? `<span class="badge tmpl-priority-badge ${tmpl.priority||'medium'}"><span class="priority-dot"></span>${priNames[tmpl.priority||'medium']||'一般進度'}</span>` : ''}
               ${pack?.is_preset ? '<span class="badge">系統預設</span>' : '<span class="badge primary">自訂</span>'}
             </div>
           </div>
@@ -3323,14 +3659,14 @@ document.addEventListener("click",async event=>{
             💡 <strong>使用提示</strong>：此頁面為管理中心，用於建立與維護標準 SOP。在處理「聊天對話」或「案件管理」時，側欄記事本與工單視窗均支援「從範本帶入」一鍵套用。
           </div>
 
-          <div class="form-actions" style="justify-content:space-between;margin-top:20px;flex-wrap:wrap;gap:8px;">
+          <div class="form-actions tmpl-modal-footer">
             <button type="button" class="btn small" data-action="copy-template-text" data-text="${esc(tmpl.body||tmpl.title||tmpl.name)}">${icon("copy")} 複製大綱文字</button>
-            <div style="display:flex;gap:8px;align-items:center;">
+            <div class="tmpl-modal-footer-right">
               ${manager() ? `
                 <button type="button" class="btn small danger" data-action="delete-template-btn" data-id="${esc(tmpl.template_id)}" data-name="${esc(tmpl.name)}" data-type="${esc(tmplType)}">${icon("trash")} 刪除範本</button>
-                <button class="btn primary small" data-action="edit-template-modal" data-id="${esc(tmpl.template_id)}" data-name="${esc(tmpl.name)}" data-pack="${esc(packId)}" data-type="${esc(tmplType)}">${icon("edit")} 編輯此範本</button>
+                <button type="button" class="btn primary small" data-action="edit-template-modal" data-id="${esc(tmpl.template_id)}" data-name="${esc(tmpl.name)}" data-pack="${esc(packId)}" data-type="${esc(tmplType)}">${icon("edit")} 編輯此範本</button>
               ` : ''}
-              <button type="button" class="btn small" onclick="$('modal').close()">關閉</button>
+              <button type="button" class="btn small" data-action="close-modal">關閉</button>
             </div>
           </div>
         </div>
@@ -3395,7 +3731,7 @@ document.addEventListener("click",async event=>{
       const tmplName = target.dataset.name;
       const packId = target.dataset.pack;
       const tmplType = target.dataset.type;
-      
+
       const packsRes = await api('/api/template-packs');
       const pack = (packsRes.packs || []).find(p => p.pack_id === packId || p.key === packId);
       const list = tmplType === 'case' ? pack?.case_templates : pack?.note_templates;
@@ -3420,7 +3756,7 @@ document.addEventListener("click",async event=>{
       const tmplName = target.dataset.name;
       const packId = target.dataset.pack;
       const tmplType = target.dataset.type;
-      
+
       const packsRes = await api('/api/template-packs');
       const pack = (packsRes.packs || []).find(p => p.pack_id === packId || p.key === packId);
       const list = tmplType === 'case' ? pack?.case_templates : pack?.note_templates;
@@ -3436,7 +3772,7 @@ document.addEventListener("click",async event=>{
           <div class="full">${field("範本名稱", "name", tmpl.name, 'required maxlength="30"')}</div>
           ${field("預設分類名稱", "category_name", tmpl.category_name||"一般", 'maxlength="30"')}
           ${field("預設標題", "title", tmpl.title||"", 'maxlength="100"')}
-          ${renderDualFormatEditor("body", "tmpl-edit-body", tmpl.body || "", null)}
+          ${renderDualFormatEditor("body", "tmpl-edit-body", tmpl.body || "", null,"內容骨架 / 檢查清單",6,"",false,true)}
         </div>
         <div class="form-actions" style="justify-content:space-between;margin-top:16px;">
           <button type="button" class="btn text danger" data-action="delete-template-btn" data-id="${esc(tmpl.template_id)}" data-name="${esc(tmpl.name)}" data-type="${esc(tmplType)}">${icon("trash")} 刪除範本</button>
@@ -3450,7 +3786,7 @@ document.addEventListener("click",async event=>{
       const tmplName = target.dataset.name || "";
       modal("確認刪除範本？", `<p>確定要刪除「${esc(tmplName || "此範本")}」嗎？既有已建立的案件或對話記事不受影響。</p>
         <div class="form-actions" style="justify-content:flex-end;gap:8px;">
-          <button type="button" class="btn" onclick="$('modal').close()">取消</button>
+          <button type="button" class="btn" data-action="close-modal">取消</button>
           <button type="button" class="btn danger" data-action="confirm-delete-template" data-id="${esc(tmplId)}" data-type="${esc(tmplType)}">確認刪除</button>
         </div>`);
     }
@@ -3480,7 +3816,7 @@ document.addEventListener("click",async event=>{
           <p class="muted" style="font-size:12px;">💡 刪除後，既有已建立的案件或對話記事不會受到任何影響。</p>
         </div>
         <div class="form-actions" style="justify-content:flex-end;gap:8px;margin-top:16px;">
-          <button type="button" class="btn" onclick="$('modal').close()">取消</button>
+          <button type="button" class="btn" data-action="close-modal">取消</button>
           <button type="button" class="btn danger" data-action="confirm-batch-delete-templates">${icon("trash")} 確認批次刪除 (${count})</button>
         </div>
       `);
@@ -3587,12 +3923,71 @@ document.addEventListener("input",event=>{
   if(event.target.id==="oa-switcher-filter"){
     const q=event.target.value.toLowerCase();
     document.querySelectorAll(".oa-switcher-item").forEach(item=>{
-      item.style.display=item.textContent.toLowerCase().includes(q)?"flex":"none";
+      item.hidden=!item.textContent.toLowerCase().includes(q);
     });
+    $("oa-switcher-empty").hidden=Boolean(document.querySelector(".oa-switcher-item:not([hidden])"));
+  }
+});
+document.addEventListener("change", async event => {
+  const checkbox = event.target.closest("input[data-case-task]");
+  if(!checkbox) return;
+  const caseId = checkbox.dataset.caseId;
+  const records = [...state.cases, state.casePreview].filter(Boolean);
+  const c = records.find(record => record.case_id === caseId);
+  if(!c) { checkbox.checked = !checkbox.checked; return; }
+  const controls = Array.from(document.querySelectorAll("input[data-case-task]")).filter(el => el.dataset.caseId === caseId);
+  controls.forEach(el => { el.disabled = true; });
+  try {
+    const res = await api("/api/cases/task", {case_id: caseId, task_index: Number(checkbox.dataset.caseTask), checked: checkbox.checked, expected_content: c.description});
+    records.filter(record => record.case_id === caseId).forEach(record => Object.assign(record, res.case));
+    document.querySelectorAll(".chat-case-description").forEach(el => { if(el.dataset.caseId === caseId) el.innerHTML = renderCaseContent(c); });
+    if(document.querySelector(".chat-work-panel"))refreshChatWorkPanel();
+    if(state.casePreview?.case_id === caseId && $("modal").open){
+      const preview = document.querySelector(".case-description-preview");
+      if(preview) preview.innerHTML = renderCaseContent(c);
+    }
+  } catch(error) {
+    checkbox.checked = !checkbox.checked;
+    notice(error.message, true);
+  } finally {
+    controls.forEach(el => { el.disabled = Boolean(c.is_locked) || c.status === "closed" || Boolean(state.preview) || state.session?.role === "platform_admin"; });
+  }
+});
+document.addEventListener("change", async event => {
+  const checkbox = event.target.closest("input[data-note-task]");
+  if(!checkbox) return;
+  const noteId = checkbox.dataset.noteId;
+  const notes = [...(state.globalNotes || []), ...Array.from(state.chatNotes?.values() || []).flat(), state.notePreview].filter(Boolean);
+  const note = notes.find(n => n.note_id === noteId);
+  if(!note) { checkbox.checked = !checkbox.checked; return; }
+  const controls = Array.from(document.querySelectorAll("input[data-note-task]")).filter(el => el.dataset.noteId === noteId);
+  controls.forEach(el => { el.disabled = true; });
+  try {
+    const res = await api("/api/chat-notes/task", {note_id: noteId, task_index: Number(checkbox.dataset.noteTask), checked: checkbox.checked, expected_content: note.content});
+    notes.filter(n => n.note_id === noteId).forEach(n => Object.assign(n, res.note));
+    const cardBody = document.getElementById("chat-note-content-" + noteId);
+    if(cardBody) cardBody.innerHTML = renderNoteContent(note);
+    if(document.querySelector(".chat-work-panel"))refreshChatWorkPanel();
+    if(state.notePreview?.note_id === noteId && $("modal").open){
+      const preview = document.querySelector(".note-detail-body .md-preview-area");
+      if(preview) preview.innerHTML = renderNoteContent(note);
+    }
+  } catch(error) {
+    checkbox.checked = !checkbox.checked;
+    notice(error.message, true);
+  } finally {
+    controls.forEach(el => { el.disabled = Boolean(note.is_locked) || Boolean(state.preview) || state.session?.role === "platform_admin"; });
   }
 });
 document.addEventListener("change",event=>{
   const el=event.target;
+  if(el.dataset.personalSetting){
+    const prefs=personalSettings();
+    prefs[el.dataset.personalSetting]=el.dataset.personalSetting==='duration'?Number(el.value):el.value;
+    try{localStorage.setItem(personalSettingsKey(),JSON.stringify(prefs));}
+    catch(_){notice('無法儲存個人化設定，請確認瀏覽器允許網站儲存資料。',true);return;}
+    applyPersonalSettings();notice('個人化設定已儲存。');return;
+  }
   if(el.name==="color"&&el.closest(".color-swatch-card")){
     el.closest(".color-picker-grid")?.querySelectorAll(".color-swatch-card").forEach(card=>card.classList.remove("selected"));
     el.closest(".color-swatch-card")?.classList.add("selected");
@@ -3687,6 +4082,12 @@ document.addEventListener("submit",async event=>{if(event.target.id==="password-
       await cannedRepliesModal();
       notice("預設訊息已建立。");
       return;
+    }else if(form.id==="case-edit-form"){
+      const result=await api('/api/cases', {case_id:form.dataset.id,...values});
+      state.cases=state.cases.map(c=>c.case_id===result.case.case_id?result.case:c);
+      state.casePreview=result.case;
+      render();await caseDetailModal(result.case.case_id);
+      notice("案件已儲存。");return;
     }else if(form.id==="case-create-form"){
       await api('/api/cases', values);
       $("modal").close();
@@ -3976,6 +4377,7 @@ document.addEventListener("input", event => {
 });
 
 document.addEventListener("change", event => {
+  if(event.target.id === "notes-hub-sort"){state.noteHubSort=event.target.value;$("global-notes-content").innerHTML=renderGlobalNotesBody();return;}
   if(event.target.id === "notes-hub-category-filter"){
     state.noteHubCategory = event.target.value;
     if(state.view === "chat-notes") loadGlobalChatNotes();
@@ -4007,7 +4409,7 @@ let polling=false;
 setInterval(async()=>{if(!state.loaded||!lineUI.ready||!lineDataReady()||!admin()||state.busy||state.authLost||document.hidden||polling||$("modal").open)return;polling=true;const requestedOA=lineUI.channel;try{const result=await api('/api/jobs');if(requestedOA!==lineUI.channel)return;if(JSON.stringify(result.jobs)!==JSON.stringify(state.jobs)){state.jobs=result.jobs;if(['overview','history','schedule'].includes(state.view)){const opened=[...document.querySelectorAll('[data-job][open]')].map(el=>el.dataset.job);render();document.querySelectorAll('[data-job]').forEach(el=>{el.open=opened.includes(el.dataset.job);});}}}catch(error){notice(error.message,true);}finally{polling=false;}},6000);
 
 // Handle unreadable image content without leaving a broken thumbnail.
-document.addEventListener("error",event=>{if(event.target instanceof HTMLImageElement && !event.target.closest('.chat-media-image') && !event.target.classList.contains('chat-img-thumb') && !event.target.classList.contains('avatar-img') && !event.target.closest('.avatar') && !event.target.closest('.chat-room-avatar')){const replacement=document.createElement("p");replacement.className="callout warn";replacement.textContent="圖片無法顯示，請確認來源檔案格式並重新產生報告。";event.target.replaceWith(replacement);}},true);
+document.addEventListener("error",event=>{if(event.target instanceof HTMLImageElement && (event.target.classList.contains('sidebar-thumbnail') || event.target.closest('.chat-profile-avatar'))){event.target.hidden=true;return;}if(event.target instanceof HTMLImageElement && !event.target.closest('.chat-media-image') && !event.target.classList.contains('chat-img-thumb') && !event.target.classList.contains('avatar-img') && !event.target.closest('.avatar') && !event.target.closest('.chat-room-avatar')){const replacement=document.createElement("p");replacement.className="callout warn";replacement.textContent="圖片無法顯示，請確認來源檔案格式並重新產生報告。";event.target.replaceWith(replacement);}},true);
 
 function scheduleLabel(value){return new Date(value).toLocaleString("zh-TW",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false});}
 function scheduleFields(){return `<div class="schedule-fields"><label class="field">傳送時間<select id="send-timing"><option value="now">立即傳送</option><option value="scheduled">指定日期與時間</option></select></label><div id="scheduled-time-wrapper" hidden><label class="field">台北時間 UTC+08:00<input type="datetime-local" id="scheduled-time" hidden></label><div class="schedule-presets section-space"><span class="muted" data-s="sbb2c29b">快速預約：</span><button type="button" class="btn small" data-action="schedule-preset" data-id="15m">+15 分鐘</button><button type="button" class="btn small" data-action="schedule-preset" data-id="1h">+1 小時</button><button type="button" class="btn small" data-action="schedule-preset" data-id="tmr9">明天 09:00</button><button type="button" class="btn small" data-action="schedule-preset" data-id="tmr14">明天 14:00</button><button type="button" class="btn small" data-action="schedule-preset" data-id="nextmon">下週一 09:00</button></div></div><p class="subtitle">預約保存現在確認的文字或圖片與發送對象；到期再檢查帳號、收件範圍與訂閱。電腦與 LINE 服務需開啟，延遲超過 10 分鐘標記逾期，不補發。</p></div>`;}

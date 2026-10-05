@@ -3,7 +3,7 @@ const fs=require('fs'),path=require('path'),{spawn}=require('child_process'),ass
 const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'@playwright/test');
 const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 (async()=>{
-  const dir=path.resolve('line-oa-archive/instance');fs.mkdirSync(dir,{recursive:true});
+  const dir=path.resolve('test-results/workspace_browser');fs.mkdirSync(dir,{recursive:true});
   const stateFile=path.join(dir,`ui-fixture-${Date.now()}.json`),stopFile=stateFile.replace(/\.json$/,'.stop');
   const child=spawn(path.resolve('.venv/Scripts/python.exe'),['tests/workspace_fixture.py',stateFile],{windowsHide:true,stdio:['ignore','ignore','pipe']});
   let stderr='';child.stderr.on('data',data=>{stderr+=data;});let browser;

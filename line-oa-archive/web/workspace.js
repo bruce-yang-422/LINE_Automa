@@ -129,12 +129,99 @@ function tagPillHtml(tagName){
   return `<span class="apple-pill" data-color="${esc(color)}" style="background-color:${esc(bg)}!important;color:${esc(color)}!important;border-color:${esc(border)}!important;">${esc(tagName)}</span>`;
 }
 
-function renderChatNotesList(recipient_id){
-  const notes = state.chatNotes?.get(recipient_id) || [];
-  const orgLockPolicy = state.session?.org_settings?.note_lock_policy || "disabled";
+const chatWorkViews = new Map();
+function chatWorkView(recipient){
+  if(!chatWorkViews.has(recipient)) chatWorkViews.set(recipient,{tab:"notes",query:"",filter:"all",sort:"newest",page:1});
+  return chatWorkViews.get(recipient);
+}
+function renderChatWorkPanel(recipient){
+  const view=chatWorkView(recipient), notes=state.chatNotes?.get(recipient)||[];
+  const cases=(state.cases||[]).filter(c=>c.case_subject_id===recipient);
+  const isNotes=view.tab==="notes", all=isNotes?notes:cases;
+  const pending=r=>isNotes?r.status!=="completed":r.status!=="closed";
+  const query=view.query.trim().toLocaleLowerCase();
+  const rows=all.filter(r=>(view.filter==="all" || (view.filter==="pending"?pending(r):view.filter==="completed"?!pending(r):Boolean(r.is_pinned))) &&
+    [r.title,r.content,r.description,r.category_name,r.category,...(r.tags||[])].filter(Boolean).join(" ").toLocaleLowerCase().includes(query));
+  rows.sort((a,b)=>Number(Boolean(b.is_pinned))-Number(Boolean(a.is_pinned)) || (view.sort==="oldest"?1:-1)*String(a.created_at||a.updated_at||"").localeCompare(String(b.created_at||b.updated_at||"")));
+  const pages=Math.max(1,Math.ceil(rows.length/12)); view.page=Math.min(view.page,pages);
+  const visible=rows.slice((view.page-1)*12,view.page*12);
+  const overdue=cases.filter(c=>c.status!=="closed" && c.due_date && String(c.due_date).slice(0,10)<new Date().toLocaleDateString("sv-SE")).length;
+  return `<section class="chat-work-panel chat-info-card" data-recipient="${esc(recipient)}" aria-label="對話工作紀錄">
+    <div class="chat-work-summary">
+      <div class="chat-summary-card"><span class="chat-summary-icon">${icon("message")}</span><div><span>對話記事</span><strong>${notes.length}</strong><small>${notes.filter(n=>n.status!=="completed").length} 個待處理</small></div></div>
+      <div class="chat-summary-card cases"><span class="chat-summary-icon">${icon("folder")}</span><div><span>關聯案件</span><strong>${cases.length}</strong><small>${cases.filter(c=>c.status!=="closed").length} 個進行中</small></div></div>
+      <div class="chat-summary-card overdue ${overdue?'chat-work-alert':''}"><span class="chat-summary-icon">${icon("alert")}</span><div><span>逾期案件</span><strong>${overdue}</strong><small>${overdue?"需要處理":"無逾期案件"}</small></div></div>
+    </div>
+    <div class="chat-work-tabs" role="tablist" aria-label="工作紀錄類型">${[["notes","對話記事",notes.length],["cases","關聯案件",cases.length]].map(([id,text,count])=>`<button type="button" role="tab" id="chat-work-tab-${id}" aria-selected="${view.tab===id}" aria-controls="chat-work-results" data-action="chat-work-tab" data-id="${id}" class="${view.tab===id?"active":""}">${text} <span>${count}</span></button>`).join("")}</div>
+    <div class="chat-work-controls"><div class="chat-work-search-row"><label class="search-field">${icon("search")}<input id="chat-work-search" type="search" value="${esc(view.query)}" placeholder="搜尋標題、內容或標籤" aria-label="搜尋${isNotes?"記事":"案件"}"></label>${button(icon("plus")+"新增",isNotes?"new-chat-note":"new-case-modal","small",`data-id="${esc(recipient)}" aria-label="${isNotes?"新增記事":"建立案件"}"`)}</div>
+    <div class="chat-work-filters" role="group" aria-label="篩選狀態">${[["all","全部",all.length],["pending","待處理",all.filter(pending).length],["completed",isNotes?"已完成":"已結案",all.filter(r=>!pending(r)).length],...(isNotes?[["pinned","已置頂",all.filter(r=>r.is_pinned).length]]:[])].map(([id,text,count])=>`<button type="button" data-action="chat-work-filter" data-id="${id}" aria-pressed="${view.filter===id}" class="${view.filter===id?"active":""}">${text} <span>${count}</span></button>`).join("")}<select id="chat-work-sort" aria-label="排序方式"><option value="newest" ${view.sort==="newest"?"selected":""}>最新建立</option><option value="oldest" ${view.sort==="oldest"?"selected":""}>最早建立</option></select></div></div>
+    <div class="chat-work-results" id="chat-work-results" role="tabpanel" aria-labelledby="chat-work-tab-${view.tab}" tabindex="0">${visible.length?(isNotes?renderChatNotesList(recipient,visible):renderContactCases(recipient,visible)):`<div class="chat-work-empty">${icon(isNotes?"file":"folder")}<strong>${all.length?"沒有符合的紀錄":"尚無"+(isNotes?"記事":"案件")}</strong><span>${all.length?"調整搜尋或篩選條件。":"點選新增，記錄此對話的重要事項。"}</span></div>`}</div>
+    <div class="chat-work-pagination"><span role="status">${rows.length?`${(view.page-1)*12+1}–${Math.min(view.page*12,rows.length)} / ${rows.length} 筆`:"0 筆"}</span><div>${isNotes?button(icon("trash"),"view-chat-notes-trash","small text",`data-recipient="${esc(recipient)}" title="回收筒" aria-label="記事回收筒"`):""}<button type="button" class="btn small text" data-action="chat-work-page" data-id="${view.page-1}" ${view.page===1?"disabled":""} aria-label="上一頁">‹</button><span>${view.page} / ${pages}</span><button type="button" class="btn small text" data-action="chat-work-page" data-id="${view.page+1}" ${view.page===pages?"disabled":""} aria-label="下一頁">›</button></div></div>
+  </section>`;
+}
+function refreshChatWorkPanel(){
+  const panel=document.querySelector(".chat-work-panel");
+  if(panel) panel.outerHTML=renderChatWorkPanel(panel.dataset.recipient);
+}
+
+function sidebarThumbnail(content){
+  const match=String(content||'').match(/!\[[^\]]*\]\((https?:\/\/[^\s)]+|\/api\/[^\s)]+)(?:\s+"[^"]*")?\)/);
+  return match?`<img class="sidebar-thumbnail" src="${esc(match[1])}" alt="內容圖片" loading="lazy">`:"";
+}
+function sidebarRecordDate(value){
+  const date=new Date(value||'');
+  if(Number.isNaN(date.getTime()))return '—';
+  const parts=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Taipei',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(date);
+  const part=name=>parts.find(p=>p.type===name)?.value||'';
+  return `${part('month')}/${part('day')} ${part('hour')}:${part('minute')}`;
+}
+function renderSidebarGroups(records,isCase=false){
+  const groups=new Map();
+  for(const record of records){
+    const date=new Date(record.created_at||record.updated_at||'');
+    const title=record.is_pinned?'已釘選':Number.isNaN(date.getTime())?'未註明日期':`${date.getFullYear()}年 ${date.getMonth()+1}月`;
+    if(!groups.has(title))groups.set(title,[]);
+    groups.get(title).push(record);
+  }
+  const recipient=records[0]?.recipient_id||records[0]?.case_subject_id;
+  const collapsed=recipient?(chatWorkView(recipient).collapsedGroups||{}):{};
+  return `<div class="en-card-list">${[...groups].map(([title,rows])=>`<details class="chat-record-group ${title==='已釘選'?'pinned-group':''}" data-record-group="${esc(title)}" data-recipient="${esc(recipient||'')}" ${collapsed[title]?'':'open'}><summary>${icon(title==='已釘選'?'pin':'calendar')}<strong>${esc(title)}</strong><span>(${rows.length})</span><span class="group-chevron">${icon('chevron-down')}</span></summary>${rows.map(r=>renderSidebarSummary(r,isCase)).join('')}</details>`).join('')}</div>`;
+}
+function renderSidebarSummary(record,isCase=false){
+  const id=isCase?record.case_id:record.note_id, content=isCase?record.description:record.content;
+  const template=document.createElement('template');
+  template.innerHTML=isCase?renderCaseContent(record):renderNoteContent(record);
+  template.content.querySelectorAll('img,pre').forEach(el=>el.remove());
+  const plain=(template.content.textContent||'').replace(/\s+/g,' ').trim();
+  const thumbnail=sidebarThumbnail(content);
+  const recipient=isCase?record.case_subject_id:record.recipient_id;
+  const selected=chatWorkView(recipient).selected===id;
+  const tags=isCase?[record.category,...(record.tags||[])]:[record.category_name,...(record.tags||[])];
+  const completed=isCase?record.status==='closed':record.status==='completed';
+  const status=isCase?(caseStatusNames[record.status]||'待處理'):(completed?'已完成':'待處理');
+  const tone=completed?'completed':isCase&&record.status==='processing'?'processing':'pending';
+  return `<article class="${isCase?'case-item':'chat-note-item'} evernote-summary ${selected?'selected':''} ${record.is_pinned?'pinned':''} ${thumbnail?'with-thumbnail':''}" ${isCase?'data-case-preview':'data-note-preview'}="${esc(id)}" tabindex="0" aria-label="${esc(record.title||'記事')}，雙擊或按 Enter 預覽">
+    ${thumbnail}<div class="en-card-main"><div class="en-card-title"><span class="chat-record-icon">${icon(isCase?'folder':'message')}</span><span class="chat-card-title" title="${esc(record.title||'記事')}">${esc(record.title||'記事')}</span><time class="chat-note-time" title="${esc(when(record.created_at||record.updated_at))}">${esc(sidebarRecordDate(record.created_at||record.updated_at))}</time>${recordLockControl(record,isCase)}${!isCase && !state.preview && state.session?.role!=='platform_admin'?`<button type="button" class="chat-record-pin ${record.is_pinned?'active':''}" data-action="toggle-chat-note-pin" data-id="${esc(id)}" data-recipient="${esc(recipient)}" title="${record.is_pinned?'取消釘選':'釘選記事'}" aria-label="${record.is_pinned?'取消釘選':'釘選記事'}" aria-pressed="${Boolean(record.is_pinned)}">${icon('pin')}</button>`:''}</div>
+    <div class="en-card-excerpt ${isCase?'chat-case-description':'chat-note-content'}" ${isCase?`data-case-id="${esc(id)}"`:`id="chat-note-content-${esc(id)}"`}>${esc(plain||'尚無內容')}</div>
+    <div class="en-card-meta"><span class="chat-record-status ${tone}">${esc(status)}</span>${isCase?`<span class="case-no-badge">${esc(record.case_no||'')}</span>`:''}${tags.filter(Boolean).slice(0,3).map(t=>`<span class="en-card-tag" title="${esc(t)}">${esc(t)}</span>`).join('')}</div></div>
+  </article>`;
+}
+function renderChatNotesList(recipient_id, visibleNotes=null){
+  const notes = visibleNotes || state.chatNotes?.get(recipient_id) || [];
+  if(visibleNotes!==null)return renderSidebarGroups(notes);
+  const orgLockPolicy = noteLockPolicy();
   const canManageTax = ["platform_admin", "org_admin", "operator"].includes(state.session?.role) && manager();
 
-  if(!notes.length) return `<div class="chat-notes-empty" style="text-align:center;padding:24px 12px;"><p class="muted" style="font-size:13px;margin-bottom:10px;">目前尚無對話記事，可點選上方「新增記事」記錄重要事項。</p><div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;"><button class="btn text small" data-action="view-chat-notes-trash" data-recipient="${esc(recipient_id)}">${icon("trash")} 最近刪除 (30天內可還原)</button>${canManageTax ? `<button class="btn text small" data-action="manage-notes-taxonomy">${icon("tag")} 分類與標籤治理</button>` : ''}</div></div>`;
+  if(!notes.length) {
+    return `<div class="chat-notes-empty">
+      <div class="chat-empty-icon">${icon("file")}</div>
+      <p class="chat-empty-text">目前尚無對話記事，可點選上方「新增記事」記錄重要事項。</p>
+      <div class="chat-empty-actions">
+        <button type="button" class="btn text small" data-action="view-chat-notes-trash" data-recipient="${esc(recipient_id)}">${icon("trash")} 最近刪除 (30天內可還原)</button>
+        ${canManageTax ? `<button type="button" class="btn text small" data-action="manage-notes-taxonomy">${icon("tag")} 分類與標籤治理</button>` : ''}
+      </div>
+    </div>`;
+  }
   
   const pinned = notes.filter(n => n.is_pinned);
   const normal = notes.filter(n => !n.is_pinned);
@@ -152,29 +239,29 @@ function renderChatNotesList(recipient_id){
       const isCompleted = n.status === "completed";
       const isLocked = Boolean(n.is_locked);
       const canUnlock = orgLockPolicy === "collaborative" || (orgLockPolicy === "strict_admin" && manager()) || orgLockPolicy === "disabled";
-      const canEdit = !isLocked || canUnlock;
+      const canEdit = !recordReadonly(n);
+      const isLongContent = Boolean(n.content && (n.content.length > 140 || (n.content.match(/\n/g) || []).length >= 3));
       
       return `
-      <div class="chat-note-item ${n.is_pinned?'pinned':''} ${isLocked?'locked':''} ${isCompleted?'completed':''}">
-        <div class="chat-note-meta">
-          <span style="display:inline-flex;align-items:center;gap:5px;flex-wrap:wrap;">
-            ${n.is_pinned ? `<span class="apple-pill" style="background:rgba(234,179,8,.18);color:#b45309;border-color:rgba(234,179,8,.3);">${icon("pin")} 置頂</span>` : ''}
-            ${isLocked ? `<span class="apple-pill" style="background:rgba(100,116,139,.18);color:#475569;border-color:rgba(100,116,139,.3);">${icon("lock")} 已鎖定</span>` : ''}
-            ${n.category_name ? `<span class="tax-item-category-badge" style="font-size:11.5px;padding:2px 8px;gap:4px;">${icon("folder")}<span>${esc(n.category_name)}</span></span>` : ''}
-            <strong style="font-size:12.5px;">${esc(n.title || n.author || "記事")}</strong>
-            <span class="muted" style="font-size:11px;">· ${when(n.created_at)}</span>
-          </span>
-          <div class="note-actions">
-            <button class="btn text small" data-action="copy-chat-note-content" data-id="${esc(n.note_id)}" data-recipient="${esc(recipient_id)}" title="一鍵複製內容">${icon("copy")}</button>
-            <button class="btn text small" data-action="toggle-chat-note-complete" data-id="${esc(n.note_id)}" data-recipient="${esc(recipient_id)}" title="${isCompleted?'標記未完成':'標記完成'}">${icon(isCompleted ? "refresh" : "check")}</button>
-            <button class="btn text small" data-action="toggle-chat-note-pin" data-id="${esc(n.note_id)}" data-recipient="${esc(recipient_id)}" title="${n.is_pinned?'取消置頂':'置頂'}">${icon(n.is_pinned ? "unpin" : "pin")}</button>
-            ${orgLockPolicy !== "disabled" ? `<button class="btn text small" data-action="toggle-chat-note-lock" data-id="${esc(n.note_id)}" data-recipient="${esc(recipient_id)}" title="${isLocked?'解除鎖定':'鎖定防誤改'}">${icon(isLocked ? "unlock" : "lock")}</button>` : ''}
-            ${canEdit && !isLocked ? `<button class="btn text small" data-action="edit-chat-note" data-id="${esc(n.note_id)}" data-recipient="${esc(recipient_id)}" title="編輯記事">${icon("edit")}</button>` : ''}
-            <button class="btn text small" data-action="convert-note-to-case" data-id="${esc(n.note_id)}" data-recipient="${esc(recipient_id)}" title="轉為案件">${icon("folder")}</button>
-            ${canEdit && !isLocked ? `<button class="btn text small danger" data-action="delete-chat-note" data-id="${esc(n.note_id)}" data-recipient="${esc(recipient_id)}" title="刪除記事">${icon("trash")}</button>` : ''}
-          </div>
+      <div data-note-preview="${esc(n.note_id)}" tabindex="0" aria-label="${esc(n.title || "記事")}，按 Enter 或雙擊預覽" class="chat-note-item sidebar-summary-card ${sidebarThumbnail(n.content)?'has-thumbnail':''} ${n.is_pinned?'pinned':''} ${isLocked?'locked':''} ${isCompleted?'completed':''}">
+        <div class="chat-note-title-row">
+          <span class="chat-card-title">${esc(n.title || "記事")}</span>
+          <span class="muted chat-note-time">· ${when(n.created_at)}</span>
         </div>
-        <div class="chat-note-content" id="chat-note-content-${esc(n.note_id)}">${esc(n.content)}</div>
+        ${sidebarThumbnail(n.content)}
+        <div class="chat-note-header">
+          <div class="chat-note-badges">
+            ${n.category_name ? `<span class="tax-item-category-badge" style="font-size:11px;padding:1.5px 7px;gap:3.5px;">${icon("folder")}<span>${esc(n.category_name)}</span></span>` : ''}
+            ${n.is_pinned ? `<span class="apple-pill" style="background:rgba(234,179,8,.18);color:#b45309;border-color:rgba(234,179,8,.3);padding:2px 7px;font-size:11px;">${icon("pin")} 置頂</span>` : ''}
+            ${recordLockControl(n)}
+            ${isCompleted ? `<span class="apple-pill" style="background:rgba(34,197,94,.18);color:#16a34a;border-color:rgba(34,197,94,.3);padding:2px 7px;font-size:11px;">${icon("check")} 已完成</span>` : ''}
+          </div>
+
+        </div>
+        <div class="chat-note-content-wrapper">
+          <div class="chat-note-content ${isLongContent ? 'collapsed' : ''}" id="chat-note-content-${esc(n.note_id)}">${renderNoteContent(n)}</div>
+          ${isLongContent ? `<button type="button" class="chat-note-expand-btn" data-action="toggle-chat-note-expand" data-id="${esc(n.note_id)}">${icon("chevron-down")} 展開全文</button>` : ''}
+        </div>
         ${((n.tags && n.tags.length) || n.due_date || n.linked_case_id) ? `
           <div class="chat-note-footer">
             ${(n.tags || []).map(t => (typeof tagPillHtml === 'function' ? tagPillHtml(t) : `<span class="apple-pill">${esc(t)}</span>`)).join("")}
@@ -182,30 +269,48 @@ function renderChatNotesList(recipient_id){
             ${n.linked_case_id ? `<span class="apple-pill" style="background:rgba(88,86,214,.12);color:#5856D6;border-color:rgba(88,86,214,.25);cursor:pointer;" data-action="open-case-detail" data-id="${esc(n.linked_case_id)}">${icon("folder")} 關聯案件</span>` : ''}
           </div>
         ` : ''}
+          <details class="chat-note-menu"><summary aria-label="記事操作">更多操作</summary><div class="note-actions">
+            <button type="button" class="btn text small" data-action="open-note-detail" data-id="${esc(n.note_id)}" title="預覽記事">${icon("eye")} 預覽</button>
+            <button type="button" class="btn text small" data-action="copy-chat-note-content" data-id="${esc(n.note_id)}" data-recipient="${esc(recipient_id)}" title="一鍵複製內容">${icon("copy")}</button>
+            <button type="button" class="btn text small" data-action="toggle-chat-note-complete" data-id="${esc(n.note_id)}" data-recipient="${esc(recipient_id)}" title="${isCompleted?'標記未完成':'標記完成'}">${icon(isCompleted ? "refresh" : "check")}</button>
+            <button type="button" class="btn text small" data-action="toggle-chat-note-pin" data-id="${esc(n.note_id)}" data-recipient="${esc(recipient_id)}" title="${n.is_pinned?'取消置頂':'置頂'}">${icon(n.is_pinned ? "unpin" : "pin")}</button>
+            ${canToggleNoteLock(n) ? `<button type="button" class="btn text small" data-action="toggle-chat-note-lock" data-id="${esc(n.note_id)}" data-recipient="${esc(recipient_id)}" title="${isLocked?'解除鎖定':'鎖定防誤改'}" aria-label="${isLocked?'解除鎖定':'鎖定防誤改'}" aria-pressed="${isLocked}">${isLocked ? icon("unlock") : icon("lock")}</button>` : ''}
+            ${canEdit && !isLocked ? `<button type="button" class="btn text small" data-action="edit-chat-note" data-id="${esc(n.note_id)}" data-recipient="${esc(recipient_id)}" title="編輯記事">${icon("edit")}</button>` : ''}
+            <button type="button" class="btn text small" data-action="convert-note-to-case" data-id="${esc(n.note_id)}" data-recipient="${esc(recipient_id)}" title="轉為案件">${icon("folder")}</button>
+            ${canEdit && !isLocked ? `<button type="button" class="btn text small danger" data-action="delete-chat-note" data-id="${esc(n.note_id)}" data-recipient="${esc(recipient_id)}" title="刪除記事">${icon("trash")}</button>` : ''}
+          </div></details>
       </div>`;
     }).join("")}
   </div>`;
 }
 
-function renderContactCases(recipient_id){
-  const related = (state.cases || []).filter(c => c.case_subject_id === recipient_id);
-  if(!related.length) return '<p class="muted" data-s="sf77f5e9">目前無關聯案件，可點選「建立案件」追蹤此對象的問題或需求。</p>';
-  return `<div class="contact-cases-list">${related.map(c=>`<div class="case-item" data-s="sdfaf1a8" data-action="open-case-detail" data-id="${esc(c.case_id)}">
+function renderContactCases(recipient_id, visibleCases=null){
+  const related = visibleCases || (state.cases || []).filter(c => c.case_subject_id === recipient_id);
+  if(visibleCases!==null)return renderSidebarGroups(related,true);
+  if(!related.length) {
+    return `<div class="chat-cases-empty">
+      <div class="chat-empty-icon">${icon("folder")}</div>
+      <p class="chat-empty-text">目前無關聯案件，可點選上方「建立案件」追蹤此對象的問題或需求。</p>
+    </div>`;
+  }
+  return `<div class="contact-cases-list">${related.map(c=>`<article class="case-item case-note-card sidebar-summary-card ${sidebarThumbnail(c.description)?'has-thumbnail':''}" data-case-preview="${esc(c.case_id)}" tabindex="0" aria-label="${esc(c.title)}，按 Enter 或雙擊預覽">
+    ${sidebarThumbnail(c.description)}
     <div class="case-item-info">
       <div class="case-title-row">
         <span class="case-no-badge">${esc(c.case_no)}</span>
-        <strong>${esc(c.title)}</strong>
-        ${c.is_locked ? '<span class="badge warn" style="font-size:10px;">已鎖定</span>' : ''}
+        <span class="chat-card-title">${esc(c.title)}</span>
+        ${recordLockControl(c,true)}
         ${badge(caseStatusNames[c.status]||c.status, caseStatusTones[c.status]||"")}
       </div>
-      <div data-s="s1ba4dce">
-        ${c.category ? `<span class="badge" data-s="s0c8a27e">${esc(c.category)}</span> ` : ''}
+      <div>
+        ${c.category ? `<span class="badge">${esc(c.category)}</span> ` : ''}
         ${c.ref_no ? `<span class="muted">參考號：${esc(c.ref_no)}</span> · ` : ''}
         <small class="muted">更新：${when(c.updated_at)}</small>
       </div>
     </div>
-    ${button("查看","open-case-detail","btn small",`data-id="${esc(c.case_id)}"`)}
-  </div>`).join("")}</div>`;
+    ${c.description ? `<div class="chat-case-description md-preview-area" data-case-id="${esc(c.case_id)}">${renderCaseContent(c)}</div>` : ''}
+    ${button("預覽","open-case-detail","small",`data-id="${esc(c.case_id)}"`)}
+  </article>`).join("")}</div>`;
 }
 
 
@@ -218,6 +323,16 @@ function schedulePage(){
 }
 
 function workspaceAction(action,id){
+  if(action.startsWith("chat-work-")){
+    const panel=document.querySelector(".chat-work-panel"); if(!panel)return true;
+    const view=chatWorkView(panel.dataset.recipient);
+    if(action==="chat-work-tab"){view.tab=id;view.filter="all";view.query="";view.page=1;}
+    if(action==="chat-work-filter"){view.filter=id;view.page=1;}
+    if(action==="chat-work-page")view.page=Math.max(1,Number(id)||1);
+    refreshChatWorkPanel();
+    document.querySelector(`[data-action="${action}"][data-id="${CSS.escape(id)}"]`)?.focus({preventScroll:true});
+    return true;
+  }
   if(action==="report-layout"){workspaceUI.reportLayout=id==="grid"?"grid":"list";render();return true;}
   if(action==="report-detail"){workspaceUI.reportDetail=id;render();document.getElementById("report-detail")?.focus({preventScroll:true});if(innerWidth<1200)document.getElementById("report-detail")?.scrollIntoView({block:"start"});return true;}
   if(action==="close-report-detail"){const previous=workspaceUI.reportDetail;workspaceUI.reportDetail="";render();document.querySelector(`[data-action="report-detail"][data-id="${CSS.escape(previous)}"]`)?.focus();return true;}
@@ -229,7 +344,7 @@ function workspaceAction(action,id){
 
 function commandEntries(query){
   const q=query.trim().toLowerCase();
-  const allowedViews=["overview","reports",...(admin()?["contacts","schedule","history"]:[]),...(canSend()?["send"]:[]),...(weatherModule()?["subscriptions"]:[]),...(superAdmin()?["organizations","channels"]:[]),...(state.session?.role==="org_admin"?["channels","personnel","org-settings","templates"]:[])];
+  const allowedViews=["overview","reports","personal-settings",...(admin()?["contacts","schedule","history"]:[]),...(canSend()?["send"]:[]),...(weatherModule()?["subscriptions"]:[]),...(superAdmin()?["organizations","channels"]:[]),...(state.session?.role==="org_admin"?["channels","personnel","org-settings","templates"]:[])];
   const entries=allowedViews.map(id=>({kind:"page",id,title:titles[id],detail:"前往頁面",symbol:"grid"}));
   if(q){
     entries.push(...state.reports.map(r=>({kind:"report",id:r.report_id,title:r.title,detail:scope(r),symbol:"file"})));
@@ -248,13 +363,42 @@ function openCommand(){
   document.getElementById("command-search").value="";renderCommands();dialog.showModal();document.getElementById("command-search").focus();
 }
 document.addEventListener("input",e=>{
+  if(e.target.id==="chat-work-search"){
+    if(e.isComposing)return;
+    const cursor=e.target.selectionStart;
+    const view=chatWorkView(e.target.closest(".chat-work-panel").dataset.recipient);
+    view.query=e.target.value;view.page=1;refreshChatWorkPanel();
+    const input=document.getElementById("chat-work-search");input?.focus({preventScroll:true});
+    if(input && cursor!==null)input.setSelectionRange(cursor,cursor);
+  }
   if(e.target.id==="command-search")renderCommands();
   if(e.target.id==="report-search"){
     workspaceUI.reportQuery=e.target.value;const cursor=e.target.selectionStart;
     render();const input=document.getElementById("report-search");input.focus({preventScroll:true});try{input.setSelectionRange(cursor,cursor);}catch(_){}
   }
 });
+document.addEventListener("compositionend",e=>{
+  if(e.target.id==="chat-work-search")e.target.dispatchEvent(new Event("input",{bubbles:true}));
+});
+document.addEventListener("keydown",e=>{
+  const tab=e.target.closest('[data-action="chat-work-tab"]');
+  if(!tab || !["ArrowLeft","ArrowRight","Home","End"].includes(e.key))return;
+  e.preventDefault();workspaceAction("chat-work-tab",e.key==="Home"?"notes":e.key==="End"?"cases":tab.dataset.id==="notes"?"cases":"notes");
+});
+document.addEventListener("change",e=>{
+  if(e.target.id==="chat-work-sort"){
+    const view=chatWorkView(e.target.closest(".chat-work-panel").dataset.recipient);
+    view.sort=e.target.value;view.page=1;refreshChatWorkPanel();document.getElementById("chat-work-sort")?.focus({preventScroll:true});
+  }
+});
 document.addEventListener("click",e=>{
+  const summary=e.target.closest(".sidebar-summary-card,.evernote-summary");
+  if(summary){
+    document.querySelectorAll(".sidebar-summary-card.selected,.evernote-summary.selected").forEach(card=>card.classList.remove("selected"));
+    summary.classList.add("selected");
+    const panel=summary.closest(".chat-work-panel");
+    if(panel)chatWorkView(panel.dataset.recipient).selected=summary.dataset.notePreview||summary.dataset.casePreview;
+  }
   if(e.target.closest("#command-open"))openCommand();
   if(e.target.closest("#command-close"))document.getElementById("command-dialog").close();
   const result=e.target.closest("[data-command-kind]");if(!result)return;
@@ -276,3 +420,11 @@ document.addEventListener("keydown",e=>{
   if(e.key==="ArrowDown"||e.key==="ArrowUp"){e.preventDefault();buttons[(index+(e.key==="ArrowDown"?1:-1)+buttons.length)%buttons.length]?.focus();}
   if(e.key==="Enter"&&document.activeElement.id==="command-search"){e.preventDefault();buttons[0]?.click();}
 });
+
+document.addEventListener('toggle',event=>{
+  const group=event.target;
+  if(!group.matches?.('details[data-record-group]') || !group.dataset.recipient)return;
+  const view=chatWorkView(group.dataset.recipient);
+  view.collapsedGroups=view.collapsedGroups||{};
+  view.collapsedGroups[group.dataset.recordGroup]=!group.open;
+},true);
