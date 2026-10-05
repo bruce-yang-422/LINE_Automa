@@ -1189,7 +1189,8 @@ class AdminHandler(BaseHTTPRequestHandler):
                 self.respond(200, res)
             elif self.path == '/api/chat/status':
                 cid = payload.get('recipient_id') or payload.get('chat_id') or ''
-                status_names = {'done': '已完成', 'pending': '待處理', 'in_progress': '處理中', 'open': '開啟'}
+                status = payload.get('status', 'open')
+                status_names = {'done': '已完成', 'pending': '待處理', 'in_progress': '處理中', 'open': '一般（無狀態）'}
                 status_label = status_names.get(status, status)
                 with app.database_connection() as conn:
                     res = chat.set_chat_status(conn, cid, status, actor_label)

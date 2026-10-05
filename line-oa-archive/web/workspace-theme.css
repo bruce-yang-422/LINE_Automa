@@ -755,4 +755,71 @@ button.apple-tag-pill.active-selected{box-shadow:0 0 0 2px var(--surface),0 0 0 
   flex-shrink: 0;
 }
 
+/* Notes Hub Header & Compact Icon Segmented View Switcher */
+.heading-actions {
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  row-gap: 12px !important;
+  flex-wrap: wrap !important;
+  justify-content: flex-end !important;
+}
+
+.segmented.icon-segmented {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 2px !important;
+  padding: 3px !important;
+  border-radius: 10px !important;
+  flex: none !important;
+}
+
+.segmented.icon-segmented button {
+  min-height: 32px !important;
+  height: 32px !important;
+  width: 34px !important;
+  min-width: 34px !important;
+  padding: 0 !important;
+  border-radius: 7px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex: none !important;
+}
+
+.segmented.icon-segmented button svg {
+  width: 16px !important;
+  height: 16px !important;
+}
+
+/* Chat Sidebar Filter Tabs (No Wrap & Compact Sizing) */
+.chat-filter-tabs.segmented {
+  display: flex !important;
+  padding: 3px !important;
+  gap: 2px !important;
+  border-radius: 10px !important;
+  margin-top: 10px !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+.chat-filter-tabs.segmented button {
+  flex: 1 1 0 !important;
+  min-width: 0 !important;
+  min-height: 32px !important;
+  height: 32px !important;
+  padding: 0 4px !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  white-space: nowrap !important;
+  text-align: center !important;
+  letter-spacing: -0.2px !important;
+  border-radius: 7px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+
+
 

@@ -75,7 +75,7 @@ function chatPage() {
           <button type="button" class="icon-button" data-action="open-chat-settings" title="聊天設定與容量管理" aria-label="聊天設定">${icon("settings")}</button>
         </div>
         <div class="chat-filter-tabs segmented section-space">
-          ${[["all", "全部"], ["unread", "未讀"], ["pending", "待處理"], ["done", "處理完畢"]].map(([id, t]) => `
+          ${[["all", "全部"], ["unread", "未讀"], ["pending", "待處理"], ["done", "已完成"]].map(([id, t]) => `
             <button data-action="chat-filter" data-id="${id}" class="${chatUI.filter === id ? 'active' : ''}">${t}</button>
           `).join("")}
         </div>
@@ -190,7 +190,7 @@ function renderChatRoomItems() {
           <span class="chat-room-preview">${formatChatPreviewHtml(r.last_message)}</span>
           <div class="chat-room-badges">
             ${r.status === 'pending' ? '<span class="status-badge pending">待處理</span>' : ''}
-            ${r.status === 'done' ? '<span class="status-badge done">處理完畢</span>' : ''}
+            ${r.status === 'done' ? '<span class="status-badge done">已完成</span>' : ''}
             ${unread ? `<span class="unread-pill">${r.unread_count}</span>` : ''}
           </div>
         </div>
@@ -224,8 +224,8 @@ function renderConversationView(room) {
     </div>
     <div class="conversation-header-actions">
       <div class="segmented" role="group" aria-label="聊天狀態">
-        <button data-action="toggle-chat-status" data-id="${esc(room.recipient_id)}" data-status="pending" class="${chatUI.chatStatus === 'pending' ? 'active' : ''}">待處理</button>
-        <button data-action="toggle-chat-status" data-id="${esc(room.recipient_id)}" data-status="done" class="${chatUI.chatStatus === 'done' ? 'active' : ''}">處理完畢</button>
+        <button data-action="toggle-chat-status" data-id="${esc(room.recipient_id)}" data-status="pending" class="${chatUI.chatStatus === 'pending' ? 'active' : ''}" title="${chatUI.chatStatus === 'pending' ? '點擊取消「待處理」狀態（恢復一般對話）' : '標記為「待處理」'}">待處理</button>
+        <button data-action="toggle-chat-status" data-id="${esc(room.recipient_id)}" data-status="done" class="${chatUI.chatStatus === 'done' ? 'active' : ''}" title="${chatUI.chatStatus === 'done' ? '點擊取消「已完成」狀態（恢復一般對話）' : '標記為「已完成」'}">已完成</button>
       </div>
       <button class="icon-button ${chatUI.searchOpen ? 'active' : ''}" data-action="toggle-chat-search" title="在對話中搜尋" aria-label="在對話中搜尋">${icon("search")}</button>
       ${state.session?.role !== 'platform_admin' ? `<button class="btn small text" data-action="open-chat-export-modal" data-id="${esc(room.recipient_id)}" title="匯出對話紀錄">${icon("download")} 匯出</button>` : ''}
@@ -607,11 +607,16 @@ function chatAction(action, id, target) {
     return true;
   }
   if (action === "toggle-chat-status") {
-    const nextStatus = target.dataset.status;
+    const clickedStatus = target.dataset.status;
+    const nextStatus = chatUI.chatStatus === clickedStatus ? "open" : clickedStatus;
     api("/api/chat/status", { recipient_id: id, status: nextStatus }).then(() => {
       chatUI.chatStatus = nextStatus;
       loadChatRooms().then(() => render());
-      notice(`聊天狀態已變更為「${nextStatus === 'pending' ? '待處理' : '處理完畢'}」。`);
+      if (nextStatus === "open") {
+        notice("已取消狀態標記（恢復一般對話）。");
+      } else {
+        notice(`聊天狀態已變更為「${nextStatus === 'pending' ? '待處理' : '已完成'}」。`);
+      }
     });
     return true;
   }

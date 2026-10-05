@@ -115,7 +115,7 @@ function tagPillHtml(tagName){
   }
   const bg = color.length === 7 ? color + "20" : "rgba(0,122,255,0.14)";
   const border = color.length === 7 ? color + "40" : "rgba(0,122,255,0.28)";
-  return `<span class="apple-pill" data-color="${esc(color)}" style="background-color:${esc(bg)}!important;color:${esc(color)}!important;border-color:${esc(border)}!important;"><span class="apple-pill-dot" style="background-color:${esc(color)}!important;"></span>${esc(tagName)}</span>`;
+  return `<span class="apple-pill" data-color="${esc(color)}" style="background-color:${esc(bg)}!important;color:${esc(color)}!important;border-color:${esc(border)}!important;">${esc(tagName)}</span>`;
 }
 
 function renderChatNotesList(recipient_id){

@@ -166,7 +166,7 @@ function formatAuditDetail(detail, action){
   
   // 1. 聊天狀態轉換
   s = s.replace(/變更聊天狀態為\s*\[?(done|pending|in_progress|open)\]?/gi, (match, st) => {
-    const statusMap = { done: "已完成", pending: "待處理", in_progress: "處理中", open: "開啟" };
+    const statusMap = { done: "已完成", pending: "待處理", in_progress: "處理中", open: "一般（無狀態）" };
     return `變更聊天狀態為 [${statusMap[st.toLowerCase()] || st}]`;
   });
 
@@ -743,7 +743,7 @@ function tagPillHtml(tagName){
   }
   const bg = color.length === 7 ? color + "20" : "rgba(0,122,255,0.14)";
   const border = color.length === 7 ? color + "40" : "rgba(0,122,255,0.28)";
-  return `<span class="apple-pill" data-color="${esc(color)}" style="background-color:${esc(bg)}!important;color:${esc(color)}!important;border-color:${esc(border)}!important;"><span class="apple-pill-dot" style="background-color:${esc(color)}!important;"></span>${esc(tagName)}</span>`;
+  return `<span class="apple-pill" data-color="${esc(color)}" style="background-color:${esc(bg)}!important;color:${esc(color)}!important;border-color:${esc(border)}!important;">${esc(tagName)}</span>`;
 }
 
 function categoryPillHtml(categoryName){
@@ -801,13 +801,13 @@ function renderCategoryScopedTagsHtml(categoryId, selectedTagsList = []){
       <div class="quick-tag-pills">
         ${sortedTags.map(t => {
           const color = t.color || '#007AFF';
-          const bg = color.length === 7 ? color + "24" : "rgba(0,122,255,0.15)";
+          const bg = color.length === 7 ? color + "20" : "rgba(0,122,255,0.14)";
           const border = color.length === 7 ? color + "48" : "rgba(0,122,255,0.3)";
           const isSelected = selectedTagsList.includes(t.name);
           const catCount = (t.category_usage?.[categoryId] || (catName && t.category_usage?.[catName]) || 0);
           const totalCount = t.note_count || t.usage_count || 0;
           const tip = catName && catCount > 0 ? `${catName}分類引用 ${catCount} 次 · 全OA總計 ${totalCount} 次` : `全OA引用 ${totalCount} 次`;
-          return `<button type="button" class="apple-tag-pill ${isSelected?'active-selected':''}" data-action="quick-add-note-tag" data-tag="${esc(t.name)}" style="background:${esc(bg)}!important;color:${esc(color)}!important;border-color:${esc(border)}!important;" title="${esc(tip)}"><span class="apple-pill-dot" style="background:${esc(color)}!important;"></span>${esc(t.name)}</button>`;
+          return `<button type="button" class="apple-tag-pill ${isSelected?'active-selected':''}" data-action="quick-add-note-tag" data-tag="${esc(t.name)}" style="background:${esc(isSelected ? color : bg)}!important;color:${esc(isSelected ? '#ffffff' : color)}!important;border-color:${esc(isSelected ? color : border)}!important;" title="${esc(tip)}">${isSelected ? '✓ ' : ''}${esc(t.name)}</button>`;
         }).join("")}
       </div>
     </div>
@@ -962,7 +962,6 @@ async function manageNotesTaxonomyModal(initialTab = "categories"){
                 <div class="tax-item-row">
                   <div class="tax-item-left">
                     <span class="tax-item-tag-preview" data-color="${esc(color)}" style="background-color:${esc(bg)}!important;color:${esc(color)}!important;border-color:${esc(border)}!important;">
-                      <span class="apple-pill-dot" style="background-color:${esc(color)}!important;"></span>
                       ${esc(t.name)}
                     </span>
                     <span class="tax-item-usage-bubble ${t.note_count?'':'zero'}">${t.note_count ? `${t.note_count} 則引用` : '無引用'}</span>
@@ -1146,14 +1145,12 @@ function chatNotesPage(){
   const canManageTax = manager();
 
   return heading("對話記事本", "跨 OA 集中查閱、搜尋、治理與追蹤所有對話重要記事與待辦事項", `
-    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-      <div class="segmented" style="display:inline-flex;">
-        <button type="button" class="${state.noteHubViewMode==='grid'?'active':''}" data-action="toggle-notes-view-mode" data-id="grid" title="卡片模式">${icon("grid")}</button>
-        <button type="button" class="${state.noteHubViewMode==='table'?'active':''}" data-action="toggle-notes-view-mode" data-id="table" title="列表模式">${icon("menu")}</button>
-      </div>
-      <button type="button" class="btn small" data-action="export-chat-notes-modal">${icon("download")} 匯出記事</button>
-      ${canManageTax ? `<button type="button" class="btn small" data-action="manage-notes-taxonomy">${icon("tag")} 分類與標籤治理</button>` : ''}
+    <div class="segmented icon-segmented" role="group" aria-label="檢視模式">
+      <button type="button" class="${state.noteHubViewMode==='grid'?'active':''}" data-action="toggle-notes-view-mode" data-id="grid" title="切換為卡片模式">${icon("grid")}</button>
+      <button type="button" class="${state.noteHubViewMode==='table'?'active':''}" data-action="toggle-notes-view-mode" data-id="table" title="切換為列表模式">${icon("menu")}</button>
     </div>
+    <button type="button" class="btn small" data-action="export-chat-notes-modal">${icon("download")} 匯出記事</button>
+    ${canManageTax ? `<button type="button" class="btn small" data-action="manage-notes-taxonomy">${icon("tag")} 分類與標籤治理</button>` : ''}
   `) + `
   <div class="notes-hub-stats">
     ${stat("全部記事", stats.total, "則", "所有已記錄的對話記事", "file")}
@@ -2350,7 +2347,7 @@ document.addEventListener("click",async event=>{
           <div class="tax-merge-node">
             <small class="muted" style="display:block;margin-bottom:6px;font-size:11px;">來源同義詞（即將移除）</small>
             <span class="apple-pill" style="background:${esc(sourceColor)}18;color:${esc(sourceColor)};border-color:${esc(sourceColor)}33;font-size:13px;padding:4px 12px;">
-              <span class="apple-pill-dot" style="background:${esc(sourceColor)};"></span>${esc(target.dataset.name)}
+              ${esc(target.dataset.name)}
             </span>
           </div>
           <div class="tax-merge-arrow">
