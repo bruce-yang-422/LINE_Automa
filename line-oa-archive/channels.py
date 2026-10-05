@@ -5,7 +5,7 @@ webhook requests and workers; no request changes process-wide environment variab
 
 A "usage row" is what request/job code sees as an OA: the owner's own row (scope id =
 channel_id) or a share (scope id = share_id) whose org is the receiving workspace.
-Shares reuse the owner's credentials but keep their own recipients, reports and jobs.
+Shares reuse the owner's credentials but keep their own recipients and jobs.
 Every OA belongs to an organization; there are no personal workspaces.
 """
 from contextlib import contextmanager
@@ -463,7 +463,7 @@ def assign(payload, user):
         if wanted - owned:
             raise ValueError('只能指派此 OA 名單中的聯絡對象。')
         current = {r[0] for r in conn.execute('SELECT recipient_id FROM recipients WHERE channel_id=?', (s['share_id'],))}
-        # Copies carry LINE-side state only; custom_name, department and subscriptions belong to the receiving workspace.
+        # Copies carry LINE-side state only; custom_name and department belong to the receiving workspace.
         for rid in sorted(wanted - current):
             conn.execute('''INSERT INTO recipients(channel_id,recipient_id,kind,display_name,picture_url,active,event_at,
                                                    profile_checked_at,profile_next_at,organization_id)
@@ -496,24 +496,17 @@ def transfer(payload, user):
         impact = {'from': workspace_name(row['org_id']), 'to': w['name'],
                   'pending_jobs': count("SELECT count(*) FROM send_jobs WHERE channel_id=? AND status IN ('scheduled','queued','running')"),
                   'recipients': count('SELECT count(*) FROM recipients WHERE channel_id=?'),
-                  'reports': count('SELECT count(*) FROM report_sources WHERE channel_id=?'),
                   'assets': count('SELECT count(*) FROM upload_assets WHERE channel_id=?'),
                   'jobs': count('SELECT count(*) FROM send_jobs WHERE channel_id=?'),
-                  'dispatch_scopes': count('SELECT count(*) FROM dispatch_scopes WHERE channel_id=?'),
-                  'sender_grants': count('SELECT count(*) FROM sender_grants WHERE channel_id=?'),
                   'shares': count('SELECT count(*) FROM line_channel_shares WHERE channel_id=? AND active=1')}
         if payload.get('confirm') is not True:
             return {**impact, 'transferred': False}
         if impact['pending_jobs']:
             raise ValueError(f'還有 {impact["pending_jobs"]} 筆預約或進行中的發送，請先取消或等它完成再移轉。')
         conn.execute('UPDATE line_channels SET org_id=? WHERE channel_id=?', (w['org_id'], cid))
-        # Departments, scopes and sender grants describe the previous workspace's people; they do not carry over.
+        # Departments describe the previous workspace's people; they do not carry over.
         conn.execute("UPDATE recipients SET organization_id=?,department='' WHERE channel_id=?", (organization_id, cid))
-        conn.execute("""UPDATE report_sources SET organization_id=?,scope='company',department='',owner_recipient_id=''
-                        WHERE channel_id=?""", (organization_id, cid))
         conn.execute('UPDATE upload_assets SET organization_id=? WHERE channel_id=?', (organization_id, cid))
         conn.execute('UPDATE send_jobs SET organization_id=? WHERE channel_id=?', (organization_id, cid))
-        conn.execute('DELETE FROM dispatch_scopes WHERE channel_id=?', (cid,))
-        conn.execute('DELETE FROM sender_grants WHERE channel_id=?', (cid,))
         reports.audit(conn, user['email'], 'oa.transfer', cid, f'{impact["from"]} → {impact["to"]}', organization_id)
     return {**impact, 'transferred': True, 'workspace_id': w['id'], 'channel_id': cid}

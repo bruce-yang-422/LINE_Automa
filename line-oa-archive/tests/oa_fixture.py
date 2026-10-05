@@ -11,10 +11,10 @@ SECRET = '0' * 32
 def register_oa(org_id='A', org_name=None, channel_id=CHANNEL, bot=BOT, token=TOKEN, secret=SECRET, name='Test OA', **org_flags):
     """建立（或沿用）組織並登記 OA，回傳 channel_id。"""
     crypto = channels.cipher()
-    flags = {'reports_enabled': 1, 'messaging_enabled': 1, 'weather_enabled': 0, 'weather_image_path': '', **org_flags}
+    flags = {'messaging_enabled': 1, **org_flags}
     with app.database_connection() as conn:
-        conn.execute('INSERT OR IGNORE INTO organizations(org_id,name,reports_enabled,messaging_enabled,weather_enabled,weather_image_path) VALUES (?,?,?,?,?,?)',
-                     (org_id, org_name or org_id, flags['reports_enabled'], flags['messaging_enabled'], flags['weather_enabled'], flags['weather_image_path']))
+        conn.execute('INSERT OR IGNORE INTO organizations(org_id,name,messaging_enabled) VALUES (?,?,?)',
+                     (org_id, org_name or org_id, flags['messaging_enabled']))
         conn.execute('''INSERT INTO line_channels(channel_id,org_id,name,bot_user_id,token_cipher,secret_cipher,active)
                         VALUES (?,?,?,?,?,?,1)''',
                      (channel_id, org_id, name, bot, crypto.encrypt(token.encode()).decode(), crypto.encrypt(secret.encode()).decode()))

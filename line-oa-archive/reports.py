@@ -1,21 +1,11 @@
-"""Private report catalogue, versioned previews, and workspace access."""
+"""Accounts, organizations, memberships, permissions and audit log."""
 
-import base64
-from datetime import datetime, timezone, timedelta
-import hashlib
-import json
-import os
 import re
-from pathlib import Path
 import sqlite3
 from uuid import uuid4
 
 import app
 import channels
-
-MAX_BYTES = 1_000_000
-CATEGORIES = {"weather": "天氣報告", "company": "組織報表", "other": "其他報告"}
-
 
 def bootstrap_users(emails):
     with app.database_connection() as conn:
@@ -87,10 +77,6 @@ def module_enabled(user, module):
     org=next((o for o in organizations() if o['org_id']==user.get('organization_id') and o['active']),None)
     if not org or not org.get(module+'_enabled'):
         return False
-    if user['role'] == 'operator':
-        if module in ('messaging', 'reports'):
-            return True
-        return bool(grant(user).get(module))
     return True
 
 
@@ -112,28 +98,19 @@ def org_profile(payload):
 
 
 def save_organization(payload, actor):
-    """平台管理員：組織資料、啟用狀態與模組（含客製模組設定）。"""
+    """平台管理員：組織資料、啟用狀態與訊息模組。"""
     name, kind = org_profile(payload)
-    flags=[payload.get(k) for k in ('active','reports_enabled','messaging_enabled','weather_enabled')]
+    flags=[payload.get(k) for k in ('active','messaging_enabled')]
     if any(type(v) is not bool for v in flags):
         raise ValueError('組織狀態與模組授權格式不正確。')
-    weather_path=payload.get('weather_image_path','')
-    if not isinstance(weather_path,str) or len(weather_path)>1024:
-        raise ValueError('天氣圖片路徑格式不正確。')
-    weather_path=weather_path.strip()
-    if weather_path and (not Path(weather_path).is_absolute() or Path(weather_path).suffix.lower()!='.png'):
-        raise ValueError('天氣圖片請填入伺服器上 PNG 檔的完整路徑。')
-    if flags[3] and not weather_path:
-        raise ValueError('啟用天氣模組時，請填入天氣圖片的 PNG 路徑。')
     org_id=payload.get('org_id') or uuid4().hex
     with app.database_connection() as conn:
         if payload.get('org_id') and not conn.execute('SELECT 1 FROM organizations WHERE org_id=?',(org_id,)).fetchone():
             raise ValueError('找不到組織。')
-        conn.execute('''INSERT INTO organizations(org_id,name,kind,active,reports_enabled,messaging_enabled,weather_enabled,weather_image_path)
-                        VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(org_id) DO UPDATE SET name=excluded.name,kind=excluded.kind,
-                        active=excluded.active,reports_enabled=excluded.reports_enabled,messaging_enabled=excluded.messaging_enabled,
-                        weather_enabled=excluded.weather_enabled,weather_image_path=excluded.weather_image_path''',
-                     (org_id,name,kind,*[int(v) for v in flags],weather_path))
+        conn.execute('''INSERT INTO organizations(org_id,name,kind,active,messaging_enabled)
+                        VALUES (?,?,?,?,?) ON CONFLICT(org_id) DO UPDATE SET name=excluded.name,kind=excluded.kind,
+                        active=excluded.active,messaging_enabled=excluded.messaging_enabled''',
+                     (org_id,name,kind,*[int(v) for v in flags]))
         audit(conn,actor,'organization.update',org_id,name,org_id)
     return {'org_id':org_id}
 
@@ -199,91 +176,10 @@ def login_account(email, organization_id=None):
     return None
 
 
-def dispatch_scopes():
-    with app.database_connection() as conn:
-        conn.row_factory = sqlite3.Row
-        return [{**dict(r), 'recipient_ids': json.loads(r['recipients_json'])}
-                for r in conn.execute('SELECT * FROM dispatch_scopes WHERE dispatch_scopes.channel_id=current_channel() ORDER BY organization_id,name')]
-
-
-def grant(user):
-    with app.database_connection() as conn:
-        conn.row_factory = sqlite3.Row
-        row = conn.execute('SELECT * FROM sender_grants WHERE sender_grants.channel_id=current_channel() AND email=? AND organization_id=?', (user['email'], user['organization_id'])).fetchone()
-    return {**(dict(row) if row else {'messaging': 0, 'reports': 0, 'weather': 0}),
-            'scope_ids': json.loads(row['scopes_json']) if row else [],
-            'report_ids': json.loads(row['reports_json']) if row else []}
-
-
 def allowed_contact(user, row):
     if not same_organization(user, row.get('organization_id')):
         return False
     return operator(user)
-
-
-def string_list(payload, key):
-    value = payload.get(key, [])
-    if not isinstance(value, list) or len(value) > 500 or any(not isinstance(v, str) or len(v) > 254 for v in value):
-        raise ValueError('授權選項格式不正確。')
-    return sorted(set(value))
-
-
-def save_dispatch_scope(payload, actor):
-    organization_id, name, kind = payload.get('organization_id'), payload.get('name'), payload.get('kind')
-    active, department = payload.get('active'), payload.get('department', '')
-    ids = string_list(payload, 'recipient_ids')
-    if not isinstance(name, str) or not name.strip() or len(name) > 80 or kind not in {'department','project','group'} or type(active) is not bool:
-        raise ValueError('請填寫範圍名稱、類型與啟用狀態。')
-    if not isinstance(department, str) or len(department) > 60 or (kind == 'department' and not department.strip()):
-        raise ValueError('部門範圍必須指定部門。')
-    if kind == 'group' and len(ids) != 1:
-        raise ValueError('群組範圍須選擇一個 LINE 群組。')
-    if kind == 'project' and not ids:
-        raise ValueError('專案範圍須選擇聯絡對象。')
-    channels.enforce_organization(organization_id)
-    scope_id = payload.get('scope_id') or uuid4().hex
-    if not isinstance(scope_id, str) or not re.fullmatch('[0-9a-f]{32}', scope_id):
-        raise ValueError('範圍識別資料不正確。')
-    with app.database_connection() as conn:
-        conn.execute('BEGIN IMMEDIATE')
-        if not conn.execute('SELECT 1 FROM organizations WHERE org_id=?', (organization_id,)).fetchone():
-            raise ValueError('請選擇有效組織。')
-        old = conn.execute('SELECT organization_id FROM dispatch_scopes WHERE dispatch_scopes.channel_id=current_channel() AND scope_id=?', (scope_id,)).fetchone()
-        if payload.get('scope_id') and (not old or old[0] != organization_id):
-            raise ValueError('範圍不存在或組織不可變更，請另建範圍。')
-        for rid in ids:
-            row = conn.execute('SELECT kind,organization_id FROM recipients WHERE recipients.channel_id=current_channel() AND recipient_id=?', (rid,)).fetchone()
-            if not row or row[1] != organization_id or (kind == 'group' and row[0] not in {'group','room'}):
-                raise ValueError('請選擇同組織的有效聯絡對象／群組。')
-        conn.execute("""INSERT INTO dispatch_scopes(channel_id,scope_id,organization_id,name,kind,department,recipients_json,active) VALUES (current_channel(),?,?,?,?,?,?,?) ON CONFLICT(scope_id) DO UPDATE SET
-                        name=excluded.name,kind=excluded.kind,department=excluded.department,recipients_json=excluded.recipients_json,active=excluded.active WHERE dispatch_scopes.channel_id=excluded.channel_id""",
-                     (scope_id,organization_id,name.strip(),kind,department.strip() if kind=='department' else '',json.dumps(ids if kind!='department' else []),int(active)))
-        audit(conn,actor,'scope.update',scope_id,name.strip(),organization_id)
-    return {'scope_id':scope_id}
-
-
-def save_grant(payload, actor):
-    email, organization_id = payload.get('email'), payload.get('organization_id')
-    channels.enforce_organization(organization_id)
-    scopes, report_ids = string_list(payload,'scope_ids'), string_list(payload,'report_ids')
-    flags = [payload.get(k) for k in ('messaging','reports','weather')]
-    if any(type(v) is not bool for v in flags):
-        raise ValueError('請設定模組授權。')
-    user = account(email, organization_id)
-    if not user or user['role'] != 'operator':
-        raise ValueError('請先建立此組織的操作人員資格。')
-    with app.database_connection() as conn:
-        conn.execute('BEGIN IMMEDIATE')
-        for sid in scopes:
-            if not conn.execute('SELECT 1 FROM dispatch_scopes WHERE dispatch_scopes.channel_id=current_channel() AND scope_id=? AND organization_id=?', (sid,organization_id)).fetchone():
-                raise ValueError('範圍不屬於此組織。')
-        for rid in report_ids:
-            if rid != 'weather' and not conn.execute('SELECT 1 FROM report_sources WHERE report_sources.channel_id=current_channel() AND report_id=? AND organization_id=?', (rid,organization_id)).fetchone():
-                raise ValueError('報告不屬於此組織。')
-        conn.execute("""INSERT INTO sender_grants(channel_id,email,organization_id,scopes_json,reports_json,messaging,reports,weather) VALUES (current_channel(),?,?,?,?,?,?,?) ON CONFLICT(channel_id,email,organization_id) DO UPDATE SET
-                        scopes_json=excluded.scopes_json,reports_json=excluded.reports_json,messaging=excluded.messaging,reports=excluded.reports,weather=excluded.weather""",
-                     (email,organization_id,json.dumps(scopes),json.dumps(report_ids),*[int(v) for v in flags]))
-        audit(conn,actor,'grant.update',email,'更新發送範圍、報告與模組授權',organization_id)
 
 
 def same_organization(user, organization_id):
@@ -378,192 +274,12 @@ def save_user(payload, actor):
 
 
 
-def can_view(source, user):
-    if user["role"] == "platform_admin":
-        return True
-    if not user.get("organization_id"):
-        return False
-    if source["report_id"] == "weather":
-        if user["role"] == "operator":
-            return bool(grant(user).get("weather")) and module_enabled(user, "weather")
-        return module_enabled(user, "weather")
-    if not module_enabled(user, "reports"):
-        return False
-    if source.get("organization_id") != user["organization_id"]:
-        return False
-    return user["role"] in {"org_admin", "operator"}
-
-
-def validate_targets(source, selected):
-    if source["report_id"] == "weather":
-        return
-    owner_id = source.get("owner_recipient_id", "")
-    for row in selected:
-        if ((not source["organization_id"] and channels.current_organization_id() is None) or row.get("organization_id") != source["organization_id"]
-                or (source["scope"] == "department" and row.get("department") != source["department"])
-                or (source["scope"] == "personal" and (not owner_id or row["recipient_id"] != owner_id))):
-            raise ValueError("發送對象不在這份報告的組織／部門／個人範圍內，請重新選擇。")
-
-
 def audit(conn, actor, action, target, detail, organization_id=None):
     user = conn.execute('SELECT role,organization_id FROM workspace_users WHERE email=? AND active=1', (actor,)).fetchone()
     if organization_id is None:
         organization_id = user[1] if user and user[0] == 'org_admin' else ''
     conn.execute('INSERT INTO audit_events(channel_id,actor,action,target,detail,organization_id) VALUES (current_channel(),?,?,?,?,?)',
                  (actor, action, target, detail, organization_id))
-
-
-def weather_removed():
-    with app.database_connection() as conn:
-        row = conn.execute("SELECT removed FROM builtin_report_state WHERE builtin_report_state.channel_id=current_channel() AND report_id='weather'").fetchone()
-        return bool(row and row[0])
-
-
-def sources():
-    with app.database_connection() as conn:
-        conn.row_factory = sqlite3.Row
-        rows = [dict(row) for row in conn.execute('SELECT * FROM report_sources WHERE report_sources.channel_id=current_channel() ORDER BY created_at,report_id')]
-    return weather_source() + rows
-
-
-def weather_org():
-    """目前 OA 所屬組織；平台管理員已啟用天氣客製模組並設定圖片來源時才回傳。"""
-    org_id = channels.current_organization_id()
-    org = next((o for o in organizations() if o['org_id'] == org_id and o['active']), None)
-    return org if org and org['weather_enabled'] and org['weather_image_path'] else None
-
-
-def weather_source():
-    org = weather_org()
-    if not org or weather_removed():
-        return []
-    return [{"report_id": "weather", "title": "天氣報告", "category": "weather", "department": "", "organization_id": org['org_id'],
-             "scope": "module", "source_path": org['weather_image_path']}]
-
-
-def read_source(source):
-    path = Path(source["source_path"])
-    with path.open("rb") as stream:
-        data = stream.read(MAX_BYTES + 1)
-        modified = os.fstat(stream.fileno()).st_mtime
-    if len(data) > MAX_BYTES:
-        raise ValueError("圖片超過 1 MB，請先縮小後再發送。")
-    if len(data) < 24 or not data.startswith(b"\x89PNG\r\n\x1a\n") or data[12:16] != b"IHDR":
-        raise ValueError("報告必須是有效的 PNG 圖片。")
-    return data, modified
-
-
-def describe(source, preview=False):
-    item = {key: source[key] for key in ("report_id", "title", "category", "department", "organization_id", "scope")}
-    item["owner_recipient_id"] = source.get("owner_recipient_id", "")
-    item.update(status="missing", reason="尚未找到報告，請先執行產生報告的程式。", modified_at=None,
-                size=0, version="", stale=False)
-    try:
-        data, modified = read_source(source)
-        stamp = datetime.fromtimestamp(modified, timezone.utc)
-        local_zone = timezone(timedelta(hours=8))
-        stale = stamp.astimezone(local_zone).date() < datetime.now(local_zone).date()
-        item.update(status="ready", reason="", modified_at=stamp.isoformat(), size=len(data),
-                    version=hashlib.sha256(data).hexdigest(), stale=stale)
-        if preview:
-            item["preview"] = "data:image/png;base64," + base64.b64encode(data).decode("ascii")
-    except FileNotFoundError:
-        pass
-    except (OSError, ValueError) as exc:
-        item.update(status="invalid", reason=str(exc) if isinstance(exc, ValueError) else "無法讀取報告，請檢查檔案權限。")
-    return item
-
-
-def find(report_id):
-    return next((row for row in sources() if row["report_id"] == report_id), None)
-
-
-def prepare(report_id, version, allow_stale=False):
-    source = find(report_id)
-    if not source:
-        raise ValueError("找不到這份報告，請重新整理報告中心。")
-    item = describe(source)
-    if item["status"] != "ready":
-        raise ValueError(item["reason"])
-    if not version or version != item["version"]:
-        raise ValueError("報告已更新，請重新預覽後再發送。")
-    if item["stale"] and allow_stale is not True:
-        raise ValueError("這份報告不是今天更新，請確認後再發送。")
-    return source, item
-
-
-def save(payload, actor):
-    title, category = payload.get("title"), payload.get("category")
-    source_path, department = payload.get("source_path"), payload.get("department", "")
-    if payload.get('asset_id'):
-        import composer
-        asset=composer.asset(payload['asset_id'],actor_user(actor))
-        source_path=str(asset['path'])
-    organization_id, scope = payload.get("organization_id", ""), payload.get("scope", "company")
-    if payload.get('asset_id') and asset['organization_id'] and asset['organization_id'] != organization_id:
-        raise ValueError('圖片與報告必須屬於同一組織，請重新選擇圖片。')
-    channels.enforce_organization(organization_id)
-    if not isinstance(organization_id, str) or (not organization_id.strip() and channels.current_organization_id() is None) or len(organization_id.strip()) > 60 or scope not in {"company", "department", "personal"}:
-        raise ValueError("請設定報告所屬組織與可見範圍。")
-    owner_id = payload.get('owner_recipient_id','')
-    if not isinstance(owner_id,str):
-        raise ValueError('個人聯絡對象格式不正確。')
-    if scope == 'personal':
-        with app.database_connection() as conn:
-            if not conn.execute("SELECT 1 FROM recipients WHERE recipients.channel_id=current_channel() AND recipient_id=? AND organization_id=? AND kind='user' AND active=1", (owner_id,organization_id.strip())).fetchone():
-                raise ValueError('個人報告必須指定同組織、啟用中的 LINE 個人聯絡對象。')
-    if not isinstance(title, str) or not title.strip() or len(title.strip()) > 80:
-        raise ValueError("請填寫 1 至 80 字的報告名稱。")
-    if category == "weather":
-        raise ValueError("天氣報告由組織的天氣模組提供，請在「組織」設定，不另外新增報告來源。")
-    if category not in CATEGORIES or not isinstance(department, str) or len(department.strip()) > 60:
-        raise ValueError("報告類型或部門格式不正確。")
-    if scope == "department" and not department.strip():
-        raise ValueError("部門報告必須指定部門。")
-    if not isinstance(source_path, str) or not Path(source_path).is_absolute() or Path(source_path).suffix.lower() != ".png":
-        raise ValueError("請選擇報告圖片，或在進階設定填入伺服器 PNG 完整路徑。")
-    if len(source_path) > 1024:
-        raise ValueError("檔案路徑過長。")
-    report_id = payload.get("report_id") or uuid4().hex
-    if not isinstance(report_id, str) or not re.fullmatch(r"[0-9a-f]{32}", report_id):
-        raise ValueError("報告識別資料不正確。")
-    with app.database_connection() as conn:
-        if payload.get("report_id") and not conn.execute('SELECT 1 FROM report_sources WHERE report_sources.channel_id=current_channel() AND report_id=?', (report_id,)).fetchone():
-            raise ValueError("這份報告來源已移除。")
-        conn.execute("""INSERT INTO report_sources(channel_id,report_id,title,category,source_path,department,organization_id,scope,owner_recipient_id) VALUES (current_channel(),?,?,?,?,?,?,?,?)
-                        ON CONFLICT(report_id) DO UPDATE SET title=excluded.title,category=excluded.category,source_path=excluded.source_path,
-                        department=excluded.department,organization_id=excluded.organization_id,scope=excluded.scope,owner_recipient_id=excluded.owner_recipient_id WHERE report_sources.channel_id=excluded.channel_id""",
-                     (report_id, title.strip(), category, source_path.strip(), department.strip(), organization_id.strip(), scope, owner_id if scope == "personal" else ""))
-        audit(conn, actor, "report.update" if payload.get("report_id") else "report.create", report_id, title.strip())
-    return describe(find(report_id))
-
-
-def remove(report_id, actor):
-    if not isinstance(report_id, str):
-        raise ValueError("報告識別資料不正確。")
-    with app.database_connection() as conn:
-        conn.execute('BEGIN IMMEDIATE')
-        if report_id == 'weather':
-            title = '天氣報告'
-            conn.execute("INSERT INTO builtin_report_state(channel_id,report_id,removed) VALUES (current_channel(),'weather',1) ON CONFLICT(channel_id,report_id) DO UPDATE SET removed=1")
-        else:
-            row = conn.execute('SELECT title FROM report_sources WHERE report_sources.channel_id=current_channel() AND report_id=?', (report_id,)).fetchone()
-            if not row:
-                raise ValueError("找不到報告來源。")
-            title = row[0]
-            conn.execute('DELETE FROM report_sources WHERE report_sources.channel_id=current_channel() AND report_id=?', (report_id,))
-        conn.execute("""UPDATE send_deliveries SET status='cancelled' WHERE status='pending'
-                        AND job_id IN (SELECT job_id FROM send_jobs WHERE send_jobs.channel_id=current_channel() AND report_id=? AND status IN ('scheduled','queued'))""", (report_id,))
-        conn.execute("UPDATE send_jobs SET status='cancelled',error='報告來源已移除。' WHERE send_jobs.channel_id=current_channel() AND report_id=? AND status IN ('scheduled','queued')", (report_id,))
-        audit(conn, actor, "report.remove", report_id, title)
-
-
-def restore_weather(actor):
-    if not weather_org():
-        raise ValueError('此 OA 所屬組織尚未啟用天氣模組，請先在「組織」設定。')
-    with app.database_connection() as conn:
-        conn.execute("UPDATE builtin_report_state SET removed=0 WHERE builtin_report_state.channel_id=current_channel() AND report_id='weather'")
-        audit(conn, actor, 'report.restore', 'weather', '天氣報告')
 
 
 def activity(user=None):

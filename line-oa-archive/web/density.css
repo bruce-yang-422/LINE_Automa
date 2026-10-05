@@ -624,3 +624,14 @@ html[data-reading="small"] .oa-switcher-item { min-height:64px;padding:8px 12px;
 html[data-reading="large"] .workspace-context { height:46px;min-height:46px; }
 html[data-reading="small"] .workspace-context { height:34px;min-height:34px; }
 @media(max-width:600px) { .oa-switcher-toolbar { gap:8px; }.oa-switcher-item { padding:10px;grid-template-columns:40px minmax(0,1fr) 24px;gap:8px; }.oa-switcher-avatar { width:40px;height:40px; } }
+
+/* Keep populated contact details readable within the chat sidebar. */
+.chat-page-layout .chat-profile-channels { grid-template-columns:minmax(0,1fr);font-size:var(--ui-body); }
+.chat-page-layout .chat-profile-card { max-height:none;flex-shrink:0; }
+.chat-page-layout .chat-contact-note { grid-template-columns:60px minmax(0,1fr); }
+
+.oa-switcher-dropdown { position:fixed;z-index:1100;padding:12px;background:var(--surface);border:1px solid var(--line);border-radius:16px;box-shadow:0 12px 36px #182f2526;overflow:auto; }
+.oa-switcher-dropdown .oa-switcher-toolbar { gap:8px;margin-bottom:10px; }
+.oa-switcher-dropdown .oa-switcher-items { max-height: min(48vh,380px); }
+.oa-switcher-dropdown .oa-switcher-item { min-height:68px;padding:10px; }
+.workspace-context[aria-expanded="true"] { box-shadow:0 0 0 2px #16833d40; }

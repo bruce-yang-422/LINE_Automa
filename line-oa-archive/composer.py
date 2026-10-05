@@ -18,6 +18,9 @@ MAX_UPLOAD = 8 * 1024 * 1024
 Image.MAX_IMAGE_PIXELS = 20_000_000
 
 
+MAX_BYTES = 1_000_000  # 單張圖片轉成 PNG 後的上限
+
+
 def png_bytes(image):
     out=BytesIO();image.save(out,format='PNG',optimize=True)
     return out.getvalue()
@@ -25,11 +28,11 @@ def png_bytes(image):
 
 def compact(image):
     data=png_bytes(image)
-    if len(data)>reports.MAX_BYTES:
+    if len(data)>MAX_BYTES:
         data=png_bytes(image.quantize(colors=128))
-    if len(data)>reports.MAX_BYTES:
+    if len(data)>MAX_BYTES:
         data=png_bytes(image.quantize(colors=32))
-    if len(data)>reports.MAX_BYTES:
+    if len(data)>MAX_BYTES:
         raise ValueError('圖片內容過大，請裁切後再選擇。')
     return data
 

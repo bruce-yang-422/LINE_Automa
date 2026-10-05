@@ -81,8 +81,8 @@ let authCsrf="";
 const token = remote ? "" : location.hash.slice(1) || sessionStorage.getItem("lineAdminToken") || "";
 if(location.hash){if(!remote)sessionStorage.setItem("lineAdminToken",token);history.replaceState(null,"",location.pathname+location.search);}
 $("logout").hidden=!remote;
-const state={session:null,view:new URLSearchParams(location.search).get("view")||"overview",reports:[],contacts:[],tags:[],jobs:[],cases:[],caseFilter:"all",casePriority:"all",caseQuery:"",savedFilters:[],chatNotes:new Map(),noteCategories:[],noteTags:[],globalNotes:[],globalNotesStats:null,globalNotesCategories:[],globalNotesTags:[],noteHubQuery:"",noteHubCategory:"",noteHubTag:"",noteHubStatus:"all",noteHubChannel:"",noteHubViewMode:"grid",settings:{users:[]},events:[],previews:new Map(),selected:new Set(),tagAudienceMode:"any",selectedAudienceTags:new Set(),selectedFilterId:"",orgSettingsTab:"general",report:null,step:1,audience:"selected",search:"",kind:"all",organization_id:"",department:"",tagFilter:"",page:1,reportFilter:"all",historyFilter:"all",subFilter:"all",busy:false,loaded:false,authLost:false};
-const titles={"personal-settings":"個人化設定",overview:"工作總覽","oa-list":"OA 一覽",chat:"聊天對話","chat-notes":"對話記事本",reports:"報告中心",send:"建立發送",cases:"案件管理",templates:"範本與分類管理",contacts:"聯絡對象",subscriptions:"天氣訂閱",history:"發送紀錄",schedule:"排程管理",personnel:"人員與權限","org-settings":"組織設定",organizations:"組織管理",channels:"LINE OA 管理"};
+const state={session:null,view:new URLSearchParams(location.search).get("view")||"overview",contacts:[],tags:[],jobs:[],cases:[],caseFilter:"all",casePriority:"all",caseQuery:"",savedFilters:[],chatNotes:new Map(),noteCategories:[],noteTags:[],globalNotes:[],globalNotesStats:null,globalNotesCategories:[],globalNotesTags:[],noteHubQuery:"",noteHubCategory:"",noteHubTag:"",noteHubStatus:"all",noteHubChannel:"",noteHubViewMode:"grid",settings:{users:[]},events:[],selected:new Set(),tagAudienceMode:"any",selectedAudienceTags:new Set(),selectedFilterId:"",orgSettingsTab:"general",report:null,step:1,audience:"selected",search:"",kind:"all",organization_id:"",department:"",tagFilter:"",page:1,historyFilter:"all",busy:false,loaded:false,authLost:false};
+const titles={"personal-settings":"個人化設定",overview:"工作總覽","oa-list":"OA 一覽",chat:"聊天對話","chat-notes":"對話記事本",send:"建立發送",cases:"案件管理",templates:"範本與分類管理",contacts:"聯絡對象",history:"發送紀錄",schedule:"排程管理",personnel:"人員與權限","org-settings":"組織設定",organizations:"組織管理",channels:"LINE OA 管理"};
 const admin=()=>["platform_admin","org_admin","operator","collaborator"].includes(state.session?.role);
 const manager=()=>["platform_admin","org_admin"].includes(state.session?.role);
 // 數量上限只由後端 limits.py 定義，經 /api/session 取得
@@ -90,7 +90,6 @@ const cap=key=>state.session?.limits?.[key]??"—";
 const canSend=()=>["org_admin","operator"].includes(state.session?.role)&&Boolean(state.session?.modules?.messaging);
 const superAdmin=()=>state.session?.role==="platform_admin";
 const roleName=role=>({platform_admin:"平台管理員",org_admin:"管理員",operator:"操作人員",collaborator:"協作人員"}[role]||role);
-const weatherModule=()=>superAdmin()&&state.reports.some(r=>r.report_id==="weather");
 let viewAs="",viewKey="",viewOptions=[],principalSession=null,organization="",previewOrganization="",organizationKey="";
 const orgName=id=>(state.organizations||[]).find(o=>o.org_id===id)?.name||id||"未指定組織";
 const orgKinds={company:"公司",unit:"單位",association:"社團",club:"俱樂部",family:"家庭",personal:"個人工作室",other:"其他"};
@@ -217,8 +216,7 @@ const person=r=>{
   const avatarHtml=r.picture_url?`<span class="avatar ${isGroup?"group":""}"><img src="/api/chat/avatar/${encodeURIComponent(r.recipient_id)}" class="avatar-img" alt="${esc(primary)}" onerror="this.outerHTML='<span class=\\'avatar-text\\'>${esc(initial)}</span>'"></span>`:`<span class="avatar ${isGroup?"group":""}"><span class="avatar-text">${esc(initial)}</span></span>`;
   return `<div class="person">${avatarHtml}<div><div class="person-title"><strong>${esc(primary)}</strong>${showLineName?`<span class="line-name muted" data-s="s102ad5b">（LINE: ${esc(r.display_name)}）</span>`:''}</div><div class="person-sub"><small class="muted">${isGroup?"群組聊天室":"個人聊天室"}${!r.active?" · 已停用":""}${truncatedId?` · <span class="line-id-chip">${esc(truncatedId)}</span>`:""}</small></div>${tags.length?`<div class="contact-tags">${tags.map(t=>tagBadge(t)).join("")}</div>`:""}</div></div>`;
 };
-const scope=r=>r.category==="composition"?(r.organization_id?orgName(r.organization_id):"平台個人素材"):r.scope==="module"?"天氣模組（依帳號／組織授權）":r.category==="text"?"自訂文字訊息":r.scope==="all"?"所有登入使用者":r.scope==="personal"?`${orgName(r.organization_id)} · 個人專屬`:r.scope==="department"?`${orgName(r.organization_id)} / ${r.department}`:`${orgName(r.organization_id)} · 全組織`;
-const reportBadge=r=>r.status!=="ready"?badge(r.status==="missing"?"等待報告":"無法使用","bad"):r.stale?badge("非今日更新","warn"):badge(admin()?"可發送":"可查看","good");
+const scope=r=>r.category==="composition"?(r.organization_id?orgName(r.organization_id):"平台個人素材"):"自訂文字訊息";
 let noticeTimeout = null;
 const personalDefaults={corner:'bottom-right',duration:5,reading:'standard',motion:'standard'};
 function personalSettingsKey(){return 'linePersonalSettings:'+(principalSession?.identity||state.session?.identity||'local');}
@@ -327,7 +325,6 @@ async function load(){
   $("account-role").textContent=(state.session.preview?"預覽 · ":"")+roleName(state.session.role)+(state.session.user?.organization_id?" · "+orgName(state.session.user.organization_id):"");
   $("avatar").textContent=($("account-name").textContent||"L").slice(0,1).toUpperCase();
   document.querySelectorAll("[data-admin]").forEach(el=>{el.hidden=!admin();});document.querySelectorAll("[data-platform]").forEach(el=>{el.hidden=!superAdmin();});
-  const reportResult=lineDataReady()&&!superAdmin()?await api("/api/reports"):{reports:[]};state.reports=reportResult.reports;
   // 平台管理員不進入 OA 營運畫面（權限規格 8.1），也不預先讀取客戶資料，避免在客戶操作紀錄留下查看紀錄。
   if(admin()&&lineDataReady()&&!superAdmin()){
     const results=await Promise.all([api("/api/contacts"),api("/api/jobs"),(manager()?api("/api/settings"):Promise.resolve({users:[]})),api("/api/activity"),api("/api/cases"),api("/api/saved-filters")]);
@@ -335,7 +332,6 @@ async function load(){
     state.selected=new Set([...state.selected].filter(id=>state.contacts.some(r=>r.recipient_id===id&&r.active)));
     if(typeof loadChatRooms==="function")await loadChatRooms();
   }else{state.contacts=[];state.tags=[];state.jobs=[];state.cases=[];state.savedFilters=[];state.chatNotes.clear();state.events=[];state.settings=manager()?await api("/api/settings"):{users:[]};state.selected.clear();}
-  document.querySelector('nav [data-view="subscriptions"]').hidden=!weatherModule();
   document.querySelector('nav [data-view="send"]').hidden=!admin()||!state.session.modules.messaging;
   // Management menu per level (spec 權限與角色規格 8.3): A sees 組織 + LINE OA, B sees LINE OA + 人員與權限 + 組織設定, C/D see none.
   const orgAdmin=state.session?.role==="org_admin";
@@ -346,7 +342,7 @@ async function load(){
   // 平台管理員只有管理選單（組織、LINE OA）；工作空間的營運頁面屬於各組織。
   $("workspace-nav-label").hidden=superAdmin();$("workspace-nav").hidden=superAdmin();$("command-open").hidden=superAdmin();
   if(state.view==="settings")state.view=superAdmin()?"organizations":"overview";
-  if(state.view==="organizations"&&!superAdmin())state.view="reports";
+  if(state.view==="organizations"&&!superAdmin())state.view="overview";
   if(["personnel","org-settings","templates"].includes(state.view)&&!orgAdmin&&!admin())state.view="overview";
   if(state.view==="channels"&&!navAllowed["platform-org"])state.view="overview";
   if(!lineDataReady()&&!["organizations","channels","oa-list","personnel","org-settings","templates","personal-settings"].includes(state.view))state.view=superAdmin()?"organizations":"channels";
@@ -354,21 +350,11 @@ async function load(){
   workspaceHeader();
   state.loaded=true;state.authLost=false;$("connection").innerHTML='<span class="status-dot"></span>已連線';
   $("sync-time").textContent="最後更新 "+new Date().toLocaleTimeString("zh-TW",{hour12:false});
-  $("nav-report-count").textContent=state.reports.length;
   const activeCases=state.cases.filter(c=>c.status!=="closed").length;if($("nav-case-count"))$("nav-case-count").textContent=activeCases||"0";
-  if((!admin()&&!['overview','reports'].includes(state.view))||(state.view==="subscriptions"&&!weatherModule()))state.view="reports";
+  if(["reports","subscriptions"].includes(state.view))state.view="overview";
 }
 function heading(title,subtitle,actions="",eyebrow="WORKSPACE"){return `<div class="page-heading"><div><p class="eyebrow">${eyebrow}</p><h1>${title}</h1><p class="subtitle">${subtitle}</p></div><div class="heading-actions">${actions}</div></div>`;}
-function tile(r){if(r.category==="composition")return composerPreview(r.draft);if(r.category==="text")return `<div class="message-preview">${esc(r.message_text)}</div>`;const saved=state.previews.get(r.report_id);return `<div class="preview-tile">${saved?.version===r.version&&saved.preview?`<img src="${saved.preview}" alt="${esc(r.title)} 預覽">`:`<div class="preview-empty">${icon(r.category==="weather"?"image":"file")}<span>${r.status==="ready"?"載入預覽…":esc(r.reason)}</span></div>`}</div>`;}
-async function hydratePreviews(){
-  const visible=state.view==="overview"?state.reports.slice(0,1):state.view==="reports"||(state.view==="send"&&state.step===1)?state.reports:[];
-  for(const report of visible.filter(r=>r.status==="ready")){
-    if(state.previews.get(report.report_id)?.version===report.version)continue;
-    try{const result=await api('/api/reports/'+report.report_id);state.previews.set(report.report_id,result);
-      document.querySelectorAll('[data-preview]').forEach(el=>{if(el.dataset.preview===report.report_id)el.innerHTML=tile(result);});
-    }catch(_){document.querySelectorAll('[data-preview]').forEach(el=>{if(el.dataset.preview===report.report_id)el.innerHTML=empty("預覽暫時無法載入","按重新整理再次讀取。");});}
-  }
-}
+function tile(r){return r.category==="composition"?composerPreview(r.draft):`<div class="message-preview">${esc(r.message_text)}</div>`;}
 function stat(title,value,unit,note,symbol){return `<div class="stat"><div class="stat-top">${title}${icon(symbol)}</div><div class="stat-value">${value}<span>${unit}</span></div><p class="stat-note">${note}</p></div>`;}
 function quick(title,description,view,symbol){return `<button class="quick" data-view="${view}"><span class="quick-icon">${icon(symbol)}</span><span><strong>${title}</strong><small>${description}</small></span>${icon("arrow")}</button>`;}
 function renderOnboardingCard(){
@@ -394,24 +380,18 @@ function renderOnboardingCard(){
 }
 
 function overview(){
-  const ready=state.reports.filter(r=>r.status==="ready").length, active=state.contacts.filter(r=>r.active).length, subscribed=state.contacts.filter(r=>r.active&&r.weather_subscribed).length;
+  const active=state.contacts.filter(r=>r.active).length, groups=state.contacts.filter(r=>r.active&&r.kind!=="user").length;
   const pending=state.jobs.filter(j=>["scheduled","queued","running"].includes(j.status)).length;
+  const openCases=state.cases.filter(c=>c.status!=="closed").length;
   const date=new Date().toLocaleDateString("zh-TW",{month:"long",day:"numeric",weekday:"long"});
-  const r=state.reports[0];
   const currentOrgName = orgName(state.session.user?.organization_id) || "—";
-  return heading(admin()?"今天的工作，一目了然":"你的報告，都在這裡",`${esc(date)}　·　${admin()?"檢查報告、安排收件對象，掌握每次發送結果。":"依照你的公司、部門與個人權限，查看最新內容。"}`,canSend()?button(icon("plus")+"建立發送","start-send","primary"):button("瀏覽報告 "+icon("arrow"),"go-reports","primary"),"YOUR DAILY WORKSPACE")+
+  return heading("今天的工作，一目了然",`${esc(date)}　·　查看對話、追蹤案件，掌握每次發送結果。`,canSend()?button(icon("plus")+"建立發送","start-send","primary"):"","YOUR DAILY WORKSPACE")+
     renderOnboardingCard()+
-    `<div class="stats">${stat("可用報告",ready,"份",`已登記 ${state.reports.length} 份報告`,"file")}${admin()?stat("有效聯絡對象",active,"個",`${state.contacts.filter(r=>r.active&&r.kind!=="user").length} 個群組聊天室`,"users")+(weatherModule()?stat("天氣訂閱",subscribed,"個","發送時檢查最新訂閱狀態","bell"):stat("所屬組織",esc(currentOrgName),"","資料依組織隔離","shield"))+stat("進行中的發送",pending,"筆","結果不明的請求不自動重送","send"):stat("所屬部門",esc(state.session.user?.department||"未指定"),"","只顯示獲授權內容","shield")}</div>
-    <div class="dashboard-grid"><div class="stack"><section class="panel"><div class="panel-head"><div><h2>報告焦點</h2><p>先確認內容，再開始下一步</p></div><button class="btn text small" data-view="reports">所有報告 ${icon("arrow")}</button></div>${r?`<div class="feature"><div data-preview="${esc(r.report_id)}">${tile(r)}</div><div>${reportBadge(r)}<h3>${esc(r.title)}</h3><p>最後更新　${when(r.modified_at)}</p><p>${esc(scope(r))}</p>${r.stale?'<p>此報告不是今日更新，發送前請確認。</p>':""}${button(canSend()?"預覽並建立發送 "+icon("arrow"):"開啟報告 "+icon("arrow"),canSend()?"choose-report":"preview","dark",`data-id="${esc(r.report_id)}" ${r.status!=="ready"?"disabled":""}`)}</div></div>`:empty("還沒有可用報告","管理員設定報告來源與權限後，就會顯示在這裡。")}</section>${admin()?`<section class="panel"><div class="panel-head"><h2>最近發送</h2><button class="btn text small" data-view="history">查看全部 ${icon("arrow")}</button></div>${historyList(state.jobs.slice(0,3))}</section>`:""}</div><div class="stack"><section class="panel"><div class="panel-head"><h2>快速前往</h2></div><div class="quick-list">${admin()?quick("聊天對話","查看與回覆 LINE 即時訊息","chat","message"):""}${quick("報告中心","預覽獲授權的模組報告","reports","file")}${admin()?quick("聯絡對象","整理公司、部門與群組","contacts","users")+(weatherModule()?quick("天氣訂閱","管理持續接收通知的對象","subscriptions","bell"):""):""}</div></section><aside class="insight"><h3>${icon("shield")}${admin()?"分對對象，送對報告":"你的資料範圍"}</h3><p>${admin()?"組織報表依公司、部門或個人範圍選擇發送對象。聯絡對象只需在 LINE 收訊，不需後台帳號；需要操作後台的操作人員才須登入授權。":"此處只列出你獲授權的報告。若缺少需要的內容，請聯絡管理員確認公司及部門設定。"}</p></aside></div></div>`;
+    `<div class="stats">${stat("有效聯絡對象",active,"個",`${groups} 個群組聊天室`,"users")}${stat("未結案案件",openCases,"件","依案件狀態追蹤","folder")}${stat("所屬組織",esc(currentOrgName),"","資料依組織隔離","shield")}${stat("進行中的發送",pending,"筆","結果不明的請求不自動重送","send")}</div>
+    <div class="dashboard-grid"><div class="stack"><section class="panel"><div class="panel-head"><h2>最近發送</h2><button class="btn text small" data-view="history">查看全部 ${icon("arrow")}</button></div>${historyList(state.jobs.slice(0,3))}</section></div><div class="stack"><section class="panel"><div class="panel-head"><h2>快速前往</h2></div><div class="quick-list">${quick("聊天對話","查看與回覆 LINE 即時訊息","chat","message")}${quick("案件管理","追蹤需要處理的事項","cases","folder")}${quick("聯絡對象","整理公司、部門與群組","contacts","users")}</div></section></div></div>`;
 }
-function reportsPage(wizard=false){
-  if(!wizard)return workspaceReports();
-  const rows=state.reports.filter(r=>state.reportFilter==="all"||r.category===state.reportFilter);
-  return (wizard?"":heading("報告中心","預覽最新內容，依公司、部門與個人分配報告。",superAdmin()?(state.settings.weather_report_removed?button("恢復天氣報告","restore-weather",""):"")+button(icon("plus")+"新增報告來源","new-report","primary"):"","REPORT LIBRARY"))+
-    `<div class="heading-actions section-space segmented">${[["all","所有報告"],...(state.reports.some(r=>r.category==="weather")?[["weather","天氣報告"]]:[]),["company","組織報表"],["other","其他報告"]].map(([id,text])=>`<button data-action="report-filter" data-id="${id}" class="${state.reportFilter===id?"active":""}">${text}</button>`).join("")}</div><div class="report-grid section-space">${rows.map(r=>`<article class="panel report-card"><div data-preview="${esc(r.report_id)}">${tile(r)}</div><div class="report-card-body">${reportBadge(r)}<h3>${esc(r.title)}</h3><div class="report-meta"><span>${esc(scope(r))}</span><span>${icon("clock")} ${when(r.modified_at)}${r.size?` · ${Math.ceil(r.size/1024)} KB`:""}</span></div><div class="report-card-bottom">${button("預覽","preview","",`data-id="${esc(r.report_id)}" ${r.status!=="ready"?"disabled":""}`)}${canSend()?button(wizard?"選擇這份報告":"建立發送","choose-report","primary",`data-id="${esc(r.report_id)}" ${r.status!=="ready"?"disabled":""}`):""}</div>${superAdmin()?`<div class="report-card-bottom">${r.report_id!=="weather"?button("設定來源","edit-report","text small",`data-id="${esc(r.report_id)}"`):""}${button("移除報告","remove-report","text small",`data-id="${esc(r.report_id)}"`)}</div>`:""}</div></article>`).join("")}</div>${rows.length?"":empty("這裡還沒有報告",admin()?"新增來源後，外部程式產生的 PNG 就會顯示在報告中心。":"管理員授權報告後，你就能在這裡查看。")}`;
-}
-function eligible(r){const source=state.report;if(source?.category==="composition")return !source.organization_id||r.organization_id===source.organization_id;if(!source||source.category==="text"||source.report_id==="weather")return true;if(r.organization_id!==source.organization_id)return false;if(source.scope==="department")return r.department===source.department;if(source.scope==="personal")return r.recipient_id===source.owner_recipient_id;return true;}
-function filteredContacts(){return state.contacts.filter(r=>{const q=state.search.toLowerCase();const tagMatch=!state.tagFilter||((r.tags||[]).some(t=>String(t.id)===String(state.tagFilter)||t.name===state.tagFilter));const searchMatch=!q||`${label(r)} ${r.display_name||""} ${r.recipient_id||""} ${r.organization_id||""} ${r.department||""} ${r.notes||""} ${(r.tags||[]).map(t=>t.name).join(" ")}`.toLowerCase().includes(q);const kindMatch=state.kind==="all"||(state.kind==="group"?r.kind!=="user":r.kind===state.kind);const companyMatch=!state.organization_id||r.organization_id===state.organization_id;const deptMatch=!state.department||r.department===state.department;const sendEligible=state.view!=="send"||(r.active&&eligible(r));const subMatch=state.view!=="subscriptions"||state.subFilter==="all"||Boolean(r.weather_subscribed)===(state.subFilter==="on");return tagMatch&&searchMatch&&kindMatch&&companyMatch&&deptMatch&&sendEligible&&subMatch;});}
+function eligible(r){const source=state.report;if(source?.category==="composition")return !source.organization_id||r.organization_id===source.organization_id;return true;}
+function filteredContacts(){return state.contacts.filter(r=>{const q=state.search.toLowerCase();const tagMatch=!state.tagFilter||((r.tags||[]).some(t=>String(t.id)===String(state.tagFilter)||t.name===state.tagFilter));const searchMatch=!q||`${label(r)} ${r.display_name||""} ${r.recipient_id||""} ${r.organization_id||""} ${r.department||""} ${r.notes||""} ${(r.tags||[]).map(t=>t.name).join(" ")}`.toLowerCase().includes(q);const kindMatch=state.kind==="all"||(state.kind==="group"?r.kind!=="user":r.kind===state.kind);const companyMatch=!state.organization_id||r.organization_id===state.organization_id;const deptMatch=!state.department||r.department===state.department;const sendEligible=state.view!=="send"||(r.active&&eligible(r));return tagMatch&&searchMatch&&kindMatch&&companyMatch&&deptMatch&&sendEligible;});}
 function contactsMatchingTags(tagIds, mode="any"){
   if(!tagIds||!tagIds.length)return [];
   const tagSet=new Set(tagIds.map(String));
@@ -531,31 +511,29 @@ function contactToolbar(){
     ${manager()&&state.view==="contacts"?button("儲存篩選","open-save-filter-modal","small")+button(icon("settings")+"標籤管理","manage-tags","small"):""}
   </div>`;
 }
-function contactList(){const rows=filteredContacts(),pages=Math.max(1,Math.ceil(rows.length/10));state.page=Math.min(state.page,pages);const visible=rows.slice((state.page-1)*10,state.page*10);const isSendAudience=state.view==="send"&&state.audience==="selected";const isContactsView=state.view==="contacts"&&manager();const showCheckboxes=isSendAudience||isContactsView;const selectedCount=state.selected.size;let bulkBar="";if(isContactsView&&selectedCount>0){bulkBar=`<div class="bulk-toolbar"><div><strong>已選取 ${selectedCount} 個聯絡對象</strong></div><div class="bulk-actions">${canSend()?button(icon("send")+"對已選對象發送","send-to-selected","small primary"):""}${button("批次加標籤","bulk-add-tags","small")}${button("批次移除標籤","bulk-remove-tags","small")}${weatherModule()?button("批次開啟訂閱","bulk-sub-on","small")+button("批次取消訂閱","bulk-sub-off","small"):""}${button("清除勾選","clear-selection","text small")}</div></div>`;}else if(isSendAudience){bulkBar=`<div class="toolbar">${button("勾選本頁","select-page","small")}${button("清除勾選","clear-selection","text small")}<small class="muted">共 ${rows.length} 個符合報告範圍的聊天室</small></div>`;}return `${bulkBar}<div class="table-scroll"><table class="contacts-table"><thead><tr><th class="select-cell">${showCheckboxes?`<input type="checkbox" id="select-all-visible" aria-label="全選本頁" ${visible.length&&visible.every(r=>state.selected.has(r.recipient_id))?"checked":""}>`:""}</th><th>聯絡對象</th><th>組織／部門</th>${weatherModule()?"<th>天氣訂閱</th>":""}<th>操作</th></tr></thead><tbody>${visible.map(r=>`<tr><td class="select-cell">${showCheckboxes?`<input type="checkbox" data-select="${esc(r.recipient_id)}" aria-label="選取 ${esc(label(r))}" ${state.selected.has(r.recipient_id)?"checked":""}>`:""}</td><td class="person-cell">${state.view==="contacts"?`<button class="contact-open" data-action="contact-detail" data-id="${esc(r.recipient_id)}" aria-label="查看 ${esc(label(r))} 詳情">${person(r)}</button>`:person(r)}</td><td class="meta-cell">${esc(r.organization_id?orgName(r.organization_id):"尚未分類")}<small class="muted">${r.department?" / "+esc(r.department):""}</small></td>${weatherModule()?`<td class="sub-cell">${badge(r.weather_subscribed?"已訂閱":"未訂閱",r.weather_subscribed?"good":"")}</td>`:""}<td class="action-cell">${manager()?button("管理","edit-contact","small",`data-id="${esc(r.recipient_id)}"`):badge("已授權")}</td></tr>`).join("")}</tbody></table></div>${!rows.length?empty("沒有符合的聯絡對象",state.view==="send"?"請確認聯絡對象的組織／部門分類符合報告範圍，並已與 Bot 互動。":"調整篩選條件，或請使用者向 Bot 傳送訊息以建立名單。"):""}<div class="pagination"><span>共 ${rows.length} 個聊天室</span><div>${button("上一頁","prev-page","small",state.page<=1?"disabled":"")}<span>${state.page} / ${pages}</span>${button("下一頁","next-page","small",state.page>=pages?"disabled":"")}</div></div>`;}
-function contactsPage(subscriptions=false){return heading(subscriptions?"天氣訂閱":"聯絡對象",subscriptions?"訂閱決定持續接收通知的對象；每次發送仍由管理員確認。":"依公司與部門整理個人、群組，自訂名稱與筆記，讓報告送到正確的地方。",(manager()?button(icon("refresh")+"更新 LINE 名稱","profiles"):""),subscriptions?"SUBSCRIPTIONS":"CONTACT DIRECTORY")+(subscriptions?`<div class="insight"><h3>${icon("bell")}個人自行訂閱，群組由管理員設定</h3><p>私訊 Bot「訂閱天氣」「取消訂閱」「我的訂閱」即可管理個人訂閱。目前由管理員發送，可指定單次傳送時間，尚未啟用每日循環排程。</p></div><div class="segmented section-space">${[["all","全部"],["on","已訂閱"],["off","未訂閱"]].map(([id,t])=>`<button data-action="sub-filter" data-id="${id}" class="${state.subFilter===id?"active":""}">${t}</button>`).join("")}</div>`:"")+`<div class="library-split section-space ${!subscriptions&&workspaceUI.contactDetail?"has-detail":""}"><section class="panel">${contactToolbar()}<div id="contact-list">${contactList()}</div></section>${subscriptions?"":contactDetailPanel()}</div>`;}
-function selectedRows(){return state.contacts.filter(r=>r.active&&eligible(r)&&(state.audience==="subscribers"?r.weather_subscribed:state.selected.has(r.recipient_id)));}
-function selectionSummary(){const rows=selectedRows();return `<div class="panel selection-summary"><div class="panel-body">${tile(state.report)}<p class="eyebrow section-space">THIS DELIVERY</p><h3>${esc(state.report.title)}</h3><p class="subtitle">${esc(scope(state.report))}</p><div class="count-big">${rows.length}<small>個聊天室</small></div><div class="summary-list">${rows.map(r=>`<span>${esc(label(r))}</span>`).join("")||'<small class="muted">請從名單選擇發送對象</small>'}</div><p class="callout">每個聊天室會收到這次確認的內容。一次性勾選不會改變訂閱設定。</p></div></div>`;}
+function contactList(){const rows=filteredContacts(),pages=Math.max(1,Math.ceil(rows.length/10));state.page=Math.min(state.page,pages);const visible=rows.slice((state.page-1)*10,state.page*10);const isSendAudience=state.view==="send"&&state.audience==="selected";const isContactsView=state.view==="contacts"&&manager();const showCheckboxes=isSendAudience||isContactsView;const selectedCount=state.selected.size;let bulkBar="";if(isContactsView&&selectedCount>0){bulkBar=`<div class="bulk-toolbar"><div><strong>已選取 ${selectedCount} 個聯絡對象</strong></div><div class="bulk-actions">${canSend()?button(icon("send")+"對已選對象發送","send-to-selected","small primary"):""}${button("批次加標籤","bulk-add-tags","small")}${button("批次移除標籤","bulk-remove-tags","small")}${button("清除勾選","clear-selection","text small")}</div></div>`;}else if(isSendAudience){bulkBar=`<div class="toolbar">${button("勾選本頁","select-page","small")}${button("清除勾選","clear-selection","text small")}<small class="muted">共 ${rows.length} 個可發送的聊天室</small></div>`;}return `${bulkBar}<div class="table-scroll"><table class="contacts-table"><thead><tr><th class="select-cell">${showCheckboxes?`<input type="checkbox" id="select-all-visible" aria-label="全選本頁" ${visible.length&&visible.every(r=>state.selected.has(r.recipient_id))?"checked":""}>`:""}</th><th>聯絡對象</th><th>組織／部門</th><th>操作</th></tr></thead><tbody>${visible.map(r=>`<tr><td class="select-cell">${showCheckboxes?`<input type="checkbox" data-select="${esc(r.recipient_id)}" aria-label="選取 ${esc(label(r))}" ${state.selected.has(r.recipient_id)?"checked":""}>`:""}</td><td class="person-cell">${state.view==="contacts"?`<button class="contact-open" data-action="contact-detail" data-id="${esc(r.recipient_id)}" aria-label="查看 ${esc(label(r))} 詳情">${person(r)}</button>`:person(r)}</td><td class="meta-cell">${esc(r.organization_id?orgName(r.organization_id):"尚未分類")}<small class="muted">${r.department?" / "+esc(r.department):""}</small></td><td class="action-cell">${manager()?button("管理","edit-contact","small",`data-id="${esc(r.recipient_id)}"`):badge("已授權")}</td></tr>`).join("")}</tbody></table></div>${!rows.length?empty("沒有符合的聯絡對象",state.view==="send"?"請確認聯絡對象屬於本組織，並已與 Bot 互動。":"調整篩選條件，或請使用者向 Bot 傳送訊息以建立名單。"):""}<div class="pagination"><span>共 ${rows.length} 個聊天室</span><div>${button("上一頁","prev-page","small",state.page<=1?"disabled":"")}<span>${state.page} / ${pages}</span>${button("下一頁","next-page","small",state.page>=pages?"disabled":"")}</div></div>`;}
+function contactsPage(){return heading("聯絡對象","依公司與部門整理個人、群組，自訂名稱與筆記，讓訊息送到正確的地方。",(manager()?button(icon("refresh")+"更新 LINE 名稱","profiles"):""),"CONTACT DIRECTORY")+`<div class="library-split section-space ${workspaceUI.contactDetail?"has-detail":""}"><section class="panel">${contactToolbar()}<div id="contact-list">${contactList()}</div></section>${contactDetailPanel()}</div>`;}
+function selectedRows(){return state.contacts.filter(r=>r.active&&eligible(r)&&state.selected.has(r.recipient_id));}
+function selectionSummary(){const rows=selectedRows();return `<div class="panel selection-summary"><div class="panel-body">${tile(state.report)}<p class="eyebrow section-space">THIS DELIVERY</p><h3>${esc(state.report.title)}</h3><p class="subtitle">${esc(scope(state.report))}</p><div class="count-big">${rows.length}<small>個聊天室</small></div><div class="summary-list">${rows.map(r=>`<span>${esc(label(r))}</span>`).join("")||'<small class="muted">請從名單選擇發送對象</small>'}</div><p class="callout">每個聊天室會收到這次確認的內容。</p></div></div>`;}
 function sendPage(){
   const r=state.report;
   const audienceOptions=[["selected","手動選擇"],["by-tags","依標籤傳訊"],["by-filter","依自訂條件"]];
-  if(r?.report_id==="weather")audienceOptions.push(["subscribers","天氣訂閱名單"]);
 
-  return heading("建立發送","依序確認報告、對象與內容，每次發送都有完整紀錄。","","NEW DELIVERY")+
+  return heading("建立發送","依序確認內容、對象與時間，每次發送都有完整紀錄。","","NEW DELIVERY")+
     `<div class="steps">${["編輯內容","選擇對象","確認發送"].map((t,i)=>`${i?'<span class="step-line"></span>':""}<span class="step ${state.step===i+1?"active":""}"><b>${i+1}</b>${t}</span>`).join("")}</div>`+
-    (state.step===1||!r?composerEditor()+`<section class="panel panel-body section-space"><h2>文字訊息</h2><p class="subtitle">輸入公告或提醒，下一步選擇發送對象與傳送時間。</p><textarea id="message-draft" maxlength="5000" rows="5" placeholder="輸入要傳送的文字">${esc(state.textDraft||"")}</textarea><div class="form-actions">${button("使用這段文字","choose-text","primary")}</div></section>`+reportsPage(true):
-     state.step===2?`<div class="send-grid"><section class="panel"><div class="panel-head"><div><h2>這次要發給誰？</h2><p>僅列出符合報告組織／部門／個人範圍的有效聯絡對象</p></div></div>
+    (state.step===1||!r?composerEditor()+`<section class="panel panel-body section-space"><h2>文字訊息</h2><p class="subtitle">輸入公告或提醒，下一步選擇發送對象與傳送時間。</p><textarea id="message-draft" maxlength="5000" rows="5" placeholder="輸入要傳送的文字">${esc(state.textDraft||"")}</textarea><div class="form-actions">${button("使用這段文字","choose-text","primary")}</div></section>`:
+     state.step===2?`<div class="send-grid"><section class="panel"><div class="panel-head"><div><h2>這次要發給誰？</h2><p>僅列出本組織的有效聯絡對象</p></div></div>
      <div class="toolbar segmented">${audienceOptions.map(([id,t])=>`<button data-action="audience" data-id="${id}" class="${state.audience===id?"active":""}">${t}</button>`).join("")}</div>
      ${state.audience==="selected"?contactToolbar()+`<div id="contact-list">${contactList()}</div>`:
        state.audience==="by-tags"?renderAudienceTagsSelector():
-       state.audience==="by-filter"?renderAudienceSavedFiltersSelector():
-       `<div class="panel-body"><p class="callout">目前有 ${selectedRows().length} 個有效天氣訂閱。發送時會再次檢查訂閱狀態，尚未送出的取消訂閱會自動排除。</p></div>`}
+       renderAudienceSavedFiltersSelector()}
      <div class="selection-footer">${button("返回編輯","back-report")}${button("下一步：確認發送 "+icon("arrow"),"review","primary",`id="review-button" ${selectedRows().length?"":"disabled"}`)}</div></section><aside id="selection-summary">${selectionSummary()}</aside></div>`:
      confirmation());
 }
 function confirmation(){
   const r=state.report,rows=selectedRows();
-  const audienceText=state.audience==="subscribers"?"天氣訂閱名單":state.audience==="by-tags"?"依標籤傳訊":state.audience==="by-filter"?"依自訂篩選條件":"手動選擇";
-  return `<section class="panel"><div class="panel-head"><h2>確認這次的發送內容</h2>${reportBadge(r)}</div><div class="panel-body confirm-grid"><div>${["text","composition"].includes(r.category)?tile(r):`<img class="confirm-preview" src="${r.preview}" alt="${esc(r.title)} 完整預覽"><p class="subtitle">內容更新時間：${when(r.modified_at)}</p>`}</div><div><p class="eyebrow">DELIVERY SUMMARY</p><h2>${esc(r.title)}</h2><div class="detail-row"><span>發送方式</span><strong>${audienceText}</strong></div><div class="detail-row"><span>發送 OA</span><strong>${esc(selectedOA()?.name||"既有 OA")}</strong></div><div class="detail-row"><span>工作區</span><strong>${esc(selectedWorkspace()?.name||"目前工作區")}</strong></div><div class="detail-row"><span>收件聊天室</span><strong>${rows.length} 個（${rows.filter(x=>x.kind==="user").length} 個人／${rows.filter(x=>x.kind!=="user").length} 群組）</strong></div><div class="detail-row"><span>操作人</span><strong>${esc(state.session.identity)}</strong></div><div class="summary-list">${rows.map(x=>`<span>${esc(label(x))}</span>`).join("")}</div><p class="callout warn" data-s="se9d9bb6">此類訊息一律計入當月訊息額度（預估使用 <strong>${rows.length} 則</strong>額度，群組聊天室依實際人數計扣）。</p><p class="callout">送出前會再次檢查報告版本與收件範圍。LINE 已接受代表 API 受理，不代表對方已讀。</p>${scheduleFields()}${r.stale?'<p class="callout warn">這份報告不是今天更新。請確認日期與內容適用於這次發送。</p><label class="check-label"><input id="allow-stale" type="checkbox">我已確認，可以發送這份較早的報告</label>':""}<div class="form-actions">${button("上一步","back-recipients")}${button(icon("send")+`確認發送給 ${rows.length} 個聊天室`,"submit-send","primary",`id="submit-send" ${state.busy||!rows.length?"disabled":""}`)}</div></div></div></section>`;
+  const audienceText=state.audience==="by-tags"?"依標籤傳訊":state.audience==="by-filter"?"依自訂篩選條件":"手動選擇";
+  return `<section class="panel"><div class="panel-head"><h2>確認這次的發送內容</h2>${badge("可發送","good")}</div><div class="panel-body confirm-grid"><div>${tile(r)}</div><div><p class="eyebrow">DELIVERY SUMMARY</p><h2>${esc(r.title)}</h2><div class="detail-row"><span>發送方式</span><strong>${audienceText}</strong></div><div class="detail-row"><span>發送 OA</span><strong>${esc(selectedOA()?.name||"既有 OA")}</strong></div><div class="detail-row"><span>工作區</span><strong>${esc(selectedWorkspace()?.name||"目前工作區")}</strong></div><div class="detail-row"><span>收件聊天室</span><strong>${rows.length} 個（${rows.filter(x=>x.kind==="user").length} 個人／${rows.filter(x=>x.kind!=="user").length} 群組）</strong></div><div class="detail-row"><span>操作人</span><strong>${esc(state.session.identity)}</strong></div><div class="summary-list">${rows.map(x=>`<span>${esc(label(x))}</span>`).join("")}</div><p class="callout warn" data-s="se9d9bb6">此類訊息一律計入當月訊息額度（預估使用 <strong>${rows.length} 則</strong>額度，群組聊天室依實際人數計扣）。</p><p class="callout">送出前會再次檢查收件範圍。LINE 已接受代表 API 受理，不代表對方已讀。</p>${scheduleFields()}<div class="form-actions">${button("上一步","back-recipients")}${button(icon("send")+`確認發送給 ${rows.length} 個聊天室`,"submit-send","primary",`id="submit-send" ${state.busy||!rows.length?"disabled":""}`)}</div></div></div></section>`;
 }
 const statusNames={scheduled:"已預約",missed:"預約逾期／未發送",queued:"排隊中",running:"發送中",finished:"工作完成",interrupted:"工作中斷",pending:"等待發送",sending:"正在發送",accepted:"LINE 已接受",failed:"發送失敗",unknown:"狀態不明",cancelled:"未發送／已取消"};
 function jobTone(job){return job.deliveries.some(d=>["failed","unknown"].includes(d.status))?"bad":job.status==="finished"?"good":"warn";}
@@ -2439,12 +2417,10 @@ function render(){
     "oa-list": oaListPage,
     chat:()=>chatPage(),
     "chat-notes": chatNotesPage,
-    reports:reportsPage,
     send:sendPage,
     cases:casesPage,
     templates:()=>templatesAndCategoriesPage(),
-    contacts:()=>contactsPage(false),
-    subscriptions:()=>contactsPage(true),
+    contacts:()=>contactsPage(),
     history:historyPage,
     schedule:schedulePage,
     personnel:personnelPage,
@@ -2455,7 +2431,6 @@ function render(){
   };
   const pageFn = pages[state.view] || overview;
   $("page").innerHTML=pageFn();
-  hydratePreviews();
   if(state.view === "templates"){
     loadTemplatesTabContent();
   }
@@ -2817,9 +2792,25 @@ function myAccountModal(){
   </div>`);
 }
 
-function openOaSwitcherModal(){
+function closeOaSwitcher(restoreFocus=false){
+  $('oa-switcher-dropdown')?.remove();
+  $('workspace-context')?.setAttribute('aria-expanded','false');
+  if(restoreFocus)$('workspace-context')?.focus();
+}
+function toggleOaSwitcher(){
+  if($('oa-switcher-dropdown')){closeOaSwitcher(true);return;}
+  const trigger=$('workspace-context'),rect=trigger.getBoundingClientRect();
+  const dropdown=document.createElement('div');
+  dropdown.id='oa-switcher-dropdown';dropdown.className='oa-switcher-dropdown';
+  dropdown.setAttribute('role','region');dropdown.setAttribute('aria-label','切換 LINE OA');
+  const width=Math.min(440,window.innerWidth-24);
+  dropdown.style.width=width+'px';
+  dropdown.style.left=Math.max(12,Math.min(rect.left,window.innerWidth-width-12))+'px';
+  dropdown.style.top=(rect.bottom+8)+'px';
+  dropdown.style.maxHeight=Math.max(120,window.innerHeight-rect.bottom-24)+'px';
+  trigger.setAttribute('aria-expanded','true');trigger.setAttribute('aria-controls',dropdown.id);
   const allOas=lineUI.channels||state.channels||[],currentId=lineUI.channel;
-  modal("切換 LINE OA",`<div class="oa-switcher-modal">
+  dropdown.innerHTML=`<div class="oa-switcher-modal">
     <div class="oa-switcher-toolbar"><label class="oa-switcher-search">${icon('search')}<input type="search" id="oa-switcher-filter" placeholder="搜尋 LINE OA 名稱或組織…" aria-label="搜尋 LINE OA 名稱或組織"></label><button type="button" class="btn" data-action="go-oa-list-from-switcher">OA 一覽</button></div>
     <div id="oa-switcher-items" class="oa-switcher-items">
       ${allOas.map(c=>{const current=c.channel_id===currentId,orgId=c.org_id||c.workspace_id?.replace(/^o:/,'')||'';return `<button type="button" class="oa-switcher-item ${current?'is-current':''}" data-action="switch-oa-direct" data-channel="${esc(c.channel_id)}" data-org="${esc(orgId)}" aria-current="${current?'true':'false'}">
@@ -2828,7 +2819,8 @@ function openOaSwitcherModal(){
         <span class="oa-switcher-status">${current?`<span class="sr-only">目前使用</span>${icon('check')}`:''}</span>
       </button>`;}).join('')||'<p class="muted">尚無可切換的 LINE OA。</p>'}
     </div><p id="oa-switcher-empty" class="muted" hidden>找不到符合的 LINE OA。</p>
-  </div>`);
+  </div>`;
+  document.body.appendChild(dropdown);
   $('oa-switcher-filter').focus({preventScroll:true});
 }
 
@@ -2859,7 +2851,6 @@ function editContact(id){
       <div class="form-grid">
         ${(superAdmin()?selectField("系統組織","organization_id",oaOrganizationOptions(),r.organization_id):field("系統組織","organization_label",orgName(r.organization_id),'readonly')+`<input type="hidden" name="organization_id" value="${esc(r.organization_id)}">`)}
         ${field("系統部門","department",r.department,'maxlength="60" placeholder="例如：業務部"')}
-        ${weatherModule()?`<label class="check-label full"><input name="subscribed" type="checkbox" ${r.weather_subscribed?"checked":""} ${r.active?"":"disabled"}>接收天氣通知</label>`:""}
       </div>
     </div>
     <div class="form-section">
@@ -2916,24 +2907,13 @@ function bulkRemoveTagsModal(){
   const tagCheckboxes=(state.tags||[]).map(t=>`<label class="check-label tag-chip"><input type="checkbox" name="tag_ids" value="${esc(t.id)}"><span class="tag-dot" data-color="${esc(t.color||'#007AFF')}"></span>${esc(t.name)}</label>`).join("");
   modal(`批次移除標籤（已選取 ${count} 個聯絡對象）`,`<form id="bulk-remove-tags-form"><p class="subtitle">勾選要從這些聯絡對象移除的標籤：</p><div class="permission-choices section-space">${tagCheckboxes||'<p class="muted">尚未建立任何標籤。</p>'}</div><div class="form-actions"><button class="btn danger" type="submit">確認移除標籤</button></div></form>`);
 }
-async function bulkSubscription(subscribed){
-  const count=state.selected.size;
-  if(!count)throw new Error("請先選取聯絡對象。");
-  await api('/api/contacts/bulk',{action:'set_subscription',contact_ids:[...state.selected],subscribed});
-  await load();
-  render();
-  notice(`已將 ${count} 個聯絡對象設定為 ${subscribed?'開啟':'取消'} 天氣訂閱。`);
-}
-function reportForm(reportId){const source=(state.settings.report_sources||[]).find(r=>r.report_id===reportId);modal(source?"編輯報告來源":"新增報告來源",`<form id="report-form"><div class="form-grid">${field("報告名稱","title","",'required maxlength="80" placeholder="例如：每日業績報表"')}${selectField("報告類型","category",[["company","組織報表"],["other","其他報告"]],"company")}${selectField("工作區","organization_id",oaOrganizationOptions(),selectedWorkspace()?.org_id||"")}${selectField("可見範圍","scope",[["company","全組織"],["department","指定部門"],["personal","指定個人"]],"company")}${field("部門（部門報告必填）","department","",'maxlength="60"')}${selectField("LINE 個人聯絡對象（個人報告必填）","owner_recipient_id",[["","選擇聯絡對象"],...state.contacts.filter(r=>r.kind==="user"&&r.active).map(r=>[r.recipient_id,label(r)+" · "+orgName(r.organization_id)])],"")}<div class="full"><input name="asset_id" type="hidden"><label class="upload-picker">${icon("image")}<strong>從裝置選擇報告圖片</strong><span>JPG／PNG，每張最多 8 MB</span><input id="report-file" type="file" accept="image/png,image/jpeg,.jpg,.jpeg,.png"></label><div id="report-upload-preview" role="status"></div><p class="subtitle">先選組織再上傳；保存本次檔案的副本。每日自動更新的報告可使用下方進階設定。</p><details><summary>進階設定：自動化報告來源</summary><label class="field section-space">伺服器 PNG 路徑<input name="source_path" placeholder="D:\\Reports\\daily.png"><small>外部程式更新此檔案後，報告中心會讀取最新版。目前支援 1 MB 以內 PNG。</small></label></details></div></div><div class="form-actions"><button class="btn primary" type="submit">儲存報告來源</button></div></form>`);if(source){const form=$("report-form");form.dataset.id=source.report_id;for(const key of ["title","category","organization_id","scope","department","owner_recipient_id","source_path"])form.elements[key].value=source[key]||"";}}
-async function chooseReport(id){if(!state.session.modules.messaging)throw new Error("此組織未授權訊息發送模組。");if(sessionStorage.getItem("linePendingJob"))throw new Error("請先確認上次發送的狀態，再建立新的工作。");const r=await api('/api/reports/'+id);if(r.status!=="ready")throw new Error(r.reason);state.report=r;state.previews.set(id,r);state.step=2;state.selected.clear();state.audience="selected";navigate("send");}
 async function submitSend(){
   if(state.busy)return;
   if(!state.session.modules.messaging)throw new Error("此組織未授權訊息發送模組。");
   if(state.session.preview)throw new Error("預覽不會實際發送，請返回原帳號操作。");
   if(sessionStorage.getItem("linePendingJob"))throw new Error("有一筆提交尚未確認。請先到發送紀錄檢查，再重新整理。");
-  const allow=Boolean($("allow-stale")?.checked);if(state.report.stale&&!allow)throw new Error("請先確認這份較早的報告仍適合發送。");
-  const id=crypto.randomUUID(),payload={job_id:id,allow_stale:allow,audience:state.audience,ids:selectedRows().map(r=>r.recipient_id)};
-  if(state.report.category==="composition")payload.composition=state.report.composition;else if(state.report.category==="text")payload.message_text=state.report.message_text;else{payload.report_id=state.report.report_id;payload.report_version=state.report.version;}
+  const id=crypto.randomUUID(),payload={job_id:id,audience:"selected",ids:selectedRows().map(r=>r.recipient_id)};
+  if(state.report.category==="composition")payload.composition=state.report.composition;else payload.message_text=state.report.message_text;
   if($("send-timing").value==="scheduled"){const value=$("scheduled-time").value;const date=new Date(value+":00+08:00");if(!value||!Number.isFinite(date.getTime())||date.getTime()<Date.now()+30000)throw new Error("請選擇至少 30 秒後的台北時間。");payload.scheduled_at=date.toISOString();}
   state.busy=true;sessionStorage.setItem("linePendingJob",id);$("submit-send").disabled=true;$("submit-send").textContent="正在驗證並建立工作…";
   try{await api("/api/send",payload);sessionStorage.removeItem("linePendingJob");state.busy=false;await load();state.step=1;state.report=null;state.selected.clear();navigate("history");notice(payload.scheduled_at?"已建立預約，可於發送紀錄查看或取消。":"發送工作已建立，可以展開紀錄查看每個聊天室的結果。");const el=document.querySelector(`[data-job="${id}"]`);if(el)el.open=true;}
@@ -2947,7 +2927,7 @@ function switchView(email){
   if(email&&!viewOptions.some(user=>user.email+"|"+user.organization_id===email))throw new Error("請重新整理可用帳號。");
   if(email)localStorage.setItem(viewKey,email);else localStorage.removeItem(viewKey);
   // A full navigation discards in-flight previews and all previous-role data.
-  location.replace(location.pathname+"?view="+(email?"reports":"overview"));
+  location.replace(location.pathname+"?view=overview");
 }
 document.addEventListener("dblclick", async event => {
   const caseCard=event.target.closest("[data-case-preview]");
@@ -2985,7 +2965,7 @@ document.addEventListener("click",async event=>{
     }
   }
   if(event.target.closest("#my-account-btn")){myAccountModal();return;}
-  if(event.target.closest("#workspace-context")){openOaSwitcherModal();return;}
+  if(event.target.closest("#workspace-context")){toggleOaSwitcher();return;}
   const nav=event.target.closest("[data-view]");if(nav){navigate(nav.dataset.view);return;}
   const target=event.target.closest("[data-action]");if(!target||target.disabled||state.busy)return;
   if(target.matches(".chat-note-item,.case-item") && event.target.closest("input, label, textarea, select, a, summary")) return;
@@ -3023,6 +3003,7 @@ document.addEventListener("click",async event=>{
     if(composerAction(action,id))return;
     if(typeof chatAction==="function"&&chatAction(action,id,target))return;
     if(action==="switch-oa-direct"){
+      closeOaSwitcher();
       const channelId=target.dataset.channel;
       const orgId=target.dataset.org;
       const targetChannel=(lineUI.channels||state.channels||[]).find(c=>c.channel_id===channelId);
@@ -3036,7 +3017,7 @@ document.addEventListener("click",async event=>{
       }
     }
     else if(action==="close-modal"){$("modal").close();}
-    else if(action==="go-oa-list-from-switcher"){$("modal").close();navigate("oa-list");}
+    else if(action==="go-oa-list-from-switcher"){closeOaSwitcher();navigate("oa-list");}
     else if(action==="dismiss-onboarding"){
       const orgId=state.session?.user?.organization_id||"";
       if(orgId)localStorage.setItem("lineOnboardingDismissed_"+orgId,"1");
@@ -3341,21 +3322,10 @@ document.addEventListener("click",async event=>{
     else if(action==="edit-membership")membershipForm(id);
     else if(action==="switch-view")viewPicker();
     else if(action==="apply-view")switchView(id||"");
-    else if(action==="go-reports")navigate("reports");
-    else if(action==="start-send"){state.step=1;state.report=null;state.reportFilter="all";navigate("send");}
+    else if(action==="start-send"){state.step=1;state.report=null;navigate("send");}
     else if(action==="choose-text"){const text=$("message-draft").value;if(!text.trim())throw new Error("請先輸入文字。");if(sessionStorage.getItem("linePendingJob"))throw new Error("請先確認上次提交結果。");state.textDraft=text;state.report={category:"text",title:"文字訊息",message_text:text,status:"ready",scope:"text"};state.step=2;state.selected.clear();state.audience="selected";render();}
     else if(action==="cancel-schedule")modal("取消這筆預約？",`<p>取消後不會傳送。已開始處理的工作無法取消。</p><div class="form-actions">${button("確認取消預約","confirm-cancel-schedule","danger",`data-id="${esc(id)}"`)}</div>`);
     else if(action==="confirm-cancel-schedule"){await api('/api/jobs/cancel',{job_id:id});$("modal").close();await load();render();notice("預約已取消。");}
-    else if(action==="choose-report")await chooseReport(id);
-    else if(action==="preview"){const r=await api('/api/reports/'+id);if(r.status!=="ready")throw new Error(r.reason);modal(r.title,`<img class="modal-preview" src="${r.preview}" alt="${esc(r.title)}"><p class="subtitle">${when(r.modified_at)} · ${esc(scope(r))}</p>${r.stale?'<p class="callout warn">非今日更新，請留意資料日期。</p>':""}${admin()?`<div class="form-actions">${button("使用這份報告","preview-send","primary",`data-id="${esc(id)}"`)}</div>`:""}`);}
-    else if(action==="preview-send"){$("modal").close();await chooseReport(id);}
-    else if(action==="new-report")reportForm();
-    else if(action==="edit-report"){reportForm(id);$("report-form").insertAdjacentHTML("beforeend",button("移除這個報告來源","remove-report","text small",`data-id="${esc(id)}" type="button"`));}
-    else if(action==="remove-report")modal("移除報告來源",`<p>將從報告中心移除「${esc(state.reports.find(r=>r.report_id===id)?.title)}」。原始圖片與既有發送紀錄會保留，尚未開始的發送工作會取消；已開始或已送出的訊息無法撤回。${id==="weather"?"此設定對所有組織生效；之後可在報告中心恢復天氣報告。":""}</p><div class="form-actions">${button("確認移除","confirm-remove-report","danger",`data-id="${esc(id)}"`)}</div>`);
-    else if(action==="confirm-remove-report"){await api('/api/reports/remove',{report_id:id});$("modal").close();state.reportFilter="all";state.report=null;await load();render();notice("報告來源已移除，尚未開始的發送工作已取消。");}
-    else if(action==="restore-weather"){await api("/api/reports/restore-weather",{});state.reportFilter="all";await load();render();notice("天氣報告已恢復；已取消的發送不會恢復。");}
-    else if(action==="report-filter"){state.reportFilter=id;render();}
-    else if(action==="sub-filter"){state.subFilter=id;state.page=1;render();}
     else if(action==="history-filter"){state.historyFilter=id;render();}
     else if(action==="prev-page"||action==="next-page"){state.page+=action==="next-page"?1:-1;$("contact-list").innerHTML=contactList();}
     else if(action==="select-page"){filteredContacts().slice((state.page-1)*10,state.page*10).forEach(r=>state.selected.add(r.recipient_id));updateSelection();}
@@ -3366,12 +3336,7 @@ document.addEventListener("click",async event=>{
     else if(action==="confirm-delete-tag"){await api('/api/tags/delete',{id});await load();render();$("modal").close();notice("標籤已刪除。");}
     else if(action==="bulk-add-tags")bulkAddTagsModal();
     else if(action==="bulk-remove-tags")bulkRemoveTagsModal();
-    else if(action==="bulk-sub-on")await bulkSubscription(true);
-    else if(action==="bulk-sub-off")await bulkSubscription(false);
     else if(action==="edit-contact")editContact(id);
-    else if(action==="new-dispatch-scope")dispatchScopeForm();
-    else if(action==="edit-dispatch-scope")dispatchScopeForm(id);
-    else if(action==="edit-sender-grant")senderGrantForm(id);
     else if(action==="new-account")accountForm();
     else if(action==="new-org-admin")accountForm("",{role:"org_admin",organization_id:id||management.org});
     else if(action==="edit-account")accountForm(id);
@@ -4300,8 +4265,7 @@ document.addEventListener("submit",async event=>{if(event.target.id==="password-
         postal_code:values.postal_code||"",
         address:values.address||"",
         notes:values.notes||"",
-        tag_ids,
-        ...(superAdmin()?{subscribed:Boolean(form.elements.subscribed?.checked)}:{})
+        tag_ids
       });
     }else if(form.id==="tag-create-form"){
       await api('/api/tags/save',values);
@@ -4315,11 +4279,9 @@ document.addEventListener("submit",async event=>{if(event.target.id==="password-
       const tag_ids=new FormData(form).getAll('tag_ids');
       if(!tag_ids.length)throw new Error("請至少勾選一個標籤。");
       await api('/api/contacts/bulk',{action:'remove_tags',contact_ids:[...state.selected],tag_ids});
-    }else if(form.id==="report-form")await api('/api/reports/save',{...values,report_id:form.dataset.id||undefined});
-    else if(form.id==="organization-form")await api('/api/organizations/save',{...values,org_id:form.dataset.id||undefined,...Object.fromEntries(['active','reports_enabled','messaging_enabled','weather_enabled'].map(k=>[k,form.elements[k].checked]))});
+    }
+    else if(form.id==="organization-form")await api('/api/organizations/save',{...values,org_id:form.dataset.id||undefined,...Object.fromEntries(['active','messaging_enabled'].map(k=>[k,form.elements[k].checked]))});
     else if(form.id==="membership-form")await api('/api/memberships/save',{...values,active:form.elements.active.checked});
-    else if(form.id==="dispatch-scope-form")await api('/api/dispatch-scopes/save',{...values,scope_id:form.dataset.id||undefined,active:form.elements.active.checked,recipient_ids:new FormData(form).getAll('recipient_ids')});
-    else if(form.id==="sender-grant-form")await api('/api/sender-grants/save',{...values,scope_ids:new FormData(form).getAll('scope_ids'),report_ids:new FormData(form).getAll('report_ids'),...Object.fromEntries(['messaging','reports','weather'].map(k=>[k,form.elements[k].checked]))});
     else if(form.id==="personnel-form"){
       const channel_ids=new FormData(form).getAll('channel_ids');
       await api('/api/personnel/save',{
@@ -4409,7 +4371,7 @@ let polling=false;
 setInterval(async()=>{if(!state.loaded||!lineUI.ready||!lineDataReady()||!admin()||state.busy||state.authLost||document.hidden||polling||$("modal").open)return;polling=true;const requestedOA=lineUI.channel;try{const result=await api('/api/jobs');if(requestedOA!==lineUI.channel)return;if(JSON.stringify(result.jobs)!==JSON.stringify(state.jobs)){state.jobs=result.jobs;if(['overview','history','schedule'].includes(state.view)){const opened=[...document.querySelectorAll('[data-job][open]')].map(el=>el.dataset.job);render();document.querySelectorAll('[data-job]').forEach(el=>{el.open=opened.includes(el.dataset.job);});}}}catch(error){notice(error.message,true);}finally{polling=false;}},6000);
 
 // Handle unreadable image content without leaving a broken thumbnail.
-document.addEventListener("error",event=>{if(event.target instanceof HTMLImageElement && (event.target.classList.contains('sidebar-thumbnail') || event.target.closest('.chat-profile-avatar'))){event.target.hidden=true;return;}if(event.target instanceof HTMLImageElement && !event.target.closest('.chat-media-image') && !event.target.classList.contains('chat-img-thumb') && !event.target.classList.contains('avatar-img') && !event.target.closest('.avatar') && !event.target.closest('.chat-room-avatar')){const replacement=document.createElement("p");replacement.className="callout warn";replacement.textContent="圖片無法顯示，請確認來源檔案格式並重新產生報告。";event.target.replaceWith(replacement);}},true);
+document.addEventListener("error",event=>{if(event.target instanceof HTMLImageElement && (event.target.classList.contains('sidebar-thumbnail') || event.target.closest('.chat-profile-avatar'))){event.target.hidden=true;return;}if(event.target instanceof HTMLImageElement && !event.target.closest('.chat-media-image') && !event.target.classList.contains('chat-img-thumb') && !event.target.classList.contains('avatar-img') && !event.target.closest('.avatar') && !event.target.closest('.chat-room-avatar')){const replacement=document.createElement("p");replacement.className="callout warn";replacement.textContent="圖片無法顯示，請確認檔案格式後重新上傳。";event.target.replaceWith(replacement);}},true);
 
 function scheduleLabel(value){return new Date(value).toLocaleString("zh-TW",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false});}
 function scheduleFields(){return `<div class="schedule-fields"><label class="field">傳送時間<select id="send-timing"><option value="now">立即傳送</option><option value="scheduled">指定日期與時間</option></select></label><div id="scheduled-time-wrapper" hidden><label class="field">台北時間 UTC+08:00<input type="datetime-local" id="scheduled-time" hidden></label><div class="schedule-presets section-space"><span class="muted" data-s="sbb2c29b">快速預約：</span><button type="button" class="btn small" data-action="schedule-preset" data-id="15m">+15 分鐘</button><button type="button" class="btn small" data-action="schedule-preset" data-id="1h">+1 小時</button><button type="button" class="btn small" data-action="schedule-preset" data-id="tmr9">明天 09:00</button><button type="button" class="btn small" data-action="schedule-preset" data-id="tmr14">明天 14:00</button><button type="button" class="btn small" data-action="schedule-preset" data-id="nextmon">下週一 09:00</button></div></div><p class="subtitle">預約保存現在確認的文字或圖片與發送對象；到期再檢查帳號、收件範圍與訂閱。電腦與 LINE 服務需開啟，延遲超過 10 分鐘標記逾期，不補發。</p></div>`;}
@@ -4451,8 +4413,6 @@ document.addEventListener('keydown',event=>{
 });
 
 function checkChoices(name,items,selected=[]){return `<div class="permission-choices">${items.map(([id,text])=>`<label class="check-label"><input type="checkbox" name="${name}" value="${esc(id)}" ${selected.includes(id)?"checked":""}>${esc(text)}</label>`).join("")||'<p class="muted">目前沒有可選項目。</p>'}</div>`;}
-function dispatchScopeForm(id){const s=(state.settings.dispatch_scopes||[]).find(s=>s.scope_id===id)||{organization_id:management.org||state.organizations[0]?.org_id||"",name:"",kind:"department",department:"",recipient_ids:[],active:1};modal(id?"編輯發送範圍":"新增發送範圍",`<form id="dispatch-scope-form" data-id="${esc(id||"")}"><div class="form-grid">${selectField("所屬組織","organization_id",oaOrganizationOptions(),selectedWorkspace()?.org_id||s.organization_id)}${field("範圍名稱","name",s.name,'required maxlength="80" placeholder="例如：北區業務、網站改版專案"')}${selectField("範圍類型","kind",[["department","部門"],["project","專案"],["group","LINE 群組"]],s.kind)}${field("部門名稱（部門範圍必填）","department",s.department,'maxlength="60"')}<label class="check-label full"><input name="active" type="checkbox" ${s.active?"checked":""}>啟用範圍</label></div><fieldset class="permission-fieldset"><legend>範圍內聯絡對象</legend><div id="scope-recipient-options"></div></fieldset><p class="callout">部門會包含同組織、同部門分類的聊天室。專案可選多個對象；LINE 群組只能選一個。停用範圍會影響尚未執行的預約。</p><div class="form-actions"><button class="btn primary" type="submit">儲存範圍</button></div></form>`);const form=$("dispatch-scope-form");form.classList.add("management-form");if(id){form.elements.organization_id.disabled=true;form.insertAdjacentHTML('beforeend',`<input type="hidden" name="organization_id" value="${esc(s.organization_id)}">`);}function choices(selected=[]){const organization_id=id?s.organization_id:form.elements.organization_id.value,kind=form.elements.kind.value;$("scope-recipient-options").innerHTML=kind==="department"?'<p class="muted">依上方部門名稱自動比對，不需逐筆選人。</p>':checkChoices('recipient_ids',state.contacts.filter(r=>r.organization_id===organization_id&&(kind!=="group"||r.kind!=="user")).map(r=>[r.recipient_id,label(r)+(r.active?"":"（已停用）")]),selected);}choices(s.recipient_ids);form.addEventListener('change',e=>{if(['organization_id','kind'].includes(e.target.name))choices();});}
-function senderGrantForm(id){const m=state.memberships.find(m=>m.email+"|"+m.org_id===id);if(!m)return;const g=(state.settings.sender_grants||[]).find(g=>g.email===m.email&&g.organization_id===m.org_id)||{scope_ids:[],report_ids:[]};modal("設定發送授權",`<form id="sender-grant-form" class="management-form"><input type="hidden" name="email" value="${esc(m.email)}"><input type="hidden" name="organization_id" value="${esc(m.org_id)}"><p>${esc(m.email)} · ${esc(m.name)}</p><p class="mg-grant-summary" id="mg-grant-summary" role="status"></p><fieldset class="permission-fieldset"><legend>可用模組</legend>${[['messaging','訊息發送與預約'],['reports','報告中心'],['weather','個人天氣模組（組織也須啟用）']].map(([key,text])=>`<label class="check-label"><input type="checkbox" name="${key}" ${g[key]?"checked":""}>${text}</label>`).join('')}</fieldset><fieldset class="permission-fieldset"><legend>可發送對象範圍（可複選）</legend><p class="mg-help">先在組織的「發送範圍」建立部門、專案或群組，再回來勾選。</p>${checkChoices('scope_ids',(state.settings.dispatch_scopes||[]).filter(s=>s.organization_id===m.org_id).map(s=>[s.scope_id,s.name+(s.active?'':'（已停用）')]),g.scope_ids)}</fieldset><fieldset class="permission-fieldset"><legend>可查看與發送的報告（可複選）</legend>${checkChoices('report_ids',(state.settings.report_sources||[]).filter(r=>r.organization_id===m.org_id||r.report_id==='weather').map(r=>[r.report_id,r.title]),g.report_ids)}</fieldset><p class="callout">報告與收件範圍分別授權。勾選報告不會開放全部聯絡對象；同時仍須符合報告本身的部門／個人限制。只發文字或自訂圖片時，可不選報告。取消模組或範圍會在預約執行前重新檢查。</p><div class="form-actions"><button class="btn primary" type="submit">儲存授權</button></div></form>`);const form=$("sender-grant-form");const summarize=()=>{$("mg-grant-summary").textContent=`已選 ${form.querySelectorAll('[name="scope_ids"]:checked').length} 個範圍、${form.querySelectorAll('[name="report_ids"]:checked').length} 份報告。${form.elements.messaging.checked?"儲存後套用授權；組織也須開放模組。":"尚未勾選訊息發送，此人員不能發送。"}`;};form.addEventListener("change",summarize);summarize();}
 
 function oaOrganizationOptions(){const w=selectedWorkspace();return w&&lineUI.registry?[[w.org_id,w.name]]:organizationOptions();}
 
@@ -4475,3 +4435,25 @@ document.addEventListener("click",async event=>{
   b.innerHTML=icon("check");b.classList.add("copied");b.setAttribute("aria-label","已複製");status.textContent="已複製";
   clearTimeout(b.copyTimer);b.copyTimer=setTimeout(()=>{b.innerHTML=icon("copy");b.classList.remove("copied");b.setAttribute("aria-label",b.dataset.label);status.textContent="";},1600);
 });
+
+document.addEventListener('click',event=>{
+  if(!event.target.closest('#oa-switcher-dropdown,#workspace-context'))closeOaSwitcher();
+});
+document.addEventListener('keydown',event=>{
+  if(event.target.closest('#workspace-context') && ['Enter',' '].includes(event.key)){
+    event.preventDefault();toggleOaSwitcher();return;
+  }
+  const dropdown=$('oa-switcher-dropdown');
+  if(!dropdown)return;
+  if(event.key==='Escape'){event.preventDefault();closeOaSwitcher(true);return;}
+  if(event.target.closest('#oa-switcher-dropdown') && ['ArrowDown','ArrowUp'].includes(event.key)){
+    const items=[...dropdown.querySelectorAll('.oa-switcher-item:not([hidden])')];
+    if(!items.length)return;
+    event.preventDefault();const current=items.indexOf(document.activeElement);
+    items[(current+(event.key==='ArrowDown'?1:-1)+items.length)%items.length].focus();
+  }
+});
+document.addEventListener('focusin',event=>{
+  if(!event.target.closest('#oa-switcher-dropdown,#workspace-context'))closeOaSwitcher();
+});
+window.addEventListener('resize',()=>closeOaSwitcher());

@@ -1,10 +1,9 @@
 "use strict";
 // These views use only data returned by the authenticated, scoped APIs.
-const workspaceUI={reportQuery:"",reportLayout:"list",reportDetail:"",contactDetail:"",scheduleFilter:"scheduled"};
+const workspaceUI={contactDetail:"",scheduleFilter:"scheduled"};
 
 function workspaceHeader(){
   if(!state.contacts.some(r=>r.recipient_id===workspaceUI.contactDetail))workspaceUI.contactDetail="";
-  if(!state.reports.some(r=>r.report_id===workspaceUI.reportDetail))workspaceUI.reportDetail="";
   const user=state.session?.user;
   const context=document.getElementById("workspace-context-name");
   const ch = typeof selectedOA === "function" ? selectedOA() : null;
@@ -16,20 +15,6 @@ function workspaceHeader(){
   // OA 切換器只給在 OA 內工作的人；平台管理員不進入 OA 營運畫面。
   if(wrap) wrap.hidden=superAdmin();
   if(document.getElementById("organization-select")) document.getElementById("organization-select").hidden=true;
-}
-
-function reportDetailPanel(r){
-  if(!r)return "";
-  return `<aside class="detail-panel" id="report-detail" aria-labelledby="report-detail-title" tabindex="-1"><div class="detail-heading"><div><h2 id="report-detail-title">${esc(r.title)}</h2><p class="subtitle">報告詳情</p></div>${button(icon("close"),"close-report-detail","icon-button",'aria-label="關閉報告詳情"')}</div><div class="detail-body"><div data-preview="${esc(r.report_id)}">${tile(r)}</div><dl><dt>狀態</dt><dd>${reportBadge(r)}</dd><dt>可見範圍</dt><dd>${esc(scope(r))}</dd><dt>最後更新</dt><dd>${esc(when(r.modified_at))}</dd><dt>檔案大小</dt><dd>${r.size?Math.ceil(r.size/1024)+" KB":"尚無檔案"}</dd></dl><div class="detail-actions">${button("放大預覽","preview","",`data-id="${esc(r.report_id)}" ${r.status!=="ready"?"disabled":""}`)}${canSend()?button("建立發送","choose-report","primary",`data-id="${esc(r.report_id)}" ${r.status!=="ready"?"disabled":""}`):""}</div>${superAdmin()?`<div class="detail-actions">${r.report_id!=="weather"?button("設定來源","edit-report","",`data-id="${esc(r.report_id)}"`):""}${button("移除報告","remove-report","text",`data-id="${esc(r.report_id)}"`)}</div>`:""}</div></aside>`;
-}
-
-function workspaceReports(wizard=false){
-  if(wizard)return null;
-  const rows=state.reports.filter(r=>(state.reportFilter==="all"||r.category===state.reportFilter)&&`${r.title} ${scope(r)}`.toLowerCase().includes(workspaceUI.reportQuery.toLowerCase()));
-  const detail=rows.find(r=>r.report_id===workspaceUI.reportDetail);
-  return heading("報告中心","集中查看報告、確認內容與來源，再選擇發送對象。",superAdmin()?(state.settings.weather_report_removed?button("恢復天氣報告","restore-weather",""):"")+button(icon("plus")+"新增報告來源","new-report","primary"):"")+
-  `<div class="library-toolbar"><label class="search-field">${icon("search")}<input id="report-search" type="search" value="${esc(workspaceUI.reportQuery)}" placeholder="搜尋報告名稱或可見範圍" aria-label="搜尋報告"></label><div class="segmented">${[["all","所有報告"],...(state.reports.some(r=>r.category==="weather")?[["weather","天氣報告"]]:[]),["company","組織報表"],["other","其他報告"]].map(([id,text])=>`<button data-action="report-filter" data-id="${id}" aria-pressed="${state.reportFilter===id}" class="${state.reportFilter===id?"active":""}">${text}</button>`).join("")}</div><div class="segmented layout-picker" role="group" aria-label="報告顯示方式">${[["list","清單","menu"],["grid","卡片","grid"]].map(([id,t,i])=>`<button data-action="report-layout" data-id="${id}" aria-label="${t}" title="${t}" aria-pressed="${workspaceUI.reportLayout===id}" class="${workspaceUI.reportLayout===id?"active":""}">${icon(i)}</button>`).join("")}</div></div>`+
-  `<div class="library-split ${detail?"has-detail":""}"><div><p class="subtitle" role="status">共 ${rows.length} 份報告</p><div class="report-grid ${workspaceUI.reportLayout==="list"?"list-layout":""}">${rows.map(r=>`<article class="panel report-card ${r.report_id===workspaceUI.reportDetail?"selected":""}"><div data-preview="${esc(r.report_id)}">${tile(r)}</div><div class="report-card-body">${reportBadge(r)}<h3>${esc(r.title)}</h3><div class="report-meta"><span>${esc(scope(r))}</span><span>${icon("clock")} ${when(r.modified_at)}${r.size?` · ${Math.ceil(r.size/1024)} KB`:""}</span></div><div class="report-card-bottom">${button("查看詳情","report-detail","",`data-id="${esc(r.report_id)}" aria-expanded="${r.report_id===workspaceUI.reportDetail}"`)}${canSend()?button("建立發送","choose-report","primary",`data-id="${esc(r.report_id)}" ${r.status!=="ready"?"disabled":""}`):""}</div>${superAdmin()?`<div class="report-card-bottom">${r.report_id!=="weather"?button("設定來源","edit-report","text small",`data-id="${esc(r.report_id)}"`):""}${button("移除報告","remove-report","text small",`data-id="${esc(r.report_id)}"`)}</div>`:""}</div></article>`).join("")}</div>${rows.length?"":empty("沒有符合的報告",workspaceUI.reportQuery?"試著換一個關鍵字，或切換報告分類。":"新增來源或取得授權後，報告會顯示在這裡。")}</div>${reportDetailPanel(detail)}</div>`;
 }
 
 function contactDetailPanel(){
@@ -72,7 +57,6 @@ function contactDetailPanel(){
           <dt>系統部門</dt><dd>${esc(r.department||"尚未設定")}</dd>
           <dt>接收狀態</dt><dd>${badge(r.active?"可接收":"已停用",r.active?"good":"")}</dd>
           <dt>最近互動</dt><dd>${esc(when(r.last_seen))}</dd>
-          ${weatherModule()?`<dt>天氣通知</dt><dd>${badge(r.weather_subscribed?"已訂閱":"未訂閱",r.weather_subscribed?"good":"")}</dd>`:""}
         </dl>
       </div>
       <div class="full section-space">
@@ -333,9 +317,6 @@ function workspaceAction(action,id){
     document.querySelector(`[data-action="${action}"][data-id="${CSS.escape(id)}"]`)?.focus({preventScroll:true});
     return true;
   }
-  if(action==="report-layout"){workspaceUI.reportLayout=id==="grid"?"grid":"list";render();return true;}
-  if(action==="report-detail"){workspaceUI.reportDetail=id;render();document.getElementById("report-detail")?.focus({preventScroll:true});if(innerWidth<1200)document.getElementById("report-detail")?.scrollIntoView({block:"start"});return true;}
-  if(action==="close-report-detail"){const previous=workspaceUI.reportDetail;workspaceUI.reportDetail="";render();document.querySelector(`[data-action="report-detail"][data-id="${CSS.escape(previous)}"]`)?.focus();return true;}
   if(action==="contact-detail"){workspaceUI.contactDetail=id;render();if(typeof loadChatNotes==="function")loadChatNotes(id);document.getElementById("contact-detail")?.focus({preventScroll:true});if(innerWidth<1200)document.getElementById("contact-detail")?.scrollIntoView({block:"start"});return true;}
   if(action==="close-contact-detail"){const previous=workspaceUI.contactDetail;workspaceUI.contactDetail="";render();document.querySelector(`[data-action="contact-detail"][data-id="${CSS.escape(previous)}"]`)?.focus();return true;}
   if(action==="schedule-filter"){workspaceUI.scheduleFilter=id;render();return true;}
@@ -344,10 +325,9 @@ function workspaceAction(action,id){
 
 function commandEntries(query){
   const q=query.trim().toLowerCase();
-  const allowedViews=["overview","reports","personal-settings",...(admin()?["contacts","schedule","history"]:[]),...(canSend()?["send"]:[]),...(weatherModule()?["subscriptions"]:[]),...(superAdmin()?["organizations","channels"]:[]),...(state.session?.role==="org_admin"?["channels","personnel","org-settings","templates"]:[])];
+  const allowedViews=["overview","personal-settings",...(admin()?["contacts","schedule","history"]:[]),...(canSend()?["send"]:[]),...(superAdmin()?["organizations","channels"]:[]),...(state.session?.role==="org_admin"?["channels","personnel","org-settings","templates"]:[])];
   const entries=allowedViews.map(id=>({kind:"page",id,title:titles[id],detail:"前往頁面",symbol:"grid"}));
   if(q){
-    entries.push(...state.reports.map(r=>({kind:"report",id:r.report_id,title:r.title,detail:scope(r),symbol:"file"})));
     if(admin())entries.push(...state.contacts.map(r=>({kind:"contact",id:r.recipient_id,title:label(r),detail:orgName(r.organization_id)+" · "+(r.kind==="user"?"個人":"群組"),symbol:"users"})));
   }
   return entries.filter(r=>`${r.title} ${r.detail}`.toLowerCase().includes(q)).slice(0,30);
@@ -372,10 +352,6 @@ document.addEventListener("input",e=>{
     if(input && cursor!==null)input.setSelectionRange(cursor,cursor);
   }
   if(e.target.id==="command-search")renderCommands();
-  if(e.target.id==="report-search"){
-    workspaceUI.reportQuery=e.target.value;const cursor=e.target.selectionStart;
-    render();const input=document.getElementById("report-search");input.focus({preventScroll:true});try{input.setSelectionRange(cursor,cursor);}catch(_){}
-  }
 });
 document.addEventListener("compositionend",e=>{
   if(e.target.id==="chat-work-search")e.target.dispatchEvent(new Event("input",{bubbles:true}));
@@ -404,7 +380,6 @@ document.addEventListener("click",e=>{
   const result=e.target.closest("[data-command-kind]");if(!result)return;
   document.getElementById("command-dialog").close();
   if(result.dataset.commandKind==="page")navigate(result.dataset.commandId);
-  if(result.dataset.commandKind==="report"){state.reportFilter="all";workspaceUI.reportQuery="";workspaceUI.reportDetail=result.dataset.commandId;navigate("reports");document.getElementById("report-detail")?.focus();}
   if(result.dataset.commandKind==="contact"){
     workspaceUI.contactDetail=result.dataset.commandId;navigate("contacts");
     const index=filteredContacts().findIndex(r=>r.recipient_id===workspaceUI.contactDetail);

@@ -75,7 +75,7 @@ class ContactTagTests(unittest.TestCase):
     def test_contact_notes_and_custom_name(self):
         with app.database_connection() as conn:
             recipients.update_contact(
-                conn, USER1, custom_name="小艾 (Alice)", subscribed=False,
+                conn, USER1, custom_name="小艾 (Alice)",
                 notes="每週二需確認報表"
             )
             contacts = recipients.list_contacts(conn)
@@ -137,20 +137,6 @@ class ContactTagTests(unittest.TestCase):
             self.assertEqual([t["name"] for t in c1["tags"]], ["內部同仁"])
             self.assertEqual(len(c2["tags"]), 0)
             self.assertEqual([t["name"] for t in cg["tags"]], ["2026專案"])
-
-    def test_bulk_subscription_update(self):
-        with app.database_connection() as conn:
-            recipients.bulk_update_subscription(conn, [USER1, USER2, GROUP1], subscribed=True)
-            contacts = recipients.list_contacts(conn)
-            for c in contacts:
-                self.assertTrue(c["weather_subscribed"])
-
-            recipients.bulk_update_subscription(conn, [USER1], subscribed=False)
-            contacts_after = recipients.list_contacts(conn)
-            c1 = next(c for c in contacts_after if c["recipient_id"] == USER1)
-            c2 = next(c for c in contacts_after if c["recipient_id"] == USER2)
-            self.assertFalse(c1["weather_subscribed"])
-            self.assertTrue(c2["weather_subscribed"])
 
     def test_http_api_tag_endpoints_and_bulk(self):
         from urllib.request import Request, urlopen
@@ -228,7 +214,7 @@ class ContactTagTests(unittest.TestCase):
     def test_contact_type_and_info_fields_persistence(self):
         with app.database_connection() as conn:
             recipients.update_contact(
-                conn, USER1, custom_name="王經理", subscribed=False,
+                conn, USER1, custom_name="王經理",
                 contact_type="person_business",
                 phone="+886 912-345-678",
                 email="wang@private.com",
@@ -259,7 +245,7 @@ class ContactTagTests(unittest.TestCase):
         with app.database_connection() as conn:
             # 1. Set as person_business
             recipients.update_contact(
-                conn, USER1, custom_name="王經理", subscribed=False,
+                conn, USER1, custom_name="王經理",
                 contact_type="person_business",
                 phone="0912345678",
                 email="wang@private.com",
@@ -274,7 +260,7 @@ class ContactTagTests(unittest.TestCase):
 
             # 2. Switch to organization: job_title and work_* fields should be cleared
             recipients.update_contact(
-                conn, USER1, custom_name="ABC 廣告公司", subscribed=False,
+                conn, USER1, custom_name="ABC 廣告公司",
                 contact_type="organization",
                 phone="02-23456789",
                 email="contact@abc.com",
@@ -297,7 +283,7 @@ class ContactTagTests(unittest.TestCase):
 
             # 3. Switch to person_private: organization_name and work_* fields should be cleared
             recipients.update_contact(
-                conn, USER1, custom_name="王小明", subscribed=False,
+                conn, USER1, custom_name="王小明",
                 contact_type="person_private",
                 phone="0912345678",
                 email="wang@private.com",

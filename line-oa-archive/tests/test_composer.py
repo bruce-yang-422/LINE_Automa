@@ -52,7 +52,7 @@ class ComposerTests(unittest.TestCase):
         self.assertTrue(path.is_relative_to(self.root/'data/uploads'))
         with Image.open(path) as image:
             self.assertEqual(image.format, 'PNG')
-        self.assertLessEqual(path.stat().st_size, reports.MAX_BYTES)
+        self.assertLessEqual(path.stat().st_size, composer.MAX_BYTES)
         self.assertFalse((self.root/'published-images').exists())
         for invalid in ('<svg/>', base64.b64encode(b'not a PNG').decode(), 'A'*(12*1024*1024)):
             with self.assertRaises(ValueError):
@@ -73,7 +73,7 @@ class ComposerTests(unittest.TestCase):
         status, uploaded = self.request(server, '/api/assets/upload', 'manager@example.com', {'data':raw,'organization_id':'B','name':'test.png'})
         self.assertEqual(status, 201)
         self.assertEqual(uploaded['organization_id'], 'A')
-        reports.save_organization({'org_id':'A','name':'A','kind':'company','active':True,'reports_enabled':True,'messaging_enabled':False,'weather_enabled':False},'admin@example.com')
+        reports.save_organization({'org_id':'A','name':'A','kind':'company','active':True,'messaging_enabled':False},'admin@example.com')
         self.assertEqual(self.request(server, '/api/assets/upload', 'manager@example.com', {'data':raw})[0], 400)
 
     def test_formats_validate_scope_count_and_actions_before_publication(self):
@@ -104,13 +104,6 @@ class ComposerTests(unittest.TestCase):
         self.assertEqual(len(message['actions']),6)
         self.assertEqual(sum(a['area']['width']*a['area']['height'] for a in message['actions']),1040*780)
         self.assertEqual(len(list((self.root/'published-images').glob('*.png'))),5)
-
-    def test_uploaded_report_can_be_saved_without_manual_path(self):
-        asset=self.upload()
-        report=reports.save({'title':'上傳報告','category':'company','organization_id':'A','scope':'company','asset_id':asset['asset_id']},'admin@example.com')
-        self.assertEqual(reports.describe(reports.find(report['report_id']))['status'],'ready')
-        with self.assertRaises(ValueError):
-            reports.save({'title':'錯誤組織','category':'company','organization_id':'B','scope':'company','asset_id':asset['asset_id']},'admin@example.com')
 
     def test_scheduled_composition_is_frozen_and_uses_existing_retry_key(self):
         dispatcher=admin_server.Dispatcher();self.addCleanup(dispatcher.close)

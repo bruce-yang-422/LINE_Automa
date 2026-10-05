@@ -72,8 +72,8 @@ class RolesAndPermissionsTests(unittest.TestCase):
     def setup_roles_environment(self):
         # 1. Create Organization A & B
         with app.database_connection() as conn:
-            conn.execute("INSERT OR REPLACE INTO organizations(org_id, name, kind, active, reports_enabled, messaging_enabled, weather_enabled) VALUES (?, 'Org A', 'company', 1, 1, 1, 0)", (ORG_A,))
-            conn.execute("INSERT OR REPLACE INTO organizations(org_id, name, kind, active, reports_enabled, messaging_enabled, weather_enabled) VALUES (?, 'Org B', 'company', 1, 1, 1, 0)", (ORG_B,))
+            conn.execute("INSERT OR REPLACE INTO organizations(org_id, name, kind, active, messaging_enabled) VALUES (?, 'Org A', 'company', 1, 1)", (ORG_A,))
+            conn.execute("INSERT OR REPLACE INTO organizations(org_id, name, kind, active, messaging_enabled) VALUES (?, 'Org B', 'company', 1, 1)", (ORG_B,))
             conn.execute("INSERT OR REPLACE INTO line_channels (channel_id, name, token_cipher, secret_cipher, active, org_id, bot_user_id) VALUES ('primary', 'Main OA', 'sec', 'tok', 1, ?, 'U00000000000000000000000000000001')", (ORG_A,))
             conn.execute("INSERT OR REPLACE INTO recipients(recipient_id, channel_id, kind, organization_id, display_name) VALUES (?, 'primary', 'user', ?, 'Test Customer')", (CONTACT_USER, ORG_A))
             conn.execute("INSERT OR REPLACE INTO line_messages(channel_id, message_id, conversation_id, conversation_type, direction, message_type, text_content, sent_at) VALUES ('primary', 'msg-1', ?, 'user', 'inbound', 'text', 'Hello OA', datetime('now'))", (CONTACT_USER,))

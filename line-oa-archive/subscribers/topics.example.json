@@ -1,0 +1,22 @@
+{
+  "status_keywords": ["我的訂閱"],
+  "topics": [
+    {
+      "key": "weather",
+      "name": "天氣週報",
+      "subscribe": ["訂閱天氣", "訂閱天氣周報", "訂閱天氣週報"],
+      "unsubscribe": ["取消天氣", "取消訂閱天氣", "取消天氣周報", "取消天氣週報"],
+      "allow": "all",
+      "groups": true
+    },
+    {
+      "key": "sales_daily",
+      "name": "營業日報",
+      "subscribe": ["訂閱營業日報"],
+      "unsubscribe": ["取消營業日報"],
+      "allow": {"tags": ["主管"], "ids": []},
+      "deny": {"tags": [], "ids": []},
+      "groups": false
+    }
+  ]
+}

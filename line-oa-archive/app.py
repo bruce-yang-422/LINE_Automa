@@ -11,6 +11,7 @@ from contextlib import contextmanager, closing
 from pathlib import Path
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import urlsplit
 import recipients
 import channels
 
@@ -20,6 +21,10 @@ if not DATABASE_PATH.is_absolute():
     DATABASE_PATH = BASE_DIR / DATABASE_PATH
 MAX_BODY_BYTES = 1_048_576
 IMAGE_DIR = BASE_DIR / "published-images"
+# 外部腳本放置的公開圖片素材（營業數據、天氣報告等），以 /media/<子資料夾>/<檔名> 對外提供。
+MEDIA_DIR = BASE_DIR / "media"
+MEDIA_MAX_BYTES = 10 * 1024 * 1024  # LINE 圖片訊息原圖上限
+MEDIA_TYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg"}
 
 
 def public_base_url() -> str:
@@ -78,7 +83,8 @@ def source_fields(event: dict) -> tuple[str, str, str | None] | None:
 
 
 def save_events(events: list[dict]) -> list:
-    # 交易失敗時回傳 HTTP 503，讓 LINE 可以重新傳送 Webhook。
+    """保存事件並套用關鍵字訂閱，回傳待送出的 (replyToken, 文字)。交易失敗時回傳 HTTP 503，讓 LINE 重送。"""
+    import subscriptions
     replies = []
     with database_connection() as conn:
         with closing(conn.cursor()) as cur:
@@ -87,7 +93,8 @@ def save_events(events: list[dict]) -> list:
                 if fields is None:
                     continue
                 source_type, conversation_id, sender_user_id = fields
-                reply = recipients.handle_event(conn, event, source_type, conversation_id)
+                recipients.handle_event(conn, event, source_type, conversation_id)
+                reply = subscriptions.handle_event(conn, event, source_type, conversation_id)
                 if reply:
                     replies.append(reply)
                 event_type = event.get("type")
@@ -176,7 +183,7 @@ class Handler(BaseHTTPRequestHandler):
         return True
 
     def do_HEAD(self) -> None:
-        if not self.serve_image(head_only=True):
+        if not self.serve_image(head_only=True) and not self.serve_media(head_only=True):
             self.send_response(404)
             self.end_headers()
 
@@ -188,8 +195,43 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def serve_media(self, head_only: bool = False) -> bool:
+        # 只開放 media/ 底下一層子資料夾內的 PNG／JPG；查詢字串（例如 ?v=日期）僅供 LINE 快取區分。
+        path = urlsplit(self.path).path
+        match = re.fullmatch(r"/media/(?:([A-Za-z0-9_-]{1,40})/)?([A-Za-z0-9_-][A-Za-z0-9_.-]{0,99})", path)
+        if not path.startswith("/media/"):
+            return False
+        suffix = Path(match[2]).suffix.lower() if match else ""
+        if not match or suffix not in MEDIA_TYPES:
+            self.respond(404, "找不到圖片")
+            return True
+        root = MEDIA_DIR.resolve()
+        file = (MEDIA_DIR / (match[1] or "") / match[2]).resolve()
+        try:
+            if file.parent not in (root, root / (match[1] or "")) or not file.is_file():
+                raise OSError
+            with file.open("rb") as stream:
+                data = stream.read(MEDIA_MAX_BYTES + 1)
+        except OSError:
+            self.respond(404, "找不到圖片")
+            return True
+        signature = data.startswith(b"\x89PNG\r\n\x1a\n") if suffix == ".png" else data.startswith(b"\xff\xd8\xff")
+        if len(data) > MEDIA_MAX_BYTES or not signature:
+            self.respond(404, "找不到圖片")
+            return True
+        self.send_response(200)
+        self.send_header("Content-Type", MEDIA_TYPES[suffix])
+        self.send_header("Content-Length", str(len(data)))
+        # 檔案可能被同名覆寫，快取時間短；要立刻換圖請在網址加 ?v=日期 或改檔名。
+        self.send_header("Cache-Control", "public, max-age=300")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        if not head_only:
+            self.wfile.write(data)
+        return True
+
     def do_GET(self) -> None:
-        if self.serve_image():
+        if self.serve_image() or self.serve_media():
             return
         if self.path == "/healthz":
             try:
@@ -243,14 +285,19 @@ class Handler(BaseHTTPRequestHandler):
             self.respond(503, "資料庫無法使用")
             return
         self.respond(200, "ok")
-        # Acknowledge persisted subscriptions before calling LINE; redelivery won't toggle or reply twice.
+        # 訂閱已寫入資料庫後才更新名冊與回覆；LINE 重送時不會重複切換或回覆。
+        if replies or any(e.get("type") in {"follow", "unfollow", "join", "leave"} for e in events):
+            import subscriptions
+            try:
+                subscriptions.export()
+            except (OSError, sqlite3.Error):
+                pass  # 背景排程會在下一輪重新輸出名冊。
         if replies:
             import line_api
             for token, text in replies:
                 try:
                     line_api.reply(token, text)
                 except ValueError:
-                    # Subscription state remains committed. Users can request status again.
                     pass
 
 

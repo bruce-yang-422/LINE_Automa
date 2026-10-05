@@ -13,11 +13,7 @@ CREATE TABLE IF NOT EXISTS organizations (
     kind TEXT NOT NULL DEFAULT 'company'
         CHECK (kind IN ('company', 'unit', 'association', 'club', 'family', 'personal', 'other')),
     active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
-    reports_enabled INTEGER NOT NULL DEFAULT 1 CHECK (reports_enabled IN (0, 1)),
     messaging_enabled INTEGER NOT NULL DEFAULT 1 CHECK (messaging_enabled IN (0, 1)),
-    -- 客製模組：天氣訂閱，由平台管理員為組織啟用並設定圖片來源。
-    weather_enabled INTEGER NOT NULL DEFAULT 0 CHECK (weather_enabled IN (0, 1)),
-    weather_image_path TEXT NOT NULL DEFAULT '',
     -- 記事政策設定：鎖定政策與標籤政策（對話記事本管理規格 5.2 與 7.2.3）
     note_lock_policy TEXT NOT NULL DEFAULT 'disabled'
         CHECK (note_lock_policy IN ('disabled', 'collaborative', 'strict_admin')),
@@ -107,7 +103,7 @@ CREATE TABLE IF NOT EXISTS line_channels (
 );
 
 -- OA 共用：擁有者組織把使用權授予其他組織。share_id 是獨立資料範圍，
--- 各組織的聯絡對象副本、報告、發送與授權以它區隔；憑證與 Webhook 仍屬擁有者。
+-- 各組織的聯絡對象副本、發送與授權以它區隔；憑證與 Webhook 仍屬擁有者。
 CREATE TABLE IF NOT EXISTS line_channel_shares (
     share_id TEXT PRIMARY KEY,
     channel_id TEXT NOT NULL REFERENCES line_channels(channel_id),
@@ -230,9 +226,7 @@ CREATE TABLE IF NOT EXISTS recipients (
     work_phone_ext TEXT NOT NULL DEFAULT '',
     work_email TEXT NOT NULL DEFAULT '',
     active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
-    weather_subscribed INTEGER NOT NULL DEFAULT 0 CHECK (weather_subscribed IN (0, 1)),
     event_at INTEGER NOT NULL DEFAULT 0,
-    subscription_at INTEGER NOT NULL DEFAULT 0,
     organization_id TEXT NOT NULL DEFAULT '',
     department TEXT NOT NULL DEFAULT '',
     profile_checked_at INTEGER NOT NULL DEFAULT 0,
@@ -269,7 +263,17 @@ CREATE TABLE IF NOT EXISTS saved_filters (
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 
--- 個人訊息「訂閱天氣」等指令的處理結果；同一則訊息重送時不重複切換。
+-- 關鍵字訂閱（主題定義在 subscribers/topics.json；名冊另輸出為 subscribers/<主題>.json 供外部腳本讀取）。
+CREATE TABLE IF NOT EXISTS topic_subscriptions (
+    channel_id TEXT NOT NULL,
+    recipient_id TEXT NOT NULL,
+    topic TEXT NOT NULL,
+    subscribed INTEGER NOT NULL DEFAULT 0 CHECK (subscribed IN (0, 1)),
+    updated_at INTEGER NOT NULL DEFAULT 0,  -- LINE 事件時間（毫秒），防止亂序重送覆蓋較新的選擇
+    PRIMARY KEY (channel_id, recipient_id, topic)
+);
+
+-- 已處理的關鍵字訊息；LINE 重送同一則訊息時不重複切換或回覆。
 CREATE TABLE IF NOT EXISTS subscription_commands (
     channel_id TEXT NOT NULL,
     message_id TEXT NOT NULL,
@@ -454,31 +458,7 @@ CREATE TABLE IF NOT EXISTS oa_case_categories (
     UNIQUE (channel_id, name)
 );
 
--- ============ 報告與發送 ============
-
--- category：company 組織報表、other 其他；scope：company 全組織、department 部門、personal 指定個人。
--- 天氣報告為客製模組，來源設定在 organizations，不存於本表。
-CREATE TABLE IF NOT EXISTS report_sources (
-    report_id TEXT PRIMARY KEY,
-    channel_id TEXT NOT NULL,
-    title TEXT NOT NULL,
-    category TEXT NOT NULL CHECK (category IN ('company', 'other')),
-    source_path TEXT NOT NULL,
-    organization_id TEXT NOT NULL DEFAULT '',
-    scope TEXT NOT NULL DEFAULT 'company' CHECK (scope IN ('company', 'department', 'personal')),
-    owner_recipient_id TEXT NOT NULL DEFAULT '',
-    department TEXT NOT NULL DEFAULT '',
-    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-);
-CREATE INDEX IF NOT EXISTS report_sources_channel_idx ON report_sources(channel_id);
-
--- 天氣報告從報告中心移除的狀態（每個 OA）。
-CREATE TABLE IF NOT EXISTS builtin_report_state (
-    channel_id TEXT NOT NULL,
-    report_id TEXT NOT NULL,
-    removed INTEGER NOT NULL DEFAULT 0 CHECK (removed IN (0, 1)),
-    PRIMARY KEY (channel_id, report_id)
-);
+-- ============ 發送 ============
 
 CREATE TABLE IF NOT EXISTS upload_assets (
     asset_id TEXT PRIMARY KEY,
@@ -495,12 +475,11 @@ CREATE TABLE IF NOT EXISTS send_jobs (
     channel_id TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'queued'
         CHECK (status IN ('scheduled', 'queued', 'running', 'finished', 'cancelled', 'missed', 'interrupted')),
-    audience TEXT NOT NULL CHECK (audience IN ('selected', 'subscribers')),
+    audience TEXT NOT NULL CHECK (audience = 'selected'),
     image_path TEXT NOT NULL,
     image_url TEXT NOT NULL DEFAULT '',
     actor TEXT NOT NULL DEFAULT '',
-    report_title TEXT NOT NULL DEFAULT '',
-    report_id TEXT NOT NULL DEFAULT '',
+    report_title TEXT NOT NULL DEFAULT '',  -- 發送紀錄顯示的標題
     scheduled_at TEXT NOT NULL DEFAULT '',
     message_text TEXT NOT NULL DEFAULT '',
     organization_id TEXT NOT NULL DEFAULT '',
@@ -520,31 +499,6 @@ CREATE TABLE IF NOT EXISTS send_deliveries (
     request_id TEXT NOT NULL DEFAULT '',
     error TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (job_id, recipient_id)
-);
-
--- 客製模組（例：天氣訂閱）的發送範圍與給操作人員的授權（權限規格 3.2）。
-CREATE TABLE IF NOT EXISTS dispatch_scopes (
-    scope_id TEXT PRIMARY KEY,
-    channel_id TEXT NOT NULL,
-    organization_id TEXT NOT NULL,
-    name TEXT NOT NULL,
-    kind TEXT NOT NULL CHECK (kind IN ('department', 'project', 'group')),
-    department TEXT NOT NULL DEFAULT '',
-    recipients_json TEXT NOT NULL DEFAULT '[]',
-    active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1))
-);
-CREATE INDEX IF NOT EXISTS dispatch_scopes_channel_idx ON dispatch_scopes(channel_id);
-
-CREATE TABLE IF NOT EXISTS sender_grants (
-    channel_id TEXT NOT NULL,
-    email TEXT NOT NULL,
-    organization_id TEXT NOT NULL,
-    scopes_json TEXT NOT NULL DEFAULT '[]',
-    reports_json TEXT NOT NULL DEFAULT '[]',
-    messaging INTEGER NOT NULL DEFAULT 0 CHECK (messaging IN (0, 1)),
-    reports INTEGER NOT NULL DEFAULT 0 CHECK (reports IN (0, 1)),
-    weather INTEGER NOT NULL DEFAULT 0 CHECK (weather IN (0, 1)),
-    PRIMARY KEY (channel_id, email, organization_id)
 );
 
 CREATE TABLE IF NOT EXISTS chat_room_preferences (

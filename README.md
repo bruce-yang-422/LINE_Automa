@@ -1,6 +1,6 @@
 # LINE 自動化
 
-在一台 Windows 電腦上管理多個 LINE 官方帳號（OA）：接收 Webhook 並保存對話、聊天回覆、聯絡對象與標籤、案件與對話記事本、報告與訊息發送（立即或預約）。管理後台是網頁，透過 Cloudflare Tunnel 對外提供。
+在一台 Windows 電腦上管理多個 LINE 官方帳號（OA）：接收 Webhook 並保存對話、聊天回覆、聯絡對象與標籤、案件與對話記事本、訊息發送（立即或預約）。管理後台是網頁，透過 Cloudflare Tunnel 對外提供。
 
 功能規格與權限以 [docs/](docs/README.md) 為準；開發進度見 [AI_AGENT_TASKS.md](AI_AGENT_TASKS.md)。
 
@@ -14,9 +14,9 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Install-ControlPanel.p
 
 安裝程式建立本專案的 `.venv`（需要 Python 3.11 以上及 Python Launcher）、安裝 `line-oa-archive/requirements.txt`（`truststore`、`cryptography`、`Pillow`），建立桌面「LINE 自動化控制台」捷徑，並在 `line-oa-archive/.env` 不存在時從 `.env.example` 複製一份。
 
-### `.env`：只有部署設定
+### `.env`：部署設定
 
-`.env` 只放網站啟動前就需要的三項設定，格式為每行 `KEY=value`（不執行指令、不展開變數）：
+`.env` 放網站啟動前就需要的三項設定，格式為每行 `KEY=value`（不執行指令、不展開變數）：
 
 | 設定 | 說明 |
 | --- | --- |
@@ -24,13 +24,17 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Install-ControlPanel.p
 | `PUBLIC_BASE_URL` | 對外 HTTPS 網址（Tunnel），LINE Webhook 與公開圖片使用，例如 `https://reports.example.com` |
 | `ADMIN_PUBLIC_HOST` | 管理後台的對外網域，例如 `line-admin.example.com`；未設定時只能從本機控制台使用 |
 
-LINE OA 憑證、客製模組（天氣訂閱）與後台帳號一律在管理後台網頁設定並存入資料庫，**不寫在 `.env`**。修改 `.env` 後請重啟 LINE 服務。
+LINE 服務使用的 OA 憑證與後台帳號一律在管理後台網頁設定並存入資料庫，**不寫在 `.env`**。修改上表設定後請重啟 LINE 服務。
+
+選填：外部 Python 發送腳本用的 token，每個 OA 一行 `LINE_CHANNEL_ACCESS_TOKEN_<Bot basic ID 去掉 @ 後轉大寫>`（例如 `@123abcde` → `LINE_CHANNEL_ACCESS_TOKEN_123ABCDE`）。LINE 服務不讀取這些設定；真正的 token 只能填在 `.env`，`.env.example` 會提交到 Git，必須保持空白。見 [關鍵字訂閱](docs/功能規格/關鍵字訂閱.md)「6」。
+
+報告中心、舊版天氣訂閱、發送範圍與操作人員模組授權已於 2026-10-05 移除（訂閱改為下方「關鍵字訂閱」）。既有資料庫不需重建：舊資料表與欄位保留但不再使用，資料庫版本仍為 2。
 
 ## 首次設定
 
 1. 開啟桌面「LINE 自動化控制台」，按「啟動 LINE」。
 2. 按「開啟管理後台」。資料庫還沒有平台管理員時，本機頁面會直接顯示「建立第一位平台管理員」：輸入 Email 與顯示名稱，取得一次性設定連結（30 分鐘有效），本人以連結設定密碼。此頁在建立後不再出現；從對外網址只會看到「系統尚未完成初始設定」。
-3. 平台管理員在「組織」建立組織（類型可為公司、單位、社團、家庭、個人等）與該組織的管理員帳號，產生登入設定連結交給對方。客製模組（天氣訂閱）也在這裡為組織啟用，並填入天氣圖片的 PNG 路徑。
+3. 平台管理員在「組織」建立組織（類型可為公司、單位、社團、家庭、個人等）與該組織的管理員帳號，產生登入設定連結交給對方。
 4. 在「LINE OA」為組織新增 OA：輸入 LINE Developers → Messaging API 的 Channel secret 與 Channel access token（加密保存）。把畫面上的 Webhook URL（`https://<PUBLIC_BASE_URL>/webhook/<OA 識別碼>`）貼回 LINE Developers，按 Verify 並開啟 Use webhook。
 5. 組織管理員登入後，在「人員與權限」新增操作人員與協作人員、勾選可用 OA。
 
@@ -42,7 +46,7 @@ LINE OA 憑證、客製模組（天氣訂閱）與後台帳號一律在管理後
 
 | 畫面名稱 | 程式角色值 | 範圍 |
 | --- | --- | --- |
-| 平台管理員 | `platform_admin` | 只有「組織」與「LINE OA」兩個管理頁：建立組織與其管理員、設定 LINE OA 與客製模組；不進入 OA 營運畫面，必要時以「切換視角」唯讀查看，每次查看寫入該組織操作紀錄 |
+| 平台管理員 | `platform_admin` | 只有「組織」與「LINE OA」兩個管理頁：建立組織與其管理員、設定 LINE OA 與組織的訊息發送模組；不進入 OA 營運畫面，必要時以「切換視角」唯讀查看，每次查看寫入該組織操作紀錄 |
 | 管理員 | `org_admin` | 所屬組織的所有 OA 與人員 |
 | 操作人員 | `operator` | 被授權 OA 的對話、發送、案件與記事 |
 | 協作人員 | `collaborator` | 被授權 OA 的案件、記事與聯絡對象；不能傳送訊息 |
@@ -62,10 +66,11 @@ LINE OA 憑證、客製模組（天氣訂閱）與後台帳號一律在管理後
 
 ## 發送
 
-- 「建立發送」可選文字、報告 PNG 或圖片格式（單圖／多圖、圖文卡片、輪播卡片、圖文訊息），依勾選、標籤或自訂篩選條件選擇發送對象，立即或指定時間預約。預約保存內容快照，到期時重新檢查權限與對象；逾期超過 10 分鐘不補發。
+- 「建立發送」可選文字或圖片格式（單圖／多圖、圖文卡片、輪播卡片、圖文訊息），依勾選、標籤或自訂篩選條件選擇發送對象，立即或指定時間預約。預約保存內容快照，到期時重新檢查權限與對象；逾期超過 10 分鐘不補發。
 - 發送結果逐一記錄 LINE 已接受、失敗、狀態不明或取消；不自動重送失敗或狀態不明的訊息。
 - 圖片以隨機檔名快照放在 `line-oa-archive/published-images/`，透過 `PUBLIC_BASE_URL/images/...` 提供給 LINE；發送前會確認公開網址的內容與本機一致。
-- 天氣訂閱是客製模組：平台管理員為組織啟用並設定圖片路徑後，該組織 OA 的報告中心才出現「天氣報告」；個人可私訊 Bot「訂閱天氣」「取消訂閱」「我的訂閱」。外部程式負責產生天氣圖片，本平台不代為執行。
+- 外部腳本產生的圖片（營業數據、天氣報告等）放在 `line-oa-archive/media/<子資料夾>/`，以 `PUBLIC_BASE_URL/media/...` 公開提供，見 [公開圖片素材](docs/功能規格/公開圖片素材.md)。
+- 聯絡對象可傳關鍵字訂閱報告（主題、關鍵字與白名單／黑名單設定在 `line-oa-archive/subscribers/topics.json`），名冊輸出為 `subscribers/<主題>.json` 供 Python 發送腳本讀取，見 [關鍵字訂閱](docs/功能規格/關鍵字訂閱.md)。首次使用請將 `subscribers/topics.example.json` 複製為 `topics.json` 再修改；`topics.json` 與名冊含 LINE ID，不納入 Git。
 
 ## 介面樣式
 

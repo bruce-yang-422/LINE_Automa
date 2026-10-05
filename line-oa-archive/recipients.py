@@ -1,4 +1,4 @@
-"""Recipient discovery and idempotent self-service weather subscriptions."""
+"""Recipient discovery, contact profiles and tags."""
 
 import time
 import sqlite3
@@ -7,9 +7,6 @@ import re
 import threading
 import channels
 import limits
-
-COMMANDS = {"訂閱天氣", "取消訂閱", "取消訂閱天氣", "我的訂閱", "幫助"}
-
 
 def refresh_profile(recipient_id, *, force=False, now=None):
     """Fetch outside the write transaction. SQLite lease prevents concurrent lookups."""
@@ -60,6 +57,12 @@ class ProfileRefresher:
         self.stopping = threading.Event()
 
     def tick(self):
+        # 訂閱名冊定期重算，讓 topics.json 或聯絡對象標籤的變更不需重啟即生效；失敗不影響名稱查詢。
+        import subscriptions
+        try:
+            subscriptions.periodic_export()
+        except Exception:
+            pass
         # Names are fetched once per real OA; share copies are updated from the owner's result.
         rows = [r for r in channels._rows() if not r['shared']]
         for channel_id in [r['channel_id'] for r in rows if channels.operational(r)]:
@@ -114,10 +117,6 @@ def handle_event(conn, event, source_type, recipient_id):
                     VALUES (current_channel(),?, ?, ?, ?)
                     ON CONFLICT (channel_id,recipient_id) DO UPDATE SET
                     active=CASE WHEN excluded.event_at >= event_at THEN excluded.active ELSE active END,
-                    weather_subscribed=CASE WHEN excluded.event_at >= event_at AND excluded.active=0
-                                            THEN 0 ELSE weather_subscribed END,
-                    subscription_at=CASE WHEN excluded.event_at >= event_at AND excluded.active=0
-                                         THEN MAX(subscription_at, excluded.event_at) ELSE subscription_at END,
                     event_at=MAX(event_at, excluded.event_at),
                     last_seen=strftime('%Y-%m-%dT%H:%M:%fZ', 'now')""",
                  (recipient_id, source_type, active, stamp))
@@ -125,36 +124,10 @@ def handle_event(conn, event, source_type, recipient_id):
     if organization_id is not None:
         conn.execute('UPDATE recipients SET organization_id=? WHERE channel_id=current_channel() AND recipient_id=?', (organization_id, recipient_id))
     # Shared workspaces hold copies of assigned recipients; follow/block state comes only from the owner's webhook.
-    conn.execute(f"""UPDATE recipients SET active=o.active,event_at=o.event_at,last_seen=o.last_seen,
-                     weather_subscribed=CASE WHEN o.active=0 THEN 0 ELSE recipients.weather_subscribed END
+    conn.execute(f"""UPDATE recipients SET active=o.active,event_at=o.event_at,last_seen=o.last_seen
                      FROM (SELECT active,event_at,last_seen FROM recipients WHERE channel_id=current_channel() AND recipient_id=?) AS o
                      WHERE recipients.recipient_id=? AND recipients.channel_id IN ({channels.SHARE_SCOPES})""",
                  (recipient_id, recipient_id))
-    message = event.get("message") or {}
-    if event_type != "message" or message.get("type") != "text" or not message.get("id"):
-        return None
-    command = "".join(str(message.get("text", "")).split())
-    if command not in COMMANDS:
-        return None
-    message_id = str(message["id"])
-    if conn.execute('SELECT 1 FROM subscription_commands WHERE subscription_commands.channel_id=current_channel() AND message_id=?', (message_id,)).fetchone():
-        return None
-    if source_type != "user":
-        response = "群組天氣訂閱由管理員設定。若要個人接收，請私訊我「訂閱天氣」。"
-    else:
-        if command in {"訂閱天氣", "取消訂閱", "取消訂閱天氣"}:
-            conn.execute("""UPDATE recipients SET weather_subscribed=?, subscription_at=?
-                            WHERE recipients.channel_id=current_channel() AND recipient_id=? AND active=1 AND subscription_at <= ?""",
-                         (int(command == "訂閱天氣"), stamp, recipient_id, stamp))
-        subscribed = conn.execute('SELECT weather_subscribed FROM recipients WHERE recipients.channel_id=current_channel() AND recipient_id=?', (recipient_id,)).fetchone()[0]
-        if command == "幫助":
-            response = "可用指令：\n訂閱天氣：加入天氣通知名單\n取消訂閱：停止天氣通知\n我的訂閱：查看目前狀態\n目前由管理員發送報告，尚未設定每日自動排程。"
-        else:
-            response = ("目前已訂閱天氣通知。管理員發送報告時會通知你。\n可傳「取消訂閱」停止通知。"
-                        if subscribed else "目前未訂閱天氣通知。可傳「訂閱天氣」加入。")
-    conn.execute('INSERT INTO subscription_commands(channel_id,message_id,recipient_id,response) VALUES (current_channel(),?, ?, ?)', (message_id, recipient_id, response))
-    token = event.get("replyToken")
-    return (token, response) if token else None
 
 
 def list_tags(conn):
@@ -253,17 +226,6 @@ def bulk_update_tags(conn, recipient_ids, tag_ids, action="add"):
 
 
 
-def bulk_update_subscription(conn, recipient_ids, subscribed):
-    if not isinstance(recipient_ids, list) or type(subscribed) is not bool:
-        raise ValueError("參數格式不正確。")
-    stamp = int(time.time() * 1000)
-    for rid in recipient_ids:
-        row = conn.execute("SELECT active FROM recipients WHERE channel_id=current_channel() AND recipient_id=?", (rid,)).fetchone()
-        if row and (not subscribed or row[0]):
-            conn.execute("UPDATE recipients SET weather_subscribed=?, subscription_at=? WHERE channel_id=current_channel() AND recipient_id=?",
-                         (int(subscribed), stamp, rid))
-
-
 def list_contacts(conn):
     conn.row_factory = sqlite3.Row
     rows = conn.execute(
@@ -304,17 +266,15 @@ def list_contacts(conn):
     return result
 
 
-def update_contact(conn, recipient_id, custom_name, subscribed, notes=None, tag_ids=None,
+def update_contact(conn, recipient_id, custom_name, notes=None, tag_ids=None,
                    contact_type=None, phone=None, email=None, postal_code=None, address=None,
                    organization_name=None, job_title=None, work_phone=None, work_phone_ext=None, work_email=None,
                    **kwargs):
-    if not isinstance(custom_name, str) or len(custom_name) > 80 or type(subscribed) is not bool:
-        raise ValueError("自訂名稱最多 80 字，訂閱設定必須為勾選值。")
+    if not isinstance(custom_name, str) or len(custom_name) > 80:
+        raise ValueError("自訂名稱最多 80 字。")
     row = conn.execute('SELECT active FROM recipients WHERE recipients.channel_id=current_channel() AND recipient_id=?', (recipient_id,)).fetchone()
     if not row:
         raise ValueError("找不到聯絡對象，請先向 Bot 傳送訊息。")
-    if subscribed and not row[0]:
-        raise ValueError("已封鎖或已離開的聊天室不能加入訂閱。")
 
     if contact_type is not None:
         contact_type = str(contact_type).strip()
@@ -348,19 +308,12 @@ def update_contact(conn, recipient_id, custom_name, subscribed, notes=None, tag_
         work_phone_ext = ""
         work_email = ""
 
-    stamp = int(time.time() * 1000)
-    try:
-        conn.execute("""UPDATE recipients SET
-                        custom_name=?, notes=?, contact_type=?, phone=?, email=?, postal_code=?, address=?,
-                        organization_name=?, job_title=?, work_phone=?, work_phone_ext=?, work_email=?,
-                        weather_subscribed=?, subscription_at=?
-                        WHERE recipients.channel_id=current_channel() AND recipient_id=?""",
-                     (custom_name.strip(), notes_val, contact_type or "", phone, email, postal_code, address,
-                      organization_name, job_title, work_phone, work_phone_ext, work_email,
-                      int(subscribed), stamp, recipient_id))
-    except sqlite3.OperationalError:
-        conn.execute('UPDATE recipients SET custom_name=?, weather_subscribed=?, subscription_at=? WHERE recipients.channel_id=current_channel() AND recipient_id=?',
-                     (custom_name.strip(), int(subscribed), stamp, recipient_id))
+    conn.execute("""UPDATE recipients SET
+                    custom_name=?, notes=?, contact_type=?, phone=?, email=?, postal_code=?, address=?,
+                    organization_name=?, job_title=?, work_phone=?, work_phone_ext=?, work_email=?
+                    WHERE recipients.channel_id=current_channel() AND recipient_id=?""",
+                 (custom_name.strip(), notes_val, contact_type or "", phone, email, postal_code, address,
+                  organization_name, job_title, work_phone, work_phone_ext, work_email, recipient_id))
 
     if tag_ids is not None and isinstance(tag_ids, list):
         try:

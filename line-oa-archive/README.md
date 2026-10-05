@@ -19,7 +19,7 @@ LINE OA → https://<PUBLIC_BASE_URL>/webhook/<OA 識別碼>
 | `admin_server.py` | 管理 API、發送與排程執行、首次設定 |
 | `site_auth.py` | 站內帳號密碼、Session、一次性設定連結 |
 | `channels.py` | LINE OA 登記（憑證加密）、共用與移轉、OA 範圍 |
-| `reports.py` | 組織、帳號、權限、報告來源、客製模組 |
+| `reports.py` | 組織、帳號、成員資格、權限與操作紀錄 |
 | `recipients.py`、`chat.py`、`chat_notes.py`、`cases.py`、`template_packs.py`、`composer.py` | 聯絡對象、聊天、記事本、案件、範本包、訊息編輯 |
 | `limits.py` | 所有數量上限的唯一定義處 |
 | `create_admin.py` | 無桌面主機的平台管理員建立與緊急復原（互動式，不接受密碼參數） |

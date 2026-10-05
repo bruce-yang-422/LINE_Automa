@@ -37,7 +37,7 @@ class RecipientTests(unittest.TestCase):
         register_oa()
         use_oa(self)
 
-    def event(self, rid=USER, message="訂閱天氣", stamp=1000, event_type="message", message_id=None):
+    def event(self, rid=USER, message="你好", stamp=1000, event_type="message", message_id=None):
         kind = "user" if rid.startswith("U") else "group"
         return {"type": event_type, "timestamp": stamp, "replyToken": "fake-reply",
                 "source": {"type": kind, "userId" if kind == "user" else "groupId": rid},
@@ -47,37 +47,26 @@ class RecipientTests(unittest.TestCase):
         with app.database_connection() as conn:
             return next(r for r in recipients.list_contacts(conn) if r["recipient_id"] == rid)
 
-    def test_subscribe_cancel_redelivery_and_out_of_order_commands(self):
-        first = self.event(message_id="first")
-        self.assertEqual(len(app.save_events([first])), 1)
-        self.assertTrue(self.contact()["weather_subscribed"])
-        self.assertEqual(app.save_events([first]), [])
-        app.save_events([self.event(message="取消訂閱", stamp=3000)])
-        app.save_events([self.event(stamp=2000)])
-        self.assertFalse(self.contact()["weather_subscribed"])
-        reply = app.save_events([self.event(message="我的訂閱", stamp=4000)])[0][1]
-        self.assertIn("未訂閱", reply)
+    def test_former_commands_are_stored_as_plain_messages(self):
+        self.assertEqual(app.save_events([self.event(message="訂閱天氣")]), [])  # 沒有 topics.json 時只是一般訊息
+        self.assertTrue(self.contact()["active"])
+        with app.database_connection() as conn:
+            self.assertEqual(conn.execute("SELECT text_content FROM line_messages").fetchone()[0], "訂閱天氣")
 
-    def test_groups_require_admin_and_unfollow_deactivates(self):
-        response = app.save_events([self.event(GROUP)])[0][1]
-        self.assertIn("管理員", response)
-        self.assertFalse(self.contact(GROUP)["weather_subscribed"])
+    def test_unfollow_deactivates_and_ignores_out_of_order_events(self):
         app.save_events([self.event()])
         app.save_events([self.event(event_type="unfollow", stamp=3000)])
         app.save_events([self.event(stamp=2000)])
         self.assertFalse(self.contact()["active"])
-        self.assertFalse(self.contact()["weather_subscribed"])
         app.save_events([self.event(event_type="follow", stamp=4000)])
         self.assertTrue(self.contact()["active"])
-        self.assertFalse(self.contact()["weather_subscribed"])
 
-    def test_restart_preserves_subscription_and_does_not_restore_deleted_contact(self):
+    def test_restart_preserves_custom_name_and_does_not_restore_deleted_contact(self):
         app.save_events([self.event()])
         with app.database_connection() as conn:
-            recipients.update_contact(conn, USER, "測試同事", True)
+            recipients.update_contact(conn, USER, "測試同事")
         app.initialize_database()
         self.assertEqual(self.contact()["custom_name"], "測試同事")
-        self.assertTrue(self.contact()["weather_subscribed"])
         with app.database_connection() as conn:
             conn.execute("DELETE FROM recipients")
         app.initialize_database()
@@ -105,18 +94,17 @@ class RecipientTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 admin_server.select_contacts(conn, "selected", ["U" + "9" * 32])
 
-    def test_subscriber_cancel_is_checked_before_each_delivery(self):
+    def test_blocked_contact_is_checked_before_each_delivery(self):
         app.save_events([self.event(), self.event(USER2)])
         dispatcher = admin_server.Dispatcher()
         self.addCleanup(dispatcher.close)
         job_id = str(uuid4())
         with app.database_connection() as conn:
-            conn.execute("INSERT INTO send_jobs (channel_id,job_id,audience,image_path,image_url) VALUES (?,?,'subscribers','test.png','https://example.test/image.png')", (CHANNEL, job_id))
+            conn.execute("INSERT INTO send_jobs (channel_id,job_id,audience,image_path,image_url) VALUES (?,?,'selected','test.png','https://example.test/image.png')", (CHANNEL, job_id))
             conn.executemany("INSERT INTO send_deliveries (job_id,recipient_id,label,retry_key) VALUES (?,?,?,?)",
                              [(job_id, rid, rid, str(uuid4())) for rid in (USER, USER2)])
         def fake_send(token, rid, url, retry_key):
-            with app.database_connection() as conn:
-                recipients.update_contact(conn, USER2, "", False)
+            app.save_events([self.event(USER2, event_type="unfollow", stamp=9000)])
             return "request-id"
         with patch.object(admin_server, "send_push", side_effect=fake_send) as send:
             dispatcher.run(job_id)

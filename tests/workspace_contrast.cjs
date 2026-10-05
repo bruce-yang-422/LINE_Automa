@@ -58,7 +58,7 @@ async function contrast(page,label){
     await page.setViewportSize({width:1440,height:1000});
     await page.goto(`http://127.0.0.1:${access.port}/#${access.token}`);
     await page.getByRole('heading',{name:'今天的工作，一目了然'}).waitFor();
-    for(const view of ['overview','reports','send','schedule','contacts','subscriptions','history','organizations','settings']){
+    for(const view of ['overview','send','schedule','contacts','history','organizations','settings']){
       await page.locator(`nav [data-view="${view}"]`).click();
       results.push(await contrast(page,view));
       const primary=page.locator('.btn.primary:visible').first();
@@ -67,12 +67,6 @@ async function contrast(page,label){
         await primary.focus();results.push(await contrast(page,view+' focus'));await primary.blur();
       }
     }
-    await page.locator('nav [data-view="reports"]').click();
-    await page.locator('[data-action="report-detail"]').first().click();
-    results.push(await contrast(page,'report inspector'));
-    await page.screenshot({path:path.join(dir,`reports-${theme}-desktop.png`),fullPage:true,animations:'disabled'});
-    await page.locator('[data-action="report-layout"][data-id="grid"]').click();
-    results.push(await contrast(page,'report cards'));
     await page.locator('nav [data-view="contacts"]').click();
     await page.locator('[data-action="contact-detail"]').first().click();
     results.push(await contrast(page,'recipient inspector'));
@@ -93,17 +87,17 @@ async function contrast(page,label){
     await page.keyboard.press('Escape');
     await page.setViewportSize({width:1440,height:1000});
     await page.locator('nav [data-view="organizations"]').click();
-    for(const tab of ['scopes','modules','people']){
+    for(const tab of ['modules','people']){
       await page.locator(`[data-action="mg-tab"][data-id="${tab}"]`).click();results.push(await contrast(page,'organization '+tab));
     }
     await page.setViewportSize({width:390,height:844});results.push(await contrast(page,'mobile organization'));
     assert(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth));
     await page.setViewportSize({width:1440,height:1000});
-    for(const [view,action] of [['reports','new-report'],['contacts','edit-contact'],['settings','new-account'],['organizations','new-organization'],['organizations','new-membership'],['organizations','new-dispatch-scope'],['organizations','edit-sender-grant']]){
+    for(const [view,action] of [['contacts','edit-contact'],['settings','new-account'],['organizations','new-organization'],['organizations','new-membership']]){
       await page.locator(`nav [data-view="${view}"]`).click();
       if(view==='organizations'){
         await page.locator('[data-action="mg-org"][data-id="示範公司"]').click();
-        await page.locator(`[data-action="mg-tab"][data-id="${action==='new-dispatch-scope'?'scopes':'people'}"]`).click();
+        await page.locator('[data-action="mg-tab"][data-id="people"]').click();
       }
       await page.locator(`[data-action="${action}"]`).first().click();
       results.push(await contrast(page,action));await page.locator('#modal-close').click();
@@ -128,8 +122,8 @@ async function contrast(page,label){
     await page.screenshot({path:path.join(dir,`palette-${theme}-mobile.png`),fullPage:true,animations:'disabled'});
     await page.locator('#menu').click();results.push(await contrast(page,'mobile navigation'));
     await page.locator('nav [data-view="overview"]').click();
-    await page.locator('#menu').click();await page.locator('nav [data-view="reports"]').click();
-    await page.locator('[data-action="new-report"]').click();results.push(await contrast(page,'mobile bottom sheet'));
+    await page.locator('#menu').click();await page.locator('nav [data-view="contacts"]').click();
+    await page.locator('[data-action="edit-contact"]').first().click();results.push(await contrast(page,'mobile bottom sheet'));
     await page.locator('#modal-close').click();
     await page.locator('#menu').click();await page.locator('nav [data-view="overview"]').click();
     await page.setViewportSize({width:1440,height:1000});

@@ -87,14 +87,13 @@ class ChannelTests(unittest.TestCase):
             return result.status, json.loads(result.read())
         finally:conn.close()
 
-    def test_identical_user_and_message_ids_are_separate_and_subscriptions_independent(self):
-        self.event(self.a, '訂閱天氣');self.event(self.b, 'hello')
-        for channel, subscribed, text in [(self.a, 1, '訂閱天氣'), (self.b, 0, 'hello')]:
+    def test_identical_user_and_message_ids_are_separate(self):
+        self.event(self.a, 'hi A');self.event(self.b, 'hello')
+        for channel, text in [(self.a, 'hi A'), (self.b, 'hello')]:
             with channels.use(channel), app.database_connection() as conn:
                 rows = recipients.list_contacts(conn)
                 self.assertEqual(len(rows), 1)
                 self.assertEqual(rows[0]['organization_id'], 'A')
-                self.assertEqual(rows[0]['weather_subscribed'], subscribed)
                 self.assertEqual(conn.execute('SELECT text_content FROM line_messages WHERE channel_id=current_channel()').fetchone()[0], text)
         with channels.use(self.a):
             app.save_events([{'type': 'unsend', 'source': {'type':'user','userId':USER}, 'unsend': {'messageId':'same-message'}}])
@@ -127,18 +126,12 @@ class ChannelTests(unittest.TestCase):
         self.assertEqual(channels.get(self.a)['token_cipher'], row['token_cipher'])
         self.assertNotEqual(channels.get(self.a)['secret_cipher'], 'a'*32)
 
-    def test_private_assets_reports_grants_and_cancellation_do_not_cross_oa(self):
+    def test_private_assets_do_not_cross_oa(self):
         self.event(self.a);self.event(self.b)
         with channels.use(self.a):
-            asset = composer.upload({'data':base64.b64encode(PNG).decode(), 'name':'report.png','organization_id':'A'},self.admin)
-            report = reports.save({'asset_id':asset['asset_id'],'title':'A report','organization_id':'A','scope':'company','category':'company'},ADMIN)
-            scope = reports.save_dispatch_scope({'organization_id':'A','name':'Team','kind':'department','department':'Sales','active':True,'recipient_ids':[]},ADMIN)
-            reports.save_grant({'email':'sender@example.test','organization_id':'A','scope_ids':[scope['scope_id']], 'report_ids':[report['report_id']], 'messaging':True,'reports':True,'weather':False},ADMIN)
+            asset = composer.upload({'data':base64.b64encode(PNG).decode(), 'name':'image.png','organization_id':'A'},self.admin)
         with channels.use(self.b):
-            self.assertEqual(reports.sources(), [])
             with self.assertRaises(ValueError):composer.asset(asset['asset_id'],self.admin)
-            with self.assertRaises(ValueError):reports.remove(report['report_id'],ADMIN)
-            self.assertFalse(reports.grant(reports.account('sender@example.test'))['messaging'])
             with self.assertRaises(ValueError):
                 composer.upload({'data':base64.b64encode(PNG).decode(),'organization_id':'B'},self.admin)
 
@@ -300,15 +293,13 @@ class ChannelTests(unittest.TestCase):
     def test_transfer_previews_blocks_pending_jobs_and_moves_owner_data(self):
         self.event(self.a)
         with channels.use(self.a):
-            scope=reports.save_dispatch_scope({'organization_id':'A','name':'Team','kind':'department','department':'Sales','active':True,'recipient_ids':[]},ADMIN)
-            reports.save_grant({'email':'sender@example.test','organization_id':'A','scope_ids':[scope['scope_id']],'report_ids':[],'messaging':True,'reports':False,'weather':False},ADMIN)
             with app.database_connection() as conn:conn.execute("UPDATE recipients SET department='Sales' WHERE channel_id=current_channel()")
             dispatcher=admin_server.Dispatcher();self.addCleanup(dispatcher.close)
             job=dispatcher.submit({'job_id':str(uuid4()),'message_text':'later','audience':'selected','ids':[USER],
                                    'scheduled_at':(datetime.now(timezone.utc)+timedelta(minutes=5)).isoformat()},actor=ADMIN)
         target={'channel_id':self.a,'workspace_id':'o:C'}
         preview=channels.transfer(target,self.admin)
-        self.assertEqual((preview['transferred'],preview['recipients'],preview['pending_jobs'],preview['sender_grants']),(False,1,1,1))
+        self.assertEqual((preview['transferred'],preview['recipients'],preview['pending_jobs']),(False,1,1))
         self.assertEqual(channels.get(self.a)['org_id'],'A')
         with self.assertRaises(ValueError):channels.transfer({**target,'confirm':True},self.admin)
         with channels.use(self.a):dispatcher.cancel(job['job_id'],ADMIN)
@@ -318,8 +309,6 @@ class ChannelTests(unittest.TestCase):
         with self.assertRaises(ValueError):channels.authorize(self.a,reports.account('boss@example.test'))
         with channels.use(self.a),app.database_connection() as conn:
             self.assertEqual(conn.execute('SELECT organization_id,department FROM recipients WHERE channel_id=current_channel()').fetchone(),('C',''))
-            self.assertEqual(conn.execute('SELECT count(*) FROM dispatch_scopes WHERE channel_id=current_channel()').fetchone()[0],0)
-            self.assertEqual(conn.execute('SELECT count(*) FROM sender_grants WHERE channel_id=current_channel()').fetchone()[0],0)
         with app.database_connection() as conn:
             self.assertTrue(conn.execute("SELECT 1 FROM audit_events WHERE action='oa.transfer'").fetchone())
 

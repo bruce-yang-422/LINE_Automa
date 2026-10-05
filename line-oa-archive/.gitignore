@@ -1,9 +1,14 @@
+# 部署設定：只提交範例檔
 .env
 .env.*
 !.env.example
+
+# Python 環境與快取
 .venv/
 __pycache__/
 *.pyc
+
+# 執行資料：資料庫、備份、憑證金鑰與發送快照
 data/
 backups/
 instance/
@@ -11,3 +16,11 @@ published-images/
 *.db
 *.db-wal
 *.db-shm
+
+# 公開圖片素材：外部腳本產生的圖片不進 Git，只保留說明
+media/*
+!media/README.md
+
+# 關鍵字訂閱：實際設定與名冊含 LINE ID，只提交範例設定
+subscribers/*
+!subscribers/topics.example.json

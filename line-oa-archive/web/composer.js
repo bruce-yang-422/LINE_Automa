@@ -373,31 +373,25 @@ document.addEventListener('input',event=>{const el=event.target;
   if(el.dataset.card!==undefined){messageDraft.items[Number(el.dataset.card)][el.dataset.prop]=el.value;refreshComposerPreview();}
   if(el.dataset.area!==undefined){messageDraft.areas[Number(el.dataset.area)].url=el.value;refreshComposerPreview();}
   if(el.id==='message-draft')state.textDraft=el.value;
-  if(el.form?.id==='report-form'&&el.name==='source_path'&&el.value){el.form.elements.asset_id.value='';$('report-upload-preview').innerHTML='';}
 });
 document.addEventListener('change',async event=>{
   const el=event.target;
   try{
     if(el.id==='asset-company'){messageDraft.organization_id=el.value;messageDraft.items=[];refreshComposer();notice('已切換素材歸屬，請重新選擇圖片。');}
-    if(el.form?.id==='report-form'&&el.name==='organization_id'){el.form.elements.asset_id.value='';el.form.querySelector('#report-upload-preview').innerHTML='';}
-    if(!['composition-files','report-file'].includes(el.id))return;
+    if(el.id!=='composition-files')return;
     if(state.session.preview)throw new Error('視角預覽僅供檢視，請返回原帳號上傳。');
     const files=[...el.files];if(!files.length)return;
-    const form=el.form;
-    if(form&&!form.elements.organization_id.value)throw new Error('請先選擇報告所屬組織，再選擇圖片。');
     const limit={images:5,card:1,carousel:12,imagemap:1}[messageDraft.format];
-    if(!form&&messageDraft.items.length+files.length>limit)throw new Error(`此格式最多 ${limit} 張；請先移除不需要的圖片。`);
+    if(messageDraft.items.length+files.length>limit)throw new Error(`此格式最多 ${limit} 張；請先移除不需要的圖片。`);
     state.busy=true;el.disabled=true;
-    const submit=form?.querySelector('[type="submit"]');if(submit)submit.disabled=true;
-    const companySelect=form?.elements.organization_id||$('asset-company');if(companySelect)companySelect.disabled=true;
-    const status=form?$('report-upload-preview'):$('upload-status');status.textContent='正在上傳並處理圖片…';
+    const companySelect=$('asset-company');if(companySelect)companySelect.disabled=true;
+    const status=$('upload-status');status.textContent='正在上傳並處理圖片…';
     try{
       for(const file of files){
-        const asset=await uploadFile(file,form?form.elements.organization_id.value:messageDraft.organization_id);
-        if(form){form.elements.asset_id.value=asset.asset_id;form.elements.source_path.value='';status.innerHTML=`<img class="upload-thumbnail" src="${asset.preview}" alt="已選圖片"><p>${esc(asset.name)} · ${asset.width} × ${asset.height} · ${Math.ceil(asset.size/1024)} KB</p>`;}
-        else{messageDraft.items.push({...asset,title:file.name.replace(/\.[^.]+$/,'').slice(0,80),text:'',label:'開啟連結',url:''});refreshComposer();status.textContent=`已選擇 ${messageDraft.items.length} 張圖片。`;notice('');}
+        const asset=await uploadFile(file,messageDraft.organization_id);
+        messageDraft.items.push({...asset,title:file.name.replace(/\.[^.]+$/,'').slice(0,80),text:'',label:'開啟連結',url:''});refreshComposer();status.textContent=`已選擇 ${messageDraft.items.length} 張圖片。`;notice('');
       }
-    }finally{state.busy=false;el.disabled=false;el.value='';if(submit)submit.disabled=false;if(companySelect)companySelect.disabled=false;}
+    }finally{state.busy=false;el.disabled=false;el.value='';if(companySelect)companySelect.disabled=false;}
   }catch(error){el.value='';if($('modal').open){$('modal-error').textContent=error.message;$('modal-error').hidden=false;}else notice(error.message,true);}
 });
 

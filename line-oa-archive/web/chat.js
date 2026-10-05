@@ -428,12 +428,14 @@ function renderMessageBubbles() {
 
 function renderChatInfoContent(r) {
   const tags = r.tags || [];
-  const tagsHtml = tags.length ? tags.map(t => tagBadge(t)).join(" ") : '<span class="chat-contact-untagged">未分組</span>';
-  const primary = label(r);
-  const hasCustom = Boolean(r.custom_name);
+  const tagsHtml = tags.length ? tags.map(t => tagBadge(t)).join(" ") : '<span class="chat-contact-untagged">無標籤</span>';
+  const primary = String(r.custom_name || "").trim() || r.display_name || label(r);
+  const hasCustom = Boolean(String(r.custom_name || "").trim());
   const showLineName = hasCustom && r.display_name && r.display_name !== primary;
-  const truncatedId = r.recipient_id ? (r.recipient_id.length > 12 ? r.recipient_id.slice(0, 4) + '...' + r.recipient_id.slice(-4) : r.recipient_id) : '';
   const isGroup = r.kind !== "user";
+  const contactPhone = String(r.phone || r.work_phone || "").trim();
+  const contactEmail = String(r.email || r.work_email || "").trim();
+  const contactNotes = String(r.notes || "").trim();
   const initial = primary.slice(0, 1).toUpperCase();
   const avatarHtml = `<span class="avatar chat-profile-avatar ${isGroup ? "group" : ""}"><span class="avatar-text">${esc(initial)}</span>${r.picture_url ? `<img src="/api/chat/avatar/${encodeURIComponent(r.recipient_id)}" class="avatar-img" alt="${esc(primary)}">` : ''}</span>`;
 
@@ -447,22 +449,21 @@ function renderChatInfoContent(r) {
       <div class="chat-profile-head">
         ${avatarHtml}
         <div class="chat-profile-meta">
-          <div class="chat-profile-title-row"><div class="chat-profile-name" title="${esc(primary)}">${esc(primary)}</div>${contactTypeBadge(r.contact_type)}</div>
+          <div class="chat-profile-title-row"><div class="chat-profile-name" aria-label="${hasCustom ? '備註名稱（自訂名稱）' : 'LINE 顯示名稱（唯讀）'}" title="${esc(primary)}">${esc(primary)}</div>${contactTypeBadge(r.contact_type)}</div>
           <div class="chat-profile-sub">
             <span class="muted">${isGroup ? "LINE 群組" : "個人聊天室"}</span>
             ${showLineName ? `<span class="muted">· LINE: ${esc(r.display_name)}</span>` : ''}
-            ${truncatedId ? `<span class="line-id-chip" title="${esc(r.recipient_id)}">${esc(truncatedId)}</span>` : ''}
           </div>
         </div>
         ${manager() ? `<button type="button" class="btn small text chat-profile-edit-btn" data-action="edit-contact" data-id="${esc(r.recipient_id)}" title="編輯聯絡資訊">${icon("edit")} 編輯資料</button>` : ''}
       </div>
 
-      <div class="chat-profile-tags"><span class="muted">標籤</span><div class="contact-tags">${tagsHtml}</div>${manager() ? `<button type="button" class="btn small text" data-action="edit-contact" data-id="${esc(r.recipient_id)}" aria-label="編輯聯絡人標籤">${icon("plus")} 編輯標籤</button>` : ''}</div>
-      ${(r.phone || r.email) ? `<div class="chat-profile-channels">
-        ${r.phone ? `<div>${icon("phone")}<span class="muted">手機</span><a href="tel:${esc(r.phone)}">${esc(r.phone)}</a></div>` : ''}
-        ${r.email ? `<div>${icon("mail")}<span class="muted">信箱</span><a href="mailto:${esc(r.email)}">${esc(r.email)}</a></div>` : ''}
+      <div class="chat-profile-tags"><span class="muted">分類標籤</span><div class="contact-tags">${tagsHtml}</div>${manager() ? `<button type="button" class="btn small text" data-action="edit-contact" data-id="${esc(r.recipient_id)}" aria-label="編輯聯絡人標籤">${icon("plus")} 編輯標籤</button>` : ''}</div>
+      ${(contactPhone || contactEmail) ? `<div class="chat-profile-channels">
+        ${contactPhone ? `<div>${icon("phone")}<span class="muted">聯絡電話</span><a href="tel:${esc(contactPhone)}">${esc(contactPhone)}${!r.phone && r.work_phone_ext ? ` 分機 ${esc(r.work_phone_ext)}` : ''}</a></div>` : ''}
+        ${contactEmail ? `<div>${icon("mail")}<span class="muted">Email</span><a href="mailto:${esc(contactEmail)}">${esc(contactEmail)}</a></div>` : ''}
       </div>` : ''}
-      <div class="chat-contact-note" aria-label="聯絡人備註"><strong>${icon("file")} 備註</strong><div>${r.notes ? esc(r.notes) : '<span class="muted">尚未填寫備註</span>'}</div></div>
+      ${contactNotes ? `<div class="chat-contact-note" aria-label="聯絡人備註"><strong>${icon("file")} 備註</strong><div>${esc(contactNotes)}</div></div>` : ''}
       ${(r.organization_name || r.job_title) ? `<details class="chat-profile-details"><summary>組織與職稱</summary><div class="chat-info-kv-grid">
         ${r.organization_name ? `
         <div class="chat-info-k">對方組織</div>

@@ -74,14 +74,6 @@ async function contrast(page,label){
   await page.waitForFunction(()=>document.querySelector('#line-oa-select option:checked')?.textContent==='個人小幫手');
   await page.locator('nav [data-view="contacts"]').click();
   assert.equal(await page.locator('.person strong').count(),0);
-  // A personal report can use the UI file picker without an organization ID.
-  await page.locator('nav [data-view="reports"]').click();
-  await page.locator('[data-action="new-report"]').click();
-  await page.locator('#report-form [name="title"]').fill('個人報告');
-  await page.locator('#report-file').setInputFiles(access.sample_image);
-  await page.locator('#report-upload-preview img').waitFor();
-  await page.getByRole('button',{name:'儲存報告來源',exact:true}).click();
-  await page.getByRole('heading',{name:'個人報告',exact:true}).waitFor();
   await page.locator('nav [data-view="channels"]').click();
   await page.screenshot({path:path.join(dir,'oa-desktop.png'),fullPage:true});
   for(const theme of ['light']){

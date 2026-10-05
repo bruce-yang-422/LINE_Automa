@@ -3,7 +3,6 @@
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone, timedelta
 import hmac
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -37,15 +36,13 @@ def contact_label(row):
 
 def select_contacts(conn, audience, ids):
     contacts = recipients.list_contacts(conn)
-    if audience == "subscribers":
-        selected = [r for r in contacts if r["active"] and r["weather_subscribed"]]
-    elif audience == "selected" and isinstance(ids, list) and all(isinstance(i, str) for i in ids):
+    if audience == "selected" and isinstance(ids, list) and all(isinstance(i, str) for i in ids):
         wanted = set(ids)
         selected = [r for r in contacts if r["active"] and r["recipient_id"] in wanted]
         if len(selected) != len(wanted):
             raise ValueError("部分發送對象已停用或不存在，請重新整理名單。")
     else:
-        raise ValueError("請選擇發送對象或天氣訂閱名單。")
+        raise ValueError("請選擇發送對象。")
     if not selected or len(selected) > 500:
         raise ValueError("請選擇 1 至 500 個有效發送對象。")
     if any(not re.fullmatch(r"[UCR][0-9a-fA-F]{32}", r["recipient_id"]) for r in selected):
@@ -173,38 +170,25 @@ class Dispatcher:
                     raise ValueError(f"此 LINE OA 同時預約中的訊息已達上限（{limits.SCHEDULED_MESSAGES_PER_OA} 則），請等待送出或取消部分預約。")
             message_text = payload.get("message_text", "")
             composition = payload.get('composition')
-            if 'composition' in payload and (not isinstance(composition, dict) or message_text or payload.get('report_id') or payload.get('image_path') or payload.get('audience') != 'selected'):
-                raise ValueError('自訂訊息請選擇發送對象，且不能混合文字或報告來源。')
+            if 'composition' in payload and (not isinstance(composition, dict) or message_text or payload.get('image_path') or payload.get('audience') != 'selected'):
+                raise ValueError('自訂訊息請選擇發送對象，且不能混合文字。')
             if not isinstance(message_text, str) or ("message_text" in payload and not message_text.strip()) or len(message_text.encode('utf-16-le')) // 2 > limits.TEXT_MESSAGE_MAX:
                 raise ValueError(f"文字訊息請填入 1 至 {limits.TEXT_MESSAGE_MAX} 字（表情符號可能佔兩字）。")
-            if message_text and (payload.get("report_id") or payload.get("image_path") or payload.get("audience") != "selected"):
-                raise ValueError("文字訊息請使用手動選擇對象，且不能混合報告來源。")
+            if message_text and (payload.get("image_path") or payload.get("audience") != "selected"):
+                raise ValueError("文字訊息請使用手動選擇對象。")
             if not channels.access_token():
                 raise ValueError("請先設定 LINE OA 憑證。")
             audience = payload.get("audience")
             if user['role'] != 'platform_admin' and (audience != 'selected' or payload.get('image_path')):
-                raise ValueError('管理員請選擇已授權報告或文字訊息，以及本組織的對象。')
+                raise ValueError('請選擇文字或圖片訊息，以及本組織的對象。')
             with app.database_connection() as conn:
                 selected = select_contacts(conn, audience, payload.get("ids"))
             if any(not reports.allowed_contact(user, row) for row in selected):
                 raise ValueError('發送對象不在所屬組織範圍。')
-            report_id, report_title = "", "手動圖片"
+            report_title = "手動圖片"
             messages = []
             prepared = composer.prepare(composition, user, selected) if composition is not None else None
-            if payload.get("report_id"):
-                candidate = reports.find(payload['report_id'])
-                if not candidate or not reports.can_view(candidate, user):
-                    raise ValueError('找不到可使用的報告。')
-                if audience == "subscribers" and (not isinstance(payload.get("ids"), list)
-                        or set(payload["ids"]) != {row["recipient_id"] for row in selected}):
-                    raise ValueError("天氣訂閱名單已變更，請重新整理並確認發送對象。")
-                report, item = reports.prepare(payload["report_id"], payload.get("report_version"), payload.get("allow_stale"))
-                if audience == "subscribers" and report["category"] != "weather":
-                    raise ValueError("天氣訂閱名單只能用於天氣報告，其他報表請自行選擇對象。")
-                source = Path(report["source_path"])
-                report_id, report_title = report["report_id"], report["title"]
-                reports.validate_targets(report, selected)
-            elif not message_text and prepared is None:
+            if not message_text and prepared is None:
                 source = Path(str(payload.get("image_path", "")))
             if prepared is not None:
                 messages = composer.build(prepared, publish_image, verify_public_image)
@@ -213,16 +197,14 @@ class Dispatcher:
                 source, url, report_title = "", "", "文字訊息：" + message_text.strip()[:32]
             else:
                 url, content = publish_image(source, app.public_base_url())
-                if report_id and hashlib.sha256(content).hexdigest() != payload["report_version"]:
-                    raise ValueError("報告在準備時已變更，請重新預覽；尚未發送。")
                 verify_public_image(url, content)
             organization_ids = {row['organization_id'] for row in selected}
-            organization_id = user['organization_id'] if user['role'] != 'platform_admin' else (report['organization_id'] if report_id else (next(iter(organization_ids)) if message_text and len(organization_ids) == 1 else ''))
+            organization_id = user['organization_id'] if user['role'] != 'platform_admin' else (next(iter(organization_ids)) if message_text and len(organization_ids) == 1 else '')
             if prepared and user['role'] == 'platform_admin':
                 organization_id = next((item['asset']['organization_id'] for item in prepared['items'] if item['asset']['organization_id']), '')
             with app.database_connection() as conn:
-                conn.execute('INSERT INTO send_jobs (channel_id,job_id,audience,image_path,image_url,actor,report_title,report_id,scheduled_at,message_text,status,organization_id,messages_json) VALUES (current_channel(),?,?,?,?,?,?,?,?,?,?,?,?)',
-                             (job_id, audience, str(source), url, actor, report_title, report_id, scheduled_at, message_text, 'scheduled' if scheduled_at else 'queued', organization_id, json.dumps(messages, ensure_ascii=False)))
+                conn.execute('INSERT INTO send_jobs (channel_id,job_id,audience,image_path,image_url,actor,report_title,scheduled_at,message_text,status,organization_id,messages_json) VALUES (current_channel(),?,?,?,?,?,?,?,?,?,?,?)',
+                             (job_id, audience, str(source), url, actor, report_title, scheduled_at, message_text, 'scheduled' if scheduled_at else 'queued', organization_id, json.dumps(messages, ensure_ascii=False)))
                 conn.executemany("INSERT INTO send_deliveries (job_id,recipient_id,label,retry_key) VALUES (?,?,?,?)",
                                  [(job_id, r["recipient_id"], contact_label(r), str(uuid4())) for r in selected])
                 reports.audit(conn, actor, "send.create", job_id, f"{report_title} · {len(selected)} 個聊天室", organization_id)
@@ -258,33 +240,24 @@ class Dispatcher:
                 recipient_id = row["recipient_id"]
                 with app.database_connection() as conn:
                     conn.row_factory = sqlite3.Row
-                    current = conn.execute('SELECT active,weather_subscribed FROM recipients WHERE recipients.channel_id=current_channel() AND recipient_id=?', (recipient_id,)).fetchone()
-                    skip = (self.closing.is_set() or not current or not current[0] or
-                            (job["audience"] == "subscribers" and not current[1]))
+                    current = conn.execute('SELECT active FROM recipients WHERE recipients.channel_id=current_channel() AND recipient_id=?', (recipient_id,)).fetchone()
+                    skip = self.closing.is_set() or not current or not current[0]
                     if job['organization_id']:
                         org=next((o for o in reports.organizations() if o['org_id']==job['organization_id']),None)
-                        if not org or not org['active'] or not org['messaging_enabled'] or (job['report_id'] and job['report_id']!='weather' and not org['reports_enabled']):
+                        if not org or not org['active'] or not org['messaging_enabled']:
                             skip=True
                         if job['messages_json'] != '[]':
                             contact = conn.execute('SELECT organization_id FROM recipients WHERE recipients.channel_id=current_channel() AND recipient_id=?', (recipient_id,)).fetchone()
                             if not contact or contact[0] != job['organization_id']:
                                 skip = True
-                    if job["report_id"]:
-                        source = reports.find(job["report_id"])
-                        try:
-                            if not source:
-                                raise ValueError("Report removed")
-                            reports.validate_targets(source, select_contacts(conn, "selected", [recipient_id]))
-                        except ValueError:
-                            skip = True
                     if job["actor"] and job["actor"] != "本機管理員":
                         actor = reports.actor_user(job["actor"],job['organization_id'])
                         if not reports.can_send(actor) or not reports.module_enabled(actor,'messaging'):
                             skip = True
                         elif actor['role'] != 'platform_admin':
                             contact = conn.execute('SELECT * FROM recipients WHERE recipients.channel_id=current_channel() AND recipient_id=?', (recipient_id,)).fetchone()
-                            if (not reports.same_organization(actor, job['organization_id']) or not contact or not reports.allowed_contact(actor, dict(contact))
-                                    or (job['report_id'] and (not source or not reports.can_view(source, actor)))):
+                            if (not reports.same_organization(actor, job['organization_id']) or not contact
+                                    or not reports.allowed_contact(actor, dict(contact))):
                                 skip = True
                     conn.execute("UPDATE send_deliveries SET status=? WHERE job_id=? AND recipient_id=?",
                                  ("cancelled" if skip else "sending", job_id, recipient_id))
@@ -464,10 +437,7 @@ class AdminHandler(BaseHTTPRequestHandler):
     def scoped_contacts(self):
         with app.database_connection() as conn:
             rows = recipients.list_contacts(conn)
-        result = [row for row in rows if reports.allowed_contact(self.user, row)]
-        if self.user['role'] != 'platform_admin':
-            result = [{key: value for key, value in row.items() if key not in {'weather_subscribed', 'subscription_at'}} for row in result]
-        return result
+        return [row for row in rows if reports.allowed_contact(self.user, row)]
 
     def scoped_tags(self):
         with app.database_connection() as conn:
@@ -524,7 +494,7 @@ class AdminHandler(BaseHTTPRequestHandler):
         if self.path not in files and not self.select_line_channel():
             return
         read_routes = {
-            "/api/channels", "/api/session", "/api/reports", "/api/organizations",
+            "/api/channels", "/api/session", "/api/organizations",
             "/api/chat-notes", "/api/chat-notes/global", "/api/chat-notes/trash",
             "/api/chat-notes/categories", "/api/chat-notes/tags", "/api/chat-notes/export",
             "/api/saved-filters",
@@ -534,7 +504,6 @@ class AdminHandler(BaseHTTPRequestHandler):
             "/api/chat/response-hours", "/api/chat/media/stats", "/api/chat/export"
         }
         if (self.path not in files and self.path not in read_routes 
-            and not re.fullmatch(r"/api/reports/(weather|[0-9a-f]{32})", self.path) 
             and not re.fullmatch(r"/api/cases/[0-9a-f]{32}", self.path)
             and not re.fullmatch(r"/api/chat/media/[0-9a-zA-Z_]+", self.path)):
             if self.user['role'] in {'operator', 'collaborator'} and self.path in {'/api/view-options','/api/settings'}:
@@ -565,7 +534,7 @@ class AdminHandler(BaseHTTPRequestHandler):
             self.respond(200, {"identity": self.identity, "user": self.user, "role": self.user["role"],
                                "principal": self.principal, "preview": self.preview, "auth": site_auth.status(self),
                                "memberships": [m for m in reports.memberships(self.identity) if m['active'] and m['org_active'] and m['role'] in {'org_admin','operator','collaborator'}] if not self.preview and self.server.workspace_ready else [],
-                               "modules": {m:reports.module_enabled(self.user,m) for m in ('reports','messaging','weather')},
+                               "modules": {'messaging': reports.module_enabled(self.user, 'messaging')},
                                "needs_setup": getattr(self, 'auth_method', '') == 'local' and not reports.has_platform_admin(),
                                "limits": limits.as_dict()})
         elif self.path == '/api/organizations':
@@ -574,25 +543,14 @@ class AdminHandler(BaseHTTPRequestHandler):
         elif self.path == "/api/view-options":
             self.respond(200, {"users": [{key: row[key] for key in ("email", "display_name", "organization_id", "department", "role", "organization_name")}
                                            for row in reports.view_options(self.user)]})
-        elif self.path == "/api/reports":
-            self.respond(200, {"reports": [reports.describe(row) for row in reports.sources() if reports.can_view(row, self.user)]})
-        elif re.fullmatch(r"/api/reports/(weather|[0-9a-f]{32})", self.path):
-            source = reports.find(self.path.rsplit("/", 1)[1])
-            if source and not reports.can_view(source, self.user):
-                source = None
-            self.respond(200 if source else 404, reports.describe(source, preview=True) if source else {"error": "找不到報告。"})
         elif self.path == "/api/activity":
             self.respond(200, {"events": reports.activity(self.user)})
         elif self.path == "/api/settings":
             self.respond(200, {"remote_enabled": bool(self.server.public_host),
-                               "weather_report_removed": reports.weather_removed() if self.user['role']=='platform_admin' else False,
                                "admin_host": self.server.public_host,
                                "users": reports.scoped_users(self.user),
-                               "report_sources": reports.sources() if self.user['role'] == 'platform_admin' else [],
                                "line_configured": bool(channels.get()),
                                "public_base": os.environ.get("PUBLIC_BASE_URL", ""),
-                               "dispatch_scopes": reports.dispatch_scopes() if self.user['role']=='platform_admin' else [],
-                               "sender_grants": [{"email":m['email'],"organization_id":m['org_id'],**reports.grant({'email':m['email'],'organization_id':m['org_id']})} for m in reports.memberships() if m['role']=='operator'] if self.user['role']=='platform_admin' else [],
                                "role": self.user['role']})
         elif self.path == "/api/contacts":
             self.respond(200, {"contacts": self.scoped_contacts(), "tags": self.scoped_tags()})
@@ -691,8 +649,7 @@ class AdminHandler(BaseHTTPRequestHandler):
                 org_channels = conn.execute("SELECT channel_id, name, basic_id FROM line_channels WHERE org_id=? AND active=1", (org_id,)).fetchall()
                 self.respond(200, {
                     "members": member_list,
-                    "channels": [dict(c) for c in org_channels],
-                    "dispatch_scopes": [dict(s) for s in conn.execute("SELECT * FROM dispatch_scopes WHERE organization_id=? AND active=1", (org_id,)).fetchall()]
+                    "channels": [dict(c) for c in org_channels]
                 })
         elif self.path == "/api/chat/messages":
             cid = query.get('recipient_id') or query.get('chat_id') or ''
@@ -852,13 +809,13 @@ class AdminHandler(BaseHTTPRequestHandler):
             self.respond(403, {'error': '操作人員不能修改聯絡對象分類、來源或帳號授權。'})
             return
 
-        admin_only_posts = {'/api/reports/save', '/api/reports/remove', '/api/reports/restore-weather', '/api/organizations/save'}
+        admin_only_posts = {'/api/organizations/save'}
         if self.path in admin_only_posts and self.user['role'] != 'platform_admin':
             self.respond(403, {'error': '模組歸屬及來源設定由平台管理員管理。'})
             return
 
         org_admin_only_posts = {
-            '/api/memberships/save', '/api/accounts/save', '/api/dispatch-scopes/save', '/api/sender-grants/save',
+            '/api/memberships/save', '/api/accounts/save',
             '/api/chat-notes/purge', '/api/org-settings/notes-policy'
         }
         if self.path in org_admin_only_posts and self.user['role'] not in {'platform_admin', 'org_admin'}:
@@ -931,12 +888,6 @@ class AdminHandler(BaseHTTPRequestHandler):
                         res = recipients.bulk_update_tags(conn, ids, tag_ids, 'add' if action == 'add_tags' else 'remove')
                         reports.audit(conn, actor_label, "contacts.bulk_tag", f"{len(ids)} contacts", "批次更新標籤", self.user.get('organization_id', ''))
                         res_data.update(res)
-                    elif action == 'set_subscription':
-                        if self.user['role'] != 'platform_admin':
-                            raise ValueError('天氣訂閱由平台管理員設定。')
-                        sub = bool(payload.get('subscribed'))
-                        recipients.bulk_update_subscription(conn, ids, sub)
-                        reports.audit(conn, actor_label, "contacts.bulk_sub", f"{len(ids)} contacts", "批次更新訂閱", self.user.get('organization_id', ''))
                     else:
                         raise ValueError('不支援的操作。')
                 self.respond(200, res_data)
@@ -1266,10 +1217,6 @@ class AdminHandler(BaseHTTPRequestHandler):
                 if not reports.module_enabled(self.user, 'messaging'):
                     raise ValueError('此組織尚未授權訊息發送模組。')
                 self.respond(201, composer.upload(payload, self.user))
-            elif self.path == '/api/dispatch-scopes/save':
-                self.respond(200,reports.save_dispatch_scope(payload,self.identity))
-            elif self.path == '/api/sender-grants/save':
-                reports.save_grant(payload,self.identity)
                 self.respond(200,{'ok':True})
             elif self.path == '/api/organizations/save':
                 self.respond(200,reports.save_organization(payload,self.identity))
@@ -1279,18 +1226,16 @@ class AdminHandler(BaseHTTPRequestHandler):
             elif self.path == "/api/contact":
                 with app.database_connection() as conn:
                     conn.execute('BEGIN IMMEDIATE')
-                    current = conn.execute('SELECT organization_id,weather_subscribed FROM recipients WHERE recipients.channel_id=current_channel() AND recipient_id=?', (payload.get('id'),)).fetchone()
+                    current = conn.execute('SELECT organization_id FROM recipients WHERE recipients.channel_id=current_channel() AND recipient_id=?', (payload.get('id'),)).fetchone()
                     if not current or not reports.same_organization(self.user, current[0]):
                         raise ValueError('找不到可管理的聯絡對象。')
                     if self.user['role'] != 'platform_admin':
-                        if payload.get('organization_id', current[0]) != current[0] or 'subscribed' in payload:
-                            raise ValueError('組織歸屬與個人天氣模組由平台管理員設定。')
-                        payload['subscribed'] = bool(current[1])
+                        if payload.get('organization_id', current[0]) != current[0]:
+                            raise ValueError('組織歸屬由平台管理員設定。')
                     recipients.update_contact(
                         conn,
                         payload.get("id"),
                         payload.get("custom_name", ""),
-                        payload.get("subscribed", False),
                         notes=payload.get("notes"),
                         tag_ids=payload.get("tag_ids"),
                         contact_type=payload.get("contact_type"),
@@ -1341,14 +1286,6 @@ class AdminHandler(BaseHTTPRequestHandler):
             elif self.path == "/api/jobs/cancel":
                 self.server.dispatcher.cancel(payload.get("job_id"), self.identity, self.user['organization_id'])
                 self.respond(200, {"ok": True})
-            elif self.path == "/api/reports/save":
-                self.respond(201, reports.save(payload, self.identity))
-            elif self.path == "/api/reports/remove":
-                reports.remove(payload.get("report_id"), self.identity)
-                self.respond(200, {"ok": True})
-            elif self.path == '/api/reports/restore-weather':
-                reports.restore_weather(self.identity)
-                self.respond(200, {'ok': True})
             elif self.path == "/api/accounts/save":
                 # 甲級在「組織」只建立組織的管理員；操作人員、協作人員由該組織的管理員在「人員與權限」建立。
                 if self.user['role'] == 'platform_admin' and payload.get('role') in {'operator', 'collaborator'}:

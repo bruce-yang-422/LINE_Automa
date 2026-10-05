@@ -9,7 +9,6 @@ import app
 import reports
 import composer
 import admin_server
-import channels
 import test_workspace as workspace
 from test_workspace import USER, OTHER, PNG, CHANNEL_A, CHANNEL_B
 
@@ -24,22 +23,17 @@ class SenderTests(unittest.TestCase):
     setUp = workspace.WorkspaceTests.setUp
     request = workspace.WorkspaceTests.request
     server = workspace.WorkspaceTests.server
-    add_report = workspace.WorkspaceTests.add_report
     scheduled_text = workspace.WorkspaceTests.scheduled_text
 
     def setup_sender(self):
         reports.save_user({'email':SENDER,'role':'operator','organization_id':'A','active':True},'admin@example.com')
         with app.database_connection() as conn:
             conn.executemany("INSERT INTO recipients(channel_id,recipient_id,kind,organization_id,department) VALUES (?,?,?,'A','Finance')",[(CHANNEL_A,THIRD,'user'),(CHANNEL_A,GROUP,'group')])
-        self.source = self.add_report()
-        self.scope = reports.save_dispatch_scope({'organization_id':'A','name':'Sales','kind':'department','department':'Sales','active':True},'admin@example.com')['scope_id']
-        self.grant = {'email':SENDER,'organization_id':'A','scope_ids':[self.scope],'report_ids':[self.source['report_id']], 'messaging':True,'reports':True,'weather':False}
-        reports.save_grant(self.grant,'admin@example.com')
         return reports.account(SENDER)
 
     def test_contact_without_account_cannot_login_but_other_org_operator_can(self):
         server = self.server()
-        for route in ('/api/session','/api/reports','/api/organizations'):
+        for route in ('/api/session','/api/organizations'):
             self.assertEqual(self.request(server,route,'nobody@example.com')[0],401)
         reports.save_user({'email':'carol@example.com','role':'operator','organization_id':'B','active':True},'admin@example.com')
         status,session = self.request(server,'/api/session','carol@example.com',channel=CHANNEL_B)
@@ -48,8 +42,8 @@ class SenderTests(unittest.TestCase):
         self.assertEqual([m['org_id'] for m in session['memberships']],['B'])
         self.assertEqual(self.request(server,'/api/session','carol@example.com',organization='A')[0],403)
 
-    def test_sender_default_deny_and_union_of_scopes(self):
-        user = self.setup_sender()
+    def test_operator_sees_org_contacts_and_can_send(self):
+        self.setup_sender()
         server = self.server()
         # 丙級可直接看見所屬組織/OA 的聯絡對象
         rows = self.request(server, '/api/contacts', SENDER)[1]['contacts']
@@ -57,24 +51,13 @@ class SenderTests(unittest.TestCase):
         # 丙級可直接發送所屬組織的文字訊息
         with patch.object(admin_server, 'load_settings'):
             self.assertEqual(self.request(server, '/api/send', SENDER, self.scheduled_text())[0], 202)
-        # 發送範圍建立驗證
-        for invalid in (OTHER,):
-            with self.assertRaises(ValueError):
-                reports.save_dispatch_scope({'organization_id':'A','name':'Bad','kind':'group','recipient_ids':[invalid],'active':True},'admin@example.com')
 
-    def test_sender_api_boundary_and_direct_report_access(self):
+    def test_sender_api_boundary(self):
         self.setup_sender()
-        other = self.add_report(organization_id='B')
-        ungranted = self.add_report()
         server = self.server()
-        # 丙級可查看本組織的報告
-        self.assertEqual({r['report_id'] for r in self.request(server,'/api/reports',SENDER)[1]['reports']},{self.source['report_id'], ungranted['report_id']})
-        # 丙級無法查看其他組織報告或未授權的客製模組（weather）
-        for rid in (other['report_id'], 'weather'):
-            self.assertEqual(self.request(server,'/api/reports/'+rid,SENDER)[0],404)
         for route in ('/api/settings','/api/view-options'):
             self.assertEqual(self.request(server,route,SENDER)[0],403)
-        for route in ('/api/accounts/save','/api/memberships/save','/api/sender-grants/save','/api/dispatch-scopes/save','/api/reports/save'):
+        for route in ('/api/accounts/save','/api/memberships/save'):
             self.assertEqual(self.request(server,route,SENDER,{})[0],403)
         with patch.object(admin_server,'load_settings'):
             for ids in ([OTHER],):
@@ -82,14 +65,11 @@ class SenderTests(unittest.TestCase):
             self.assertEqual(self.request(server,'/api/send',SENDER,{**self.scheduled_text(),'image_path':str(self.image)})[0],400)
             self.assertEqual(self.request(server,'/api/send',SENDER,self.scheduled_text())[0],202)
 
-    def test_preview_is_readonly_and_grants_are_rechecked(self):
+    def test_preview_is_readonly(self):
         self.setup_sender()
         server = self.server()
         self.assertEqual(self.request(server,'/api/session','admin@example.com',view_as=SENDER)[1]['role'],'operator')
         self.assertEqual(self.request(server,'/api/send','admin@example.com',self.scheduled_text(),view_as=SENDER)[0],403)
-        with app.database_connection() as conn:
-            conn.execute("UPDATE organizations SET reports_enabled=0 WHERE org_id='A'")
-        self.assertEqual(self.request(server,'/api/reports','admin@example.com',view_as=SENDER)[1]['reports'],[])
 
     def test_schedule_revocation_and_recipient_move_cancel_before_send(self):
         self.setup_sender()
@@ -122,44 +102,12 @@ class SenderTests(unittest.TestCase):
             with self.assertRaises(ValueError):dispatcher.cancel(foreign['job_id'],SENDER,'A')
             dispatcher.cancel(own['job_id'],SENDER,'A')
 
-    def test_personal_report_without_login_account(self):
-        self.setup_sender()
-        report=reports.save({'title':'Private','category':'company','organization_id':'A','scope':'personal','owner_recipient_id':THIRD,'source_path':str(self.image)},'admin@example.com')
-        self.assertEqual(report['owner_recipient_id'],THIRD)
-        source=reports.find(report['report_id'])
-        reports.validate_targets(source,[{'recipient_id':THIRD,'organization_id':'A'}])
-        with self.assertRaises(ValueError):reports.validate_targets(source,[{'recipient_id':USER,'organization_id':'A'}])
-        with app.database_connection() as conn:conn.execute("UPDATE recipients SET organization_id='B' WHERE recipient_id=?",(THIRD,))
-        with self.assertRaises(ValueError):reports.validate_targets(source,[{'recipient_id':THIRD,'organization_id':'B'}])
-
-    def test_sender_assets_owner_and_cross_org_grants(self):
+    def test_sender_assets_owner(self):
         user=self.setup_sender()
         other=composer.upload({'name':'private.png','data':base64.b64encode(PNG).decode(),'organization_id':'A'},reports.account('admin@example.com'))
         with self.assertRaises(ValueError):composer.asset(other['asset_id'],user)
         own=composer.upload({'name':'mine.png','data':base64.b64encode(PNG).decode()},user)
         self.assertEqual(composer.asset(own['asset_id'],user)['owner'],SENDER)
-        report=self.add_report(organization_id='B')
-        with self.assertRaises(ValueError):reports.save_grant({**self.grant,'report_ids':[report['report_id']]},'admin@example.com')
-        with channels.use(CHANNEL_B):
-            scope=reports.save_dispatch_scope({'organization_id':'B','kind':'department','name':'B','department':'Sales','active':True},'admin@example.com')
-        with self.assertRaises(ValueError):reports.save_grant({**self.grant,'scope_ids':[scope['scope_id']]},'admin@example.com')
-
-    def test_authorized_report_send_and_revoked_report_schedule(self):
-        self.setup_sender()
-        dispatcher=admin_server.Dispatcher();self.addCleanup(dispatcher.close)
-        for revoke in (False,True):
-            payload=self.scheduled_text();payload.pop('message_text')
-            payload.update(report_id=self.source['report_id'],report_version=self.source['version'])
-            with patch.object(admin_server,'load_settings'),patch.object(admin_server,'publish_image',return_value=('https://test.invalid/snapshot.png',PNG)),patch.object(admin_server,'verify_public_image'),patch.object(dispatcher.pool,'submit'):
-                dispatcher.submit(payload,SENDER,'A')
-                dispatcher.tick(datetime.fromisoformat(payload['scheduled_at'])+timedelta(seconds=1))
-            if revoke:
-                with app.database_connection() as conn:
-                    conn.execute("UPDATE organizations SET reports_enabled=0 WHERE org_id='A'")
-            with patch.object(admin_server,'send_push',return_value='mock-request') as push:
-                dispatcher.run(payload['job_id'])
-                self.assertEqual(push.call_count,0 if revoke else 1)
-                if not revoke:self.assertEqual(push.call_args.args[1],USER)
 
     def test_restart_preserves_accounts_and_memberships(self):
         before_users=reports.users();before_members=reports.memberships()
