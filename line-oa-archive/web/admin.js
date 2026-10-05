@@ -41,7 +41,9 @@ const paths = {
   calendar:'<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>',
   tag:'<path d="m20.59 13.41-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82zM7 7h.01"/>',
   edit:'<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>',
-  info:'<circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>'
+  info:'<circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>',
+  zap:'<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>',
+  sparkles:'<path d="m12 3 1.912 4.923L19 9.835l-4.088 1.912L13 16.67l-1.912-4.923L7 9.835l4.088-1.912z"/>'
 };
 const solidIcons64 = {
   pdf: `<svg viewBox="0 0 36 44" fill="none" class="svg-doc-card" aria-hidden="true" style="stroke:none;"><path d="M4 0C1.79 0 0 1.79 0 4V40C0 42.21 1.79 44 4 44H32C34.21 44 36 42.21 36 40V12L24 0H4Z" fill="#D32F2F"/><path d="M24 0V9C24 10.66 25.34 12 27 12H36L24 0Z" fill="#B71C1C"/><path d="M22.8 21.2C22.1 19.1 20.3 14.5 17.5 14.5C15.4 14.5 14.2 16.1 14.2 18.1C14.2 21.2 16.6 25.4 19.5 29.2C17.1 30.2 13.8 31.9 10 34C7.6 35.3 5.8 37.3 6.4 39C6.9 40.3 8.4 40.9 10 40.9C13.2 40.9 17.7 37.7 21.7 33C24.6 33.9 27.6 34.6 30 35C31.8 35.3 33.1 34.6 33.6 33.2C34.1 31.5 32.9 30.2 30.8 30.1C28.2 29.9 25.3 28.1 22.8 21.2ZM16.4 18.2C16.4 17.3 16.9 16.5 17.5 16.5C18.5 16.5 19.6 19.2 20.4 22.1C18.1 18.9 16.4 18.2 16.4 18.2ZM8.8 38.6C8.5 38.6 8.3 38.3 8.2 38C8 37.5 8.8 36.4 10.4 35.3C12.9 33.7 15.3 32.4 17.1 31.8C13.9 35.6 10.6 38.6 8.8 38.6ZM30.6 33C30.2 33.2 29 33.1 27.4 32.7C29.6 32.3 31.1 32 31.4 32.4C31.7 32.7 31.4 32.9 30.6 33Z" fill="#FFFFFF"/></svg>`,
@@ -69,8 +71,8 @@ let authCsrf="";
 const token = remote ? "" : location.hash.slice(1) || sessionStorage.getItem("lineAdminToken") || "";
 if(location.hash){if(!remote)sessionStorage.setItem("lineAdminToken",token);history.replaceState(null,"",location.pathname+location.search);}
 $("logout").hidden=!remote;
-const state={session:null,view:new URLSearchParams(location.search).get("view")||"overview",reports:[],contacts:[],tags:[],jobs:[],cases:[],caseFilter:"all",casePriority:"all",caseQuery:"",savedFilters:[],chatNotes:new Map(),noteCategories:[],noteTags:[],globalNotes:[],globalNotesStats:null,globalNotesCategories:[],globalNotesTags:[],noteHubQuery:"",noteHubCategory:"",noteHubTag:"",noteHubStatus:"all",noteHubChannel:"",noteHubViewMode:"grid",settings:{users:[]},events:[],previews:new Map(),selected:new Set(),tagAudienceMode:"any",selectedAudienceTags:new Set(),selectedFilterId:"",report:null,step:1,audience:"selected",search:"",kind:"all",organization_id:"",department:"",tagFilter:"",page:1,reportFilter:"all",historyFilter:"all",subFilter:"all",busy:false,loaded:false,authLost:false};
-const titles={overview:"工作總覽","oa-list":"OA 一覽",chat:"聊天對話","chat-notes":"對話記事本",reports:"報告中心",send:"建立發送",cases:"案件管理",contacts:"聯絡對象",subscriptions:"天氣訂閱",history:"發送紀錄",schedule:"排程管理",personnel:"人員與權限","org-settings":"組織設定",organizations:"組織管理",channels:"LINE OA 管理"};
+const state={session:null,view:new URLSearchParams(location.search).get("view")||"overview",reports:[],contacts:[],tags:[],jobs:[],cases:[],caseFilter:"all",casePriority:"all",caseQuery:"",savedFilters:[],chatNotes:new Map(),noteCategories:[],noteTags:[],globalNotes:[],globalNotesStats:null,globalNotesCategories:[],globalNotesTags:[],noteHubQuery:"",noteHubCategory:"",noteHubTag:"",noteHubStatus:"all",noteHubChannel:"",noteHubViewMode:"grid",settings:{users:[]},events:[],previews:new Map(),selected:new Set(),tagAudienceMode:"any",selectedAudienceTags:new Set(),selectedFilterId:"",orgSettingsTab:"general",report:null,step:1,audience:"selected",search:"",kind:"all",organization_id:"",department:"",tagFilter:"",page:1,reportFilter:"all",historyFilter:"all",subFilter:"all",busy:false,loaded:false,authLost:false};
+const titles={overview:"工作總覽","oa-list":"OA 一覽",chat:"聊天對話","chat-notes":"對話記事本",reports:"報告中心",send:"建立發送",cases:"案件管理",templates:"自訂範本包管理",contacts:"聯絡對象",subscriptions:"天氣訂閱",history:"發送紀錄",schedule:"排程管理",personnel:"人員與權限","org-settings":"組織設定",organizations:"組織管理",channels:"LINE OA 管理"};
 const admin=()=>["platform_admin","org_admin","operator","collaborator"].includes(state.session?.role);
 const manager=()=>["platform_admin","org_admin"].includes(state.session?.role);
 // 數量上限只由後端 limits.py 定義，經 /api/session 取得
@@ -106,6 +108,84 @@ const tagBadge=tag=>{const c=tag.color||'#007AFF';return `<span class="tag-badge
 const when=value=>value?new Date(value).toLocaleString("zh-TW",{month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false}):"尚未產生";
 const badge=(text,tone="")=>`<span class="badge ${tone}">${esc(text)}</span>`;
 const button=(text,action,cls="",attrs="")=>`<button class="btn ${cls}" data-action="${action}" ${attrs}>${text}</button>`;
+
+function formatAuditAction(action){
+  const actionMap = {
+    "org.notes_policy": "記事治理",
+    "chat.status": "聊天狀態",
+    "chat.send": "傳送訊息",
+    "chat_note.save": "儲存記事",
+    "chat_note.delete": "刪除記事",
+    "chat_note.pin": "置頂記事",
+    "chat_note.lock": "鎖定記事",
+    "chat_notes.tax_category_merge": "合併分類",
+    "chat_notes.tax_tag_merge": "合併標籤",
+    "case.create": "建立案件",
+    "case.update": "更新案件",
+    "case.status": "案件狀態",
+    "case.notify_subject": "進度通知",
+    "case.add_note": "案件紀錄",
+    "cases.update_prefix": "案件前綴",
+    "template_pack.save": "自訂範本包",
+    "template_pack.delete": "刪除範本包",
+    "template_pack.copy": "複製範本包",
+    "template_pack.lock": "範本包鎖定",
+    "template_case.save": "案件範本",
+    "template_note.save": "記事範本",
+    "category_case.rename": "類別改名",
+    "category_case.add": "新增類別",
+    "category_case.delete": "刪除類別",
+    "category_note.rename": "類型改名",
+    "category_note.add": "新增類型",
+    "category_note.delete": "刪除類型",
+    "canned_reply.save": "預設訊息",
+    "canned_reply.delete": "刪除預設訊息",
+    "response_hours.save": "回應時間",
+    "saved_filter.save": "儲存篩選",
+    "saved_filter.delete": "刪除篩選",
+    "auth.login": "帳號登入",
+    "auth.revoke": "撤銷登入",
+    "auth.activation": "產生登入連結",
+    "auth.password": "設定密碼",
+    "organization.update": "更新組織",
+    "membership.update": "成員權限",
+    "account.update": "帳號設定",
+    "oa.save": "LINE OA 設定",
+    "oa.active": "LINE OA 啟停",
+    "oa.share": "LINE OA 共享",
+    "send.create": "建立發送",
+    "send.cancel": "取消預約",
+    "vendor.view": "透明稽核"
+  };
+  return actionMap[action] || action;
+}
+
+function formatAuditDetail(detail, action){
+  if(!detail) return "";
+  let s = String(detail);
+  
+  // 1. 聊天狀態轉換
+  s = s.replace(/變更聊天狀態為\s*\[?(done|pending|in_progress|open)\]?/gi, (match, st) => {
+    const statusMap = { done: "已完成", pending: "待處理", in_progress: "處理中", open: "開啟" };
+    return `變更聊天狀態為 [${statusMap[st.toLowerCase()] || st}]`;
+  });
+
+  // 2. 記事政策轉換（相容歷史字串與新格式）
+  s = s.replace(/更新記事政策[（\(]鎖定=([^,]+),\s*標籤=([^）\)]+)[）\)]/g, (match, lock, tag) => {
+    const lockMap = { disabled: "自由編輯模式", collaborative: "全員協作防護", strict_admin: "管理員嚴格管控" };
+    const tagMap = { controlled: "集中規範管理", open: "全員自由自訂" };
+    const lockTxt = lockMap[lock.trim()] || lock.trim();
+    const tagTxt = tagMap[tag.trim()] || tag.trim();
+    return `更新記事本政策：[防護模式：${lockTxt}] · [標籤管理：${tagTxt}]`;
+  });
+
+  // 3. 處理其他常見英文狀態與代號
+  s = s.replace(/（push）/g, "（直接推播）")
+       .replace(/（reply）/g, "（回覆訊息）")
+       .replace(/（flex）/g, "（圖文卡片）");
+
+  return s;
+}
 const empty=(title,text)=>`<div class="empty">${icon("file")}<h3>${esc(title)}</h3><p>${esc(text)}</p></div>`;
 const field=(text,name,value="",attrs="")=>`<label class="field">${esc(text)}<input name="${name}" value="${esc(value)}" ${attrs}></label>`;
 const options=(items,value)=>items.map(([v,t])=>`<option value="${esc(v)}" ${v===value?"selected":""}>${esc(t)}</option>`).join("");
@@ -215,9 +295,9 @@ async function load(){
   $("workspace-nav-label").hidden=superAdmin();$("workspace-nav").hidden=superAdmin();$("command-open").hidden=superAdmin();
   if(state.view==="settings")state.view=superAdmin()?"organizations":"overview";
   if(state.view==="organizations"&&!superAdmin())state.view="reports";
-  if(["personnel","org-settings"].includes(state.view)&&!orgAdmin)state.view="overview";
+  if(["personnel","org-settings","templates"].includes(state.view)&&!orgAdmin&&!admin())state.view="overview";
   if(state.view==="channels"&&!navAllowed["platform-org"])state.view="overview";
-  if(!lineDataReady()&&!["organizations","channels","oa-list"].includes(state.view))state.view=superAdmin()?"organizations":"channels";
+  if(!lineDataReady()&&!["organizations","channels","oa-list","personnel","org-settings","templates"].includes(state.view))state.view=superAdmin()?"organizations":"channels";
   if(superAdmin()&&!["organizations","channels"].includes(state.view))state.view="organizations";
   workspaceHeader();
   state.loaded=true;state.authLost=false;$("connection").innerHTML='<span class="status-dot"></span>已連線';
@@ -1291,7 +1371,7 @@ async function saveAsTemplateModal(source_type, source_id){
 let templatesTab = "packs";
 let selectedPackKey = "universal";
 
-async function templatesAndCategoriesPage(){
+function templatesAndCategoriesPage(){
   const container = `<div class="templates-management-container">
     ${heading("範本與分類管理", "管理此 OA 啟用的範本包、自訂案件/記事範本與分類項目。", manager() ? `<div data-s="sb9bbe54"><button class="btn primary small" data-action="new-custom-pack">+ 新增自訂範本包</button></div>` : "", "TEMPLATES & CATEGORIES")}
     <div class="segmented toolbar section-space">
@@ -1481,7 +1561,7 @@ document.addEventListener("submit",async event=>{
 
 function render(){
   if(state.session?.needs_setup){$("crumb").textContent="首次設定";document.title="首次設定 · LINE 自動化";$("page").innerHTML=firstAdminPage();return;}
-  if(!lineDataReady()&&!["organizations","channels","oa-list"].includes(state.view))state.view=superAdmin()?"organizations":"channels";
+  if(!lineDataReady()&&!["organizations","channels","oa-list","personnel","org-settings","templates"].includes(state.view))state.view=superAdmin()?"organizations":"channels";
   if(superAdmin()&&!["organizations","channels"].includes(state.view))state.view="organizations";
   if(!titles[state.view])state.view="overview";
   $("crumb").textContent=titles[state.view]||"工作空間";document.title=(titles[state.view]||"工作台")+" · LINE 自動化";
@@ -1595,70 +1675,194 @@ function personnelPage(){
 function orgSettingsPage(){
   const org = mgCurrentOrg();
   if(!org) return empty("尚未選擇組織", "請先建立或選擇組織。");
-  return heading("組織設定", `檢視與設定「${esc(org.name)}」的基本資料、記事本治理政策、範本包與操作紀錄。`, "")+`
+  const tab = state.orgSettingsTab || "general";
+  const lockPolicy = org.note_lock_policy || "disabled";
+  const tagPolicy = org.note_tag_policy || "controlled";
+
+  const tabButtons = [
+    ["general", "基本資料與治理政策", "settings"],
+    ["audit", `操作與查閱紀錄 (${state.events.length})`, "clock"]
+  ].map(([id, title, iconName]) => `
+    <button type="button" data-action="org-settings-tab" data-id="${id}" class="${tab === id ? 'active' : ''}" aria-pressed="${tab === id}">
+      ${icon(iconName)} ${title}
+    </button>
+  `).join("");
+
+  return heading("組織設定", `檢視與設定「${esc(org.name)}」的基本資料、記事本治理政策、範本包與透明稽核紀錄。`, "")+`
   <div class="management">
-    <section class="mg-card">
-      <div class="mg-head">
-        <div><h2>組織基本資料</h2><p>組織代碼：${esc(org.org_id)} · 組織類型：${esc(orgKinds[org.kind]||org.kind)}</p></div>
-        ${button("編輯組織資料", "edit-organization", "small", `data-id="${esc(org.org_id)}"`)}
-      </div>
-    </section>
+    <div class="segmented org-subtabs-bar" role="tablist" style="margin-bottom:20px;display:inline-flex;gap:6px;background:var(--soft);padding:6px;border-radius:14px;border:1px solid var(--line);">
+      ${tabButtons}
+    </div>
 
-    <section class="mg-card">
-      <div class="mg-head">
-        <div><h2>對話記事本治理政策</h2><p>設定組織層級的記事鎖定防護模式與標籤分類治理權限。</p></div>
-      </div>
-      <div class="mg-body" style="padding:18px 24px;">
-        <form id="org-notes-policy-form" data-org="${esc(org.org_id)}">
-          <div class="form-grid">
-            <div class="full">
-              <label class="field">記事鎖定防護模式
-                <select name="note_lock_policy">
-                  <option value="disabled" ${(org.note_lock_policy||"disabled")==='disabled'?'selected':''}>自由編輯模式（預設：1–2 人微型團隊，介面隱藏鎖定，全員皆可自由編輯，流暢輕快）</option>
-                  <option value="collaborative" ${(org.note_lock_policy||"disabled")==='collaborative'?'selected':''}>協作鎖定模式（全員皆可鎖定與解鎖，鎖定後唯讀可複製，防止誤改）</option>
-                  <option value="strict_admin" ${(org.note_lock_policy||"disabled")==='strict_admin'?'selected':''}>嚴格管理員模式（僅組織管理員可執行鎖定與解鎖，操作員僅能讀取與複製）</option>
-                </select>
-              </label>
-            </div>
-            <div class="full">
-              <label class="field">標籤與分類治理權限
-                <select name="note_tag_policy">
-                  <option value="controlled" ${(org.note_tag_policy||"controlled")==='controlled'?'selected':''}>集中治理模式（預設：僅乙級/丙級可新增與管理分類標籤，丁級僅能選用，防標籤氾濫）</option>
-                  <option value="open" ${(org.note_tag_policy||"controlled")==='open'?'selected':''}>開放自訂模式（全員皆可自訂新增標籤）</option>
-                </select>
-              </label>
-            </div>
-          </div>
-          <div class="form-actions" style="margin-top:14px;">
-            <button class="btn primary small" type="submit">儲存記事本治理政策</button>
-          </div>
-        </form>
-      </div>
-    </section>
+    ${tab === "general" ? `
+      <!-- 分頁一：基本資料與治理政策 -->
+      <section class="mg-card">
+        <div class="mg-head">
+          <div><h2>組織基本資料</h2><p>組織代碼：${esc(org.org_id)} · 組織類型：${esc(orgKinds[org.kind]||org.kind)}</p></div>
+          ${button("編輯組織資料", "edit-organization", "small", `data-id="${esc(org.org_id)}"`)}
+        </div>
+      </section>
 
-    <section class="mg-card">
-      <div class="mg-head">
-        <div><h2>自訂範本包管理</h2><p>為組織建立自訂案件與記事範本包，各 OA 可勾選啟用。</p></div>
-        ${button("管理自訂範本包", "open-template-packs-mgr", "primary small")}
-      </div>
-    </section>
-    <section class="mg-card">
-      <div class="mg-head">
-        <div><h2>組織操作與查閱紀錄</h2><p>包含內部人員操作與供應商查看紀錄（透明稽核）。</p></div>
-        ${badge(state.events.length + " 筆紀錄")}
-      </div>
-      <div class="mg-body">
-        ${state.events.map(e => `
-          <div class="activity-row" data-s="sc907557">
-            <div data-s="sda5a491">
-              <strong>${esc(e.detail || e.action)}</strong>
-              <small class="muted">${when(e.created_at)}</small>
-            </div>
-            <small data-s="sbcc8653">${esc(e.actor)} · ${esc(e.action)}</small>
+      <section class="mg-card policy-governance-section">
+        <div class="mg-head">
+          <div>
+            <h2>對話記事本治理政策</h2>
+            <p>設定組織層級的記事鎖定防誤改機制與分類標籤管理權限，確保團隊協作順暢且資料有序。</p>
           </div>
-        `).join("") || '<p class="muted">尚無操作紀錄。</p>'}
-      </div>
-    </section>
+        </div>
+        <div class="mg-body" style="padding:22px 24px;">
+          <form id="org-notes-policy-form" data-org="${esc(org.org_id)}">
+            
+            <!-- 1. 記事防護與防誤改模式 -->
+            <div class="policy-group">
+              <div class="policy-group-header">
+                <span class="policy-group-icon">${icon("shield")}</span>
+                <div>
+                  <h3 class="policy-group-title">記事防護與防誤改模式</h3>
+                  <p class="policy-group-desc">決定重要記事是否啟用上鎖機制，防止多人協作時誤改或誤刪已定案的內容。</p>
+                </div>
+              </div>
+              
+              <div class="policy-cards-grid policy-cards-3">
+                <!-- 自由編輯模式 (disabled) -->
+                <label class="policy-card ${lockPolicy==='disabled'?'selected':''}">
+                  <input type="radio" name="note_lock_policy" value="disabled" ${lockPolicy==='disabled'?'checked':''}>
+                  <div class="policy-card-top">
+                    <span class="policy-badge-icon zap">${icon("zap")}</span>
+                    <div class="policy-card-titles">
+                      <strong class="policy-card-name">自由編輯模式</strong>
+                      <span class="policy-badge-pill good">⚡ 預設推薦 · 輕快敏捷</span>
+                    </div>
+                    <span class="policy-radio-indicator"></span>
+                  </div>
+                  <p class="policy-card-desc">適合 1–3 人或即時溝通型團隊。介面隱藏鎖定按鈕，全員皆可自由新增與編輯記事，溝通最直覺流暢。</p>
+                  <div class="policy-card-footer">
+                    <span class="policy-rule-tag">${icon("check")} 全員自由編輯 · 介面極簡無負擔</span>
+                  </div>
+                </label>
+
+                <!-- 全員協作防護模式 (collaborative) -->
+                <label class="policy-card ${lockPolicy==='collaborative'?'selected':''}">
+                  <input type="radio" name="note_lock_policy" value="collaborative" ${lockPolicy==='collaborative'?'checked':''}>
+                  <div class="policy-card-top">
+                    <span class="policy-badge-icon shield">${icon("shield")}</span>
+                    <div class="policy-card-titles">
+                      <strong class="policy-card-name">全員協作防護</strong>
+                      <span class="policy-badge-pill">🛡️ 多人協作 · 防誤觸改</span>
+                    </div>
+                    <span class="policy-radio-indicator"></span>
+                  </div>
+                  <p class="policy-card-desc">適合多人共編團隊。任何成員皆可對定案記事「上鎖保護」，鎖定後唯讀（可複製）；需要調整時任何成員亦可解鎖編輯。</p>
+                  <div class="policy-card-footer">
+                    <span class="policy-rule-tag">${icon("check")} 全員皆可鎖定與解鎖 · 鎖定後唯讀</span>
+                  </div>
+                </label>
+
+                <!-- 管理員嚴格管控模式 (strict_admin) -->
+                <label class="policy-card ${lockPolicy==='strict_admin'?'selected':''}">
+                  <input type="radio" name="note_lock_policy" value="strict_admin" ${lockPolicy==='strict_admin'?'checked':''}>
+                  <div class="policy-card-top">
+                    <span class="policy-badge-icon lock">${icon("lock")}</span>
+                    <div class="policy-card-titles">
+                      <strong class="policy-card-name">管理員嚴格管控</strong>
+                      <span class="policy-badge-pill warm">🔒 管理員專屬管控</span>
+                    </div>
+                    <span class="policy-radio-indicator"></span>
+                  </div>
+                  <p class="policy-card-desc">適合分工嚴謹或具審查制度的團隊。僅「組織管理員」可執行上鎖與解鎖；操作人員對已鎖定記事僅能閱讀與複製。</p>
+                  <div class="policy-card-footer">
+                    <span class="policy-rule-tag">${icon("check")} 僅管理員可解鎖 · 操作人員唯讀</span>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            <!-- 2. 標籤與分類管理權限 -->
+            <div class="policy-group" style="margin-top:28px;">
+              <div class="policy-group-header">
+                <span class="policy-group-icon">${icon("tag")}</span>
+                <div>
+                  <h3 class="policy-group-title">標籤與分類管理權限</h3>
+                  <p class="policy-group-desc">規範誰可以建立與管理分類標籤庫，維持組織知識庫的整潔與一致性。</p>
+                </div>
+              </div>
+
+              <div class="policy-cards-grid policy-cards-2">
+                <!-- 集中規範模式 (controlled) -->
+                <label class="policy-card ${tagPolicy==='controlled'?'selected':''}">
+                  <input type="radio" name="note_tag_policy" value="controlled" ${tagPolicy==='controlled'?'checked':''}>
+                  <div class="policy-card-top">
+                    <span class="policy-badge-icon tag">${icon("tag")}</span>
+                    <div class="policy-card-titles">
+                      <strong class="policy-card-name">集中規範管理</strong>
+                      <span class="policy-badge-pill good">📋 預設推薦 · 規範整潔</span>
+                    </div>
+                    <span class="policy-radio-indicator"></span>
+                  </div>
+                  <p class="policy-card-desc">適合希望維持標籤整潔、避免標籤氾濫的團隊。僅「組織管理員」可新增與管理分類標籤；操作人員與協作人員從現有標籤庫挑選套用。</p>
+                  <div class="policy-card-footer">
+                    <span class="policy-rule-tag">${icon("check")} 管理員統一管理 · 團隊成員選用標籤庫</span>
+                  </div>
+                </label>
+
+                <!-- 開放自訂模式 (open) -->
+                <label class="policy-card ${tagPolicy==='open'?'selected':''}">
+                  <input type="radio" name="note_tag_policy" value="open" ${tagPolicy==='open'?'checked':''}>
+                  <div class="policy-card-top">
+                    <span class="policy-badge-icon spark">${icon("sparkles")}</span>
+                    <div class="policy-card-titles">
+                      <strong class="policy-card-name">全員自由自訂</strong>
+                      <span class="policy-badge-pill">✨ 彈性靈活 · 隨開隨用</span>
+                    </div>
+                    <span class="policy-radio-indicator"></span>
+                  </div>
+                  <p class="policy-card-desc">適合業務多變或講求高度靈活的團隊。所有團隊成員在建立或編輯對話記事時，皆可直接輸入並建立全新的自訂標籤。</p>
+                  <div class="policy-card-footer">
+                    <span class="policy-rule-tag">${icon("check")} 全員皆可隨時自創新標籤與自訂分類</span>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            <div class="form-actions" style="margin-top:24px;border-top:1px solid var(--line);padding-top:18px;">
+              <button class="btn primary" type="submit">${icon("check")} 儲存記事本治理政策</button>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <section class="mg-card">
+        <div class="mg-head">
+          <div><h2>自訂範本包管理</h2><p>為組織建立自訂案件與記事範本包，各 OA 可勾選啟用。</p></div>
+          ${button("管理自訂範本包", "open-template-packs-mgr", "primary small")}
+        </div>
+      </section>
+    ` : `
+      <!-- 分頁二：組織操作與查閱紀錄（透明稽核） -->
+      <section class="mg-card">
+        <div class="mg-head">
+          <div>
+            <h2>組織操作與查閱紀錄</h2>
+            <p>包含內部人員操作與供應商查看紀錄（透明稽核）。所有資料存取與設定變更均完整留存供稽核。</p>
+          </div>
+          ${badge(state.events.length + " 筆紀錄", "good")}
+        </div>
+        <div class="mg-body">
+          ${state.events.map(e => `
+            <div class="activity-row" data-s="sc907557" style="display:flex;justify-content:space-between;align-items:center;padding:14px 0;border-bottom:1px solid var(--line);">
+              <div data-s="sda5a491">
+                <strong style="font-size:13.5px;color:var(--ink);display:block;line-height:1.5;">${esc(formatAuditDetail(e.detail, e.action) || formatAuditAction(e.action))}</strong>
+                <small class="muted" style="display:block;margin-top:4px;">${when(e.created_at)}</small>
+              </div>
+              <div style="text-align:right;flex-shrink:0;margin-left:12px;">
+                <span class="badge" style="font-size:11px;background:var(--soft);color:var(--ink);border:1px solid var(--line);">${esc(e.actor || "系統")}</span>
+                <span class="badge good" style="font-size:11px;margin-left:4px;">[${esc(formatAuditAction(e.action))}]</span>
+              </div>
+            </div>
+          `).join("") || '<p class="muted" style="padding:24px 0;text-align:center;">尚無操作紀錄。</p>'}
+        </div>
+      </section>
+    `}
   </div>`;
 }
 
@@ -1915,7 +2119,8 @@ document.addEventListener("click",async event=>{
     }
     else if(action==="new-personnel")personnelForm();
     else if(action==="edit-personnel")personnelForm(id);
-    else if(action==="open-template-packs-mgr"){navigate("channels");$("modal").close();}
+    else if(action==="org-settings-tab"){state.orgSettingsTab=id;render();}
+    else if(action==="open-template-packs-mgr"){navigate("templates");$("modal").close();}
     else if(action==="confirm-logout"){
       try{await api('/api/auth/logout',{},true,true);sessionStorage.removeItem('lineAdminToken');location.replace('/login');}catch(error){notice(error.message,true);}
     }
@@ -2500,7 +2705,16 @@ document.addEventListener("change",event=>{
     return;
   }
   if(el.id==="contact-tag-filter"){state.tagFilter=el.value;state.page=1;if($("contact-list"))$("contact-list").innerHTML=contactList();return;}
-  if(el.id==="send-timing"){$("scheduled-time").hidden=el.value!=="scheduled";const wrap=$("scheduled-time-wrapper");if(wrap)wrap.hidden=el.value!=="scheduled";$("submit-send").textContent=el.value==="scheduled"?"確認預約":"確認立即發送";return;}
+  if(el.name==="note_lock_policy" || el.name==="note_tag_policy"){
+    const container = el.closest(".policy-cards-grid");
+    if(container){
+      container.querySelectorAll(".policy-card").forEach(card => {
+        const radio = card.querySelector("input[type=radio]");
+        card.classList.toggle("selected", Boolean(radio && radio.checked));
+      });
+    }
+    return;
+  }
   if(el.dataset.select){el.checked?state.selected.add(el.dataset.select):state.selected.delete(el.dataset.select);updateSelection();}
   else if(["contact-kind","contact-company","contact-department"].includes(el.id)){state[{"contact-kind":"kind","contact-company":"organization_id","contact-department":"department"}[el.id]]=el.value;state.page=1;if(el.id==="contact-company"){state.department="";render();}else $("contact-list").innerHTML=contactList();}
 });

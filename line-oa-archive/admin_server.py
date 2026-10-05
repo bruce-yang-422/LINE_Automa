@@ -1029,8 +1029,10 @@ class AdminHandler(BaseHTTPRequestHandler):
                     org_id = self.user.get('organization_id')
                     if not org_id and self.user['role'] == 'platform_admin':
                         org_id = payload.get('org_id')
-                    conn.execute("UPDATE organizations SET note_lock_policy=?, note_tag_policy=? WHERE org_id=?", (lock_policy, tag_policy, org_id))
-                    reports.audit(conn, actor_label, "org.notes_policy", org_id or '', f"更新記事政策（鎖定={lock_policy}, 標籤={tag_policy}）", org_id or '')
+                    lock_names = {'disabled': '自由編輯模式', 'collaborative': '全員協作防護', 'strict_admin': '管理員嚴格管控'}
+                    tag_names = {'controlled': '集中規範管理', 'open': '全員自由自訂'}
+                    detail_str = f"更新記事本政策：[防護模式：{lock_names.get(lock_policy, lock_policy)}] · [標籤管理：{tag_names.get(tag_policy, tag_policy)}]"
+                    reports.audit(conn, actor_label, "org.notes_policy", org_id or '', detail_str, org_id or '')
                 self.respond(200, {'ok': True, 'note_lock_policy': lock_policy, 'note_tag_policy': tag_policy})
             elif self.path in ('/api/saved-filters', '/api/saved-filters/save'):
                 action = payload.get('action', 'save')
@@ -1187,10 +1189,11 @@ class AdminHandler(BaseHTTPRequestHandler):
                 self.respond(200, res)
             elif self.path == '/api/chat/status':
                 cid = payload.get('recipient_id') or payload.get('chat_id') or ''
-                status = payload.get('status') or 'open'
+                status_names = {'done': '已完成', 'pending': '待處理', 'in_progress': '處理中', 'open': '開啟'}
+                status_label = status_names.get(status, status)
                 with app.database_connection() as conn:
                     res = chat.set_chat_status(conn, cid, status, actor_label)
-                    reports.audit(conn, actor_label, "chat.status", cid, f"變更聊天狀態為 {status}", self.user.get('organization_id', ''))
+                    reports.audit(conn, actor_label, "chat.status", cid, f"變更聊天狀態為 [{status_label}]", self.user.get('organization_id', ''))
                 self.respond(200, res)
             elif self.path == '/api/chat/canned-replies/save':
                 with app.database_connection() as conn:
