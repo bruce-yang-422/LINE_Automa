@@ -853,6 +853,460 @@ input[type="search"] {
   z-index: 2 !important;
 }
 
+/* ==========================================================================
+   Task-Oriented Templates & Taxonomy UI (低認知負荷·使用者任務導向)
+   ========================================================================== */
+
+.tmpl-mgmt-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: 1120px;
+  margin: 0 auto;
+}
+
+.tmpl-search-bar {
+  position: relative;
+  width: 100%;
+  margin-bottom: 8px;
+}
+
+.tmpl-search-bar input {
+  width: 100%;
+  height: 46px;
+  padding: 0 16px 0 44px;
+  font-size: 14.5px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  box-shadow: 0 2px 6px rgba(0,0,0,.03);
+  transition: all .18s ease;
+  box-sizing: border-box;
+}
+
+.tmpl-search-bar input:focus {
+  border-color: var(--brand, #007AFF);
+  box-shadow: 0 0 0 3.5px rgba(0,122,255,.15);
+}
+
+.tmpl-search-bar svg {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+/* 任務大卡片 (你想做什麼？) */
+.tmpl-task-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 14px;
+}
+
+.tmpl-task-btn {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 22px;
+  background: var(--surface);
+  border: 1.5px solid var(--line);
+  border-radius: 16px;
+  cursor: pointer;
+  text-align: left;
+  transition: all .2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 2px 8px rgba(0,0,0,.03);
+  user-select: none;
+  text-decoration: none;
+  color: var(--ink);
+}
+
+.tmpl-task-btn:hover {
+  border-color: var(--brand, #007AFF);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(0,122,255,.08);
+}
+
+.tmpl-task-btn:active {
+  transform: scale(0.98);
+}
+
+.tmpl-task-icon-wrap {
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: rgba(0, 122, 255, 0.1);
+  color: #007AFF;
+}
+
+.tmpl-task-icon-wrap.green {
+  background: rgba(52, 199, 89, 0.12);
+  color: #34C759;
+}
+
+.tmpl-task-icon-wrap.purple {
+  background: rgba(175, 82, 222, 0.12);
+  color: #AF52DE;
+}
+
+.tmpl-task-icon-wrap svg {
+  width: 22px;
+  height: 22px;
+  stroke-width: 2px;
+}
+
+.tmpl-task-info strong {
+  display: block;
+  font-size: 15px;
+  font-weight: 650;
+  margin-bottom: 3px;
+  color: var(--ink);
+}
+
+.tmpl-task-info small {
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+/* 範本卡片網格 (常用推薦與清單) */
+.tmpl-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+}
+
+.tmpl-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 12px;
+  box-shadow: 0 2px 6px rgba(0,0,0,.02);
+  transition: all .18s ease;
+}
+
+.tmpl-card:hover {
+  border-color: var(--control-border);
+  box-shadow: 0 6px 16px rgba(0,0,0,.06);
+  transform: translateY(-1.5px);
+}
+
+.tmpl-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.tmpl-card-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tmpl-type-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2.5px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .2px;
+}
+
+.tmpl-type-tag.case {
+  background: rgba(0, 122, 255, 0.12);
+  color: #007AFF;
+}
+
+.tmpl-type-tag.note {
+  background: rgba(52, 199, 89, 0.14);
+  color: #28a745;
+}
+
+.tmpl-card-title {
+  font-size: 15px;
+  font-weight: 650;
+  color: var(--ink);
+  margin: 0;
+  line-height: 1.35;
+}
+
+.tmpl-card-desc {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.5;
+  margin: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.tmpl-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+
+.tmpl-priority-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 6px;
+}
+
+.tmpl-priority-badge.urgent {
+  background: rgba(255, 59, 48, 0.12);
+  color: #e11d48;
+}
+
+.tmpl-priority-badge.high {
+  background: rgba(255, 149, 0, 0.12);
+  color: #d97706;
+}
+
+.tmpl-priority-badge.medium {
+  background: rgba(0, 122, 255, 0.1);
+  color: #007AFF;
+}
+
+.tmpl-priority-badge.low {
+  background: rgba(142, 142, 147, 0.12);
+  color: #64748b;
+}
+
+.tmpl-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  margin-top: 4px;
+}
+
+.tmpl-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Step-by-Step Wizard */
+.tmpl-wizard-steps {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 22px;
+}
+
+.tmpl-wizard-step-dot {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  background: var(--line);
+  color: var(--muted);
+  transition: all .2s ease;
+}
+
+.tmpl-wizard-step-dot.active {
+  background: var(--brand, #007AFF);
+  color: #fff;
+  box-shadow: 0 0 0 3px rgba(0,122,255,.2);
+}
+
+.tmpl-wizard-step-dot.done {
+  background: #34C759;
+  color: #fff;
+}
+
+.tmpl-wizard-step-line {
+  height: 2px;
+  width: 40px;
+  background: var(--line);
+}
+
+.tmpl-wizard-choice-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin: 16px 0;
+}
+
+.tmpl-wizard-choice-card {
+  border: 2px solid var(--line);
+  border-radius: 14px;
+  padding: 18px 16px;
+  cursor: pointer;
+  text-align: left;
+  background: var(--surface);
+  transition: all .16s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  user-select: none;
+}
+
+.tmpl-wizard-choice-card:hover {
+  border-color: var(--brand, #007AFF);
+  background: rgba(0, 122, 255, 0.02);
+}
+
+.tmpl-wizard-choice-card.selected {
+  border-color: var(--brand, #007AFF);
+  background: rgba(0, 122, 255, 0.06);
+  box-shadow: 0 0 0 3px rgba(0,122,255,.16);
+}
+
+.tmpl-wizard-choice-card h4 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tmpl-wizard-choice-card p {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+/* 即時預覽卡片區塊 */
+.tmpl-live-preview-box {
+  background: var(--soft);
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-top: 14px;
+}
+
+.tmpl-live-preview-box h5 {
+  margin: 0 0 8px 0;
+  font-size: 12px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* 前線快速範本帶入膠囊列 */
+.tmpl-quick-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  margin-bottom: 12px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.02);
+}
+
+.tmpl-quick-bar-label {
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.tmpl-quick-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 9999px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+  transition: all .14s ease;
+  user-select: none;
+}
+
+.tmpl-quick-btn:hover {
+  border-color: var(--brand, #007AFF);
+  color: var(--brand, #007AFF);
+  background: rgba(0, 122, 255, 0.06);
+  transform: translateY(-1px);
+}
+
+.tmpl-quick-btn:active {
+  transform: scale(0.96);
+}
+
+/* Undo Toast */
+.tmpl-undo-toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  background: #1e293b;
+  color: #fff;
+  padding: 12px 18px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.2);
+  z-index: 9999;
+  font-size: 13.5px;
+  animation: tmplSlideUp .2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.tmpl-undo-btn {
+  background: rgba(255,255,255,0.18);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all .14s ease;
+}
+
+.tmpl-undo-btn:hover {
+  background: #007AFF;
+}
+
+@keyframes tmplSlideUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+
 
 
 
