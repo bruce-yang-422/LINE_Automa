@@ -887,6 +887,21 @@ def delete_note_category(conn: sqlite3.Connection, category_id: str, reassign_to
 
 def list_note_tags(conn: sqlite3.Connection) -> dict:
     """取得組織標準標籤庫清單（含各標籤引用篇數）。"""
+    conn.execute(
+        """UPDATE chat_note_tags 
+           SET color = CASE name
+               WHEN '急件優先' THEN '#FF3B30'
+               WHEN '待主管確認' THEN '#FFCC00'
+               WHEN '已報價' THEN '#007AFF'
+               WHEN '重要協議' THEN '#5856D6'
+               WHEN '需二次回訪' THEN '#30B0C7'
+               WHEN '現場勘查' THEN '#FF9500'
+               WHEN '交接待辦' THEN '#34C759'
+               WHEN '處理中' THEN '#8E8E93'
+               ELSE '#007AFF'
+           END
+           WHERE color IS NULL OR color = ''"""
+    )
     conn.row_factory = sqlite3.Row
     tag_rows = conn.execute(
         """SELECT t.tag_id, t.name, t.color, t.category, t.created_at,

@@ -594,6 +594,12 @@ function chatAction(action, id, target) {
   }
   if (action === "chat-filter") {
     chatUI.filter = id;
+    const tabs = target.closest(".chat-filter-tabs") || document.querySelector(".chat-filter-tabs");
+    if (tabs) {
+      tabs.querySelectorAll("button").forEach(btn => {
+        btn.classList.toggle("active", btn.dataset.id === id);
+      });
+    }
     if ($("chat-room-list")) $("chat-room-list").innerHTML = renderChatRoomItems();
     return true;
   }

@@ -102,6 +102,17 @@ const APPLE_TAG_COLORS=[
   {name:"玫瑰粉",hex:"#FF2D55"},
   {name:"琥珀黃",hex:"#FFCC00"}
 ];
+window.DEFAULT_TAG_COLORS = window.DEFAULT_TAG_COLORS || {
+  "急件優先": "#FF3B30",
+  "待主管確認": "#FFCC00",
+  "已報價": "#007AFF",
+  "重要協議": "#5856D6",
+  "需二次回訪": "#30B0C7",
+  "現場勘查": "#FF9500",
+  "交接待辦": "#34C759",
+  "處理中": "#8E8E93"
+};
+var DEFAULT_TAG_COLORS = window.DEFAULT_TAG_COLORS;
 const contactTypeNames={organization:"組織／團體",person_business:"公務對象個人",person_private:"一般個人"};
 const contactTypeBadge=type=>type?badge(contactTypeNames[type]||type,"good"):badge("未分類");
 const tagBadge=tag=>{const c=tag.color||'#007AFF';return `<span class="tag-badge" data-color="${esc(c)}"><span class="tag-dot" data-color="${esc(c)}"></span>${esc(tag.name)}</span>`;};
@@ -734,7 +745,7 @@ function fallbackCopy(text) {
 
 function tagPillHtml(tagName){
   const found = (state.noteTags || []).find(t => t.name === tagName);
-  let color = found?.color;
+  let color = found?.color || DEFAULT_TAG_COLORS[tagName];
   if(!color){
     const palette = ["#007AFF","#34C759","#FF9500","#AF52DE","#FF2D55","#5856D6","#30B0C7","#FF3B30","#FFCC00","#8E8E93"];
     let hash = 0;
@@ -742,7 +753,7 @@ function tagPillHtml(tagName){
     color = palette[Math.abs(hash) % palette.length];
   }
   const bg = color.length === 7 ? color + "20" : "rgba(0,122,255,0.14)";
-  const border = color.length === 7 ? color + "40" : "rgba(0,122,255,0.28)";
+  const border = color.length === 7 ? color + "48" : "rgba(0,122,255,0.3)";
   return `<span class="apple-pill" data-color="${esc(color)}" style="background-color:${esc(bg)}!important;color:${esc(color)}!important;border-color:${esc(border)}!important;">${esc(tagName)}</span>`;
 }
 
@@ -800,14 +811,20 @@ function renderCategoryScopedTagsHtml(categoryId, selectedTagsList = []){
       </div>
       <div class="quick-tag-pills">
         ${sortedTags.map(t => {
-          const color = t.color || '#007AFF';
+          let color = t.color || DEFAULT_TAG_COLORS[t.name];
+          if(!color){
+            const palette = ["#007AFF","#34C759","#FF9500","#AF52DE","#FF2D55","#5856D6","#30B0C7","#FF3B30","#FFCC00","#8E8E93"];
+            let hash = 0;
+            for(let i=0; i<t.name.length; i++) hash = (hash << 5) - hash + t.name.charCodeAt(i);
+            color = palette[Math.abs(hash) % palette.length];
+          }
           const bg = color.length === 7 ? color + "20" : "rgba(0,122,255,0.14)";
           const border = color.length === 7 ? color + "48" : "rgba(0,122,255,0.3)";
           const isSelected = selectedTagsList.includes(t.name);
           const catCount = (t.category_usage?.[categoryId] || (catName && t.category_usage?.[catName]) || 0);
           const totalCount = t.note_count || t.usage_count || 0;
           const tip = catName && catCount > 0 ? `${catName}分類引用 ${catCount} 次 · 全OA總計 ${totalCount} 次` : `全OA引用 ${totalCount} 次`;
-          return `<button type="button" class="apple-tag-pill ${isSelected?'active-selected':''}" data-action="quick-add-note-tag" data-tag="${esc(t.name)}" style="background:${esc(isSelected ? color : bg)}!important;color:${esc(isSelected ? '#ffffff' : color)}!important;border-color:${esc(isSelected ? color : border)}!important;" title="${esc(tip)}">${isSelected ? '✓ ' : ''}${esc(t.name)}</button>`;
+          return `<button type="button" class="apple-tag-pill ${isSelected?'active-selected':''}" data-action="quick-add-note-tag" data-tag="${esc(t.name)}" data-color="${esc(color)}" style="background-color:${esc(isSelected ? color : bg)}!important;color:${esc(isSelected ? '#ffffff' : color)}!important;border-color:${esc(isSelected ? color : border)}!important;" title="${esc(tip)}">${isSelected ? '✓ ' : ''}${esc(t.name)}</button>`;
         }).join("")}
       </div>
     </div>
@@ -940,10 +957,10 @@ async function manageNotesTaxonomyModal(initialTab = "categories"){
 
           <!-- 內嵌極速建立列 (Apple Inline Creation Bar) -->
           <form id="tax-tag-create-form" class="tax-quick-create-bar">
-            <div style="position:relative;">
-              <button type="button" id="tag-create-color-btn" class="tax-inline-color-trigger" style="background:#007AFF!important;" data-action="toggle-color-picker" data-target="tag-color-popover" title="選擇代表色"></button>
-              <div id="tag-color-popover" class="tax-color-picker" style="position:absolute;top:34px;left:0;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:10px;box-shadow:0 10px 30px rgba(0,0,0,.15);z-index:20;width:190px;" hidden>
-                ${APPLE_TAG_COLORS.map(c => `<button type="button" class="tax-color-dot ${c.hex==='#007AFF'?'selected':''}" data-action="select-inline-color" data-color="${c.hex}" data-input="tag-create-color-input" data-trigger="tag-create-color-btn" data-popover="tag-color-popover" style="background:${c.hex}!important;" title="${c.name}"></button>`).join("")}
+            <div style="position:relative;display:inline-flex;align-items:center;">
+              <button type="button" id="tag-create-color-btn" class="tax-inline-color-trigger" data-color="#007AFF" style="background-color:#007AFF!important;" data-action="toggle-color-picker" data-target="tag-color-popover" title="選擇代表色"></button>
+              <div id="tag-color-popover" class="tax-color-picker" style="position:absolute;top:36px;left:0;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:10px;box-shadow:0 10px 30px rgba(0,0,0,.15);z-index:20;width:190px;" hidden>
+                ${APPLE_TAG_COLORS.map(c => `<button type="button" class="tax-color-dot ${c.hex==='#007AFF'?'selected':''}" data-action="select-inline-color" data-color="${c.hex}" data-input="tag-create-color-input" data-trigger="tag-create-color-btn" data-popover="tag-color-popover" style="background-color:${c.hex}!important;" title="${c.name}"></button>`).join("")}
               </div>
               <input type="hidden" name="color" id="tag-create-color-input" value="#007AFF">
             </div>
@@ -957,11 +974,11 @@ async function manageNotesTaxonomyModal(initialTab = "categories"){
               ${state.noteTags.map(t => {
                 const color = t.color || '#007AFF';
                 const bg = color.length === 7 ? color + "20" : "rgba(0,122,255,0.14)";
-                const border = color.length === 7 ? color + "40" : "rgba(0,122,255,0.28)";
+                const border = color.length === 7 ? color + "48" : "rgba(0,122,255,0.3)";
                 return `
                 <div class="tax-item-row">
                   <div class="tax-item-left">
-                    <span class="tax-item-tag-preview" data-color="${esc(color)}" style="background-color:${esc(bg)}!important;color:${esc(color)}!important;border-color:${esc(border)}!important;">
+                    <span class="tax-item-tag-preview apple-pill" data-color="${esc(color)}" style="background-color:${esc(bg)}!important;color:${esc(color)}!important;border-color:${esc(border)}!important;">
                       ${esc(t.name)}
                     </span>
                     <span class="tax-item-usage-bubble ${t.note_count?'':'zero'}">${t.note_count ? `${t.note_count} 則引用` : '無引用'}</span>
@@ -2253,7 +2270,10 @@ document.addEventListener("click",async event=>{
       const trigger = $(target.dataset.trigger);
       const popover = $(target.dataset.popover);
       if(input) input.value = color;
-      if(trigger) trigger.style.background = color;
+      if(trigger) {
+        trigger.style.backgroundColor = color;
+        trigger.dataset.color = color;
+      }
       if(popover){
         popover.querySelectorAll(".tax-color-dot").forEach(d => d.classList.remove("selected"));
         target.classList.add("selected");

@@ -104,9 +104,20 @@ function contactDetailPanel(){
   </aside>`;
 }
 
+window.DEFAULT_TAG_COLORS = window.DEFAULT_TAG_COLORS || {
+  "急件優先": "#FF3B30",
+  "待主管確認": "#FFCC00",
+  "已報價": "#007AFF",
+  "重要協議": "#5856D6",
+  "需二次回訪": "#30B0C7",
+  "現場勘查": "#FF9500",
+  "交接待辦": "#34C759",
+  "處理中": "#8E8E93"
+};
+
 function tagPillHtml(tagName){
   const found = (state.noteTags || []).find(t => t.name === tagName);
-  let color = found?.color;
+  let color = found?.color || DEFAULT_TAG_COLORS[tagName];
   if(!color){
     const palette = ["#007AFF","#34C759","#FF9500","#AF52DE","#FF2D55","#5856D6","#30B0C7","#FF3B30","#FFCC00","#8E8E93"];
     let hash = 0;
@@ -114,7 +125,7 @@ function tagPillHtml(tagName){
     color = palette[Math.abs(hash) % palette.length];
   }
   const bg = color.length === 7 ? color + "20" : "rgba(0,122,255,0.14)";
-  const border = color.length === 7 ? color + "40" : "rgba(0,122,255,0.28)";
+  const border = color.length === 7 ? color + "48" : "rgba(0,122,255,0.3)";
   return `<span class="apple-pill" data-color="${esc(color)}" style="background-color:${esc(bg)}!important;color:${esc(color)}!important;border-color:${esc(border)}!important;">${esc(tagName)}</span>`;
 }
 

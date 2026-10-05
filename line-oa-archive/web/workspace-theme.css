@@ -372,26 +372,26 @@ dialog { background: var(--surface); }
 .color-swatch-card:has(input[type=radio]:checked),.color-swatch-label:has(input[type=radio]:checked),.color-swatch-card.selected,.color-swatch-label.selected{border-color:var(--ink);background:var(--mint);box-shadow:0 2px 6px rgba(0,0,0,.05)}
 .color-swatch-card:has(input[type=radio]:checked) .color-circle,.color-swatch-label:has(input[type=radio]:checked) .tag-dot,.color-swatch-card.selected .color-circle{transform:scale(1.15);box-shadow:0 0 0 2px var(--surface),0 0 0 4px var(--ink)}
 .color-swatch-card:has(input[type=radio]:checked) .color-name,.color-swatch-card.selected .color-name{font-weight:650}
-.color-circle[data-color="#007AFF"],.color-circle[data-color="#007aff"],.tag-dot[data-color="#007AFF"],.tag-dot[data-color="#007aff"]{background-color:#007AFF!important}
-.color-circle[data-color="#34C759"],.color-circle[data-color="#34c759"],.tag-dot[data-color="#34C759"],.tag-dot[data-color="#34c759"]{background-color:#34C759!important}
-.color-circle[data-color="#FF9500"],.color-circle[data-color="#ff9500"],.tag-dot[data-color="#FF9500"],.tag-dot[data-color="#ff9500"]{background-color:#FF9500!important}
-.color-circle[data-color="#AF52DE"],.color-circle[data-color="#af52de"],.tag-dot[data-color="#AF52DE"],.tag-dot[data-color="#af52de"]{background-color:#AF52DE!important}
-.color-circle[data-color="#FF3B30"],.color-circle[data-color="#ff3b30"],.tag-dot[data-color="#FF3B30"],.tag-dot[data-color="#ff3b30"]{background-color:#FF3B30!important}
-.color-circle[data-color="#8E8E93"],.color-circle[data-color="#8e8e93"],.tag-dot[data-color="#8E8E93"],.tag-dot[data-color="#8e8e93"]{background-color:#8E8E93!important}
-.color-circle[data-color="#30B0C7"],.color-circle[data-color="#30b0c7"],.tag-dot[data-color="#30B0C7"],.tag-dot[data-color="#30b0c7"]{background-color:#30B0C7!important}
-.color-circle[data-color="#5856D6"],.color-circle[data-color="#5856d6"],.tag-dot[data-color="#5856D6"],.tag-dot[data-color="#5856d6"]{background-color:#5856D6!important}
-.color-circle[data-color="#FF2D55"],.color-circle[data-color="#ff2d55"],.tag-dot[data-color="#FF2D55"],.tag-dot[data-color="#ff2d55"]{background-color:#FF2D55!important}
-.color-circle[data-color="#FFCC00"],.color-circle[data-color="#ffcc00"],.tag-dot[data-color="#FFCC00"],.tag-dot[data-color="#ffcc00"]{background-color:#FFCC00!important}
-.tag-badge[data-color="#007AFF"],.tag-badge[data-color="#007aff"]{background-color:rgba(0,122,255,.14)!important;color:#007AFF!important;border-color:rgba(0,122,255,.28)!important}
-.tag-badge[data-color="#34C759"],.tag-badge[data-color="#34c759"]{background-color:rgba(52,199,89,.14)!important;color:#28a745!important;border-color:rgba(52,199,89,.28)!important}
-.tag-badge[data-color="#FF9500"],.tag-badge[data-color="#ff9500"]{background-color:rgba(255,149,0,.14)!important;color:#d97706!important;border-color:rgba(255,149,0,.28)!important}
-.tag-badge[data-color="#AF52DE"],.tag-badge[data-color="#af52de"]{background-color:rgba(175,82,222,.14)!important;color:#8a38c2!important;border-color:rgba(175,82,222,.28)!important}
-.tag-badge[data-color="#FF3B30"],.tag-badge[data-color="#ff3b30"]{background-color:rgba(255,59,48,.14)!important;color:#e11d48!important;border-color:rgba(255,59,48,.28)!important}
-.tag-badge[data-color="#8E8E93"],.tag-badge[data-color="#8e8e93"]{background-color:rgba(142,142,147,.14)!important;color:#555558!important;border-color:rgba(142,142,147,.28)!important}
-.tag-badge[data-color="#30B0C7"],.tag-badge[data-color="#30b0c7"]{background-color:rgba(48,176,199,.14)!important;color:#0e7490!important;border-color:rgba(48,176,199,.28)!important}
-.tag-badge[data-color="#5856D6"],.tag-badge[data-color="#5856d6"]{background-color:rgba(88,86,214,.14)!important;color:#4338ca!important;border-color:rgba(88,86,214,.28)!important}
-.tag-badge[data-color="#FF2D55"],.tag-badge[data-color="#ff2d55"]{background-color:rgba(255,45,85,.14)!important;color:#e11d48!important;border-color:rgba(255,45,85,.28)!important}
-.tag-badge[data-color="#FFCC00"],.tag-badge[data-color="#ffcc00"]{background-color:rgba(255,204,0,.18)!important;color:#b45309!important;border-color:rgba(255,204,0,.35)!important}
+.color-circle[data-color="#007AFF"],.color-circle[data-color="#007aff"],.tag-dot[data-color="#007AFF"],.tag-dot[data-color="#007aff"],.tax-color-dot[data-color="#007AFF"],.tax-color-dot[data-color="#007aff"],.tax-inline-color-trigger[data-color="#007AFF"],.tax-inline-color-trigger[data-color="#007aff"]{background-color:#007AFF!important;border-color:#007AFF!important}
+.color-circle[data-color="#34C759"],.color-circle[data-color="#34c759"],.tag-dot[data-color="#34C759"],.tag-dot[data-color="#34c759"],.tax-color-dot[data-color="#34C759"],.tax-color-dot[data-color="#34c759"],.tax-inline-color-trigger[data-color="#34C759"],.tax-inline-color-trigger[data-color="#34c759"]{background-color:#34C759!important;border-color:#34C759!important}
+.color-circle[data-color="#FF9500"],.color-circle[data-color="#ff9500"],.tag-dot[data-color="#FF9500"],.tag-dot[data-color="#ff9500"],.tax-color-dot[data-color="#FF9500"],.tax-color-dot[data-color="#ff9500"],.tax-inline-color-trigger[data-color="#FF9500"],.tax-inline-color-trigger[data-color="#ff9500"]{background-color:#FF9500!important;border-color:#FF9500!important}
+.color-circle[data-color="#AF52DE"],.color-circle[data-color="#af52de"],.tag-dot[data-color="#AF52DE"],.tag-dot[data-color="#af52de"],.tax-color-dot[data-color="#AF52DE"],.tax-color-dot[data-color="#af52de"],.tax-inline-color-trigger[data-color="#AF52DE"],.tax-inline-color-trigger[data-color="#af52de"]{background-color:#AF52DE!important;border-color:#AF52DE!important}
+.color-circle[data-color="#FF3B30"],.color-circle[data-color="#ff3b30"],.tag-dot[data-color="#FF3B30"],.tag-dot[data-color="#ff3b30"],.tax-color-dot[data-color="#FF3B30"],.tax-color-dot[data-color="#ff3b30"],.tax-inline-color-trigger[data-color="#FF3B30"],.tax-inline-color-trigger[data-color="#ff3b30"]{background-color:#FF3B30!important;border-color:#FF3B30!important}
+.color-circle[data-color="#8E8E93"],.color-circle[data-color="#8e8e93"],.tag-dot[data-color="#8E8E93"],.tag-dot[data-color="#8e8e93"],.tax-color-dot[data-color="#8E8E93"],.tax-color-dot[data-color="#8e8e93"],.tax-inline-color-trigger[data-color="#8E8E93"],.tax-inline-color-trigger[data-color="#8e8e93"]{background-color:#8E8E93!important;border-color:#8E8E93!important}
+.color-circle[data-color="#30B0C7"],.color-circle[data-color="#30b0c7"],.tag-dot[data-color="#30B0C7"],.tag-dot[data-color="#30b0c7"],.tax-color-dot[data-color="#30B0C7"],.tax-color-dot[data-color="#30b0c7"],.tax-inline-color-trigger[data-color="#30B0C7"],.tax-inline-color-trigger[data-color="#30b0c7"]{background-color:#30B0C7!important;border-color:#30B0C7!important}
+.color-circle[data-color="#5856D6"],.color-circle[data-color="#5856d6"],.tag-dot[data-color="#5856D6"],.tag-dot[data-color="#5856d6"],.tax-color-dot[data-color="#5856D6"],.tax-color-dot[data-color="#5856d6"],.tax-inline-color-trigger[data-color="#5856D6"],.tax-inline-color-trigger[data-color="#5856d6"]{background-color:#5856D6!important;border-color:#5856D6!important}
+.color-circle[data-color="#FF2D55"],.color-circle[data-color="#ff2d55"],.tag-dot[data-color="#FF2D55"],.tag-dot[data-color="#ff2d55"],.tax-color-dot[data-color="#FF2D55"],.tax-color-dot[data-color="#ff2d55"],.tax-inline-color-trigger[data-color="#FF2D55"],.tax-inline-color-trigger[data-color="#ff2d55"]{background-color:#FF2D55!important;border-color:#FF2D55!important}
+.color-circle[data-color="#FFCC00"],.color-circle[data-color="#ffcc00"],.tag-dot[data-color="#FFCC00"],.tag-dot[data-color="#ffcc00"],.tax-color-dot[data-color="#FFCC00"],.tax-color-dot[data-color="#ffcc00"],.tax-inline-color-trigger[data-color="#FFCC00"],.tax-inline-color-trigger[data-color="#ffcc00"]{background-color:#FFCC00!important;border-color:#FFCC00!important}
+.tag-badge[data-color="#007AFF"],.tag-badge[data-color="#007aff"],.apple-pill[data-color="#007AFF"],.apple-pill[data-color="#007aff"],.apple-tag-pill[data-color="#007AFF"],.apple-tag-pill[data-color="#007aff"],.tax-item-tag-preview[data-color="#007AFF"],.tax-item-tag-preview[data-color="#007aff"]{background-color:rgba(0,122,255,.14)!important;color:#007AFF!important;border-color:rgba(0,122,255,.32)!important}
+.tag-badge[data-color="#34C759"],.tag-badge[data-color="#34c759"],.apple-pill[data-color="#34C759"],.apple-pill[data-color="#34c759"],.apple-tag-pill[data-color="#34C759"],.apple-tag-pill[data-color="#34c759"],.tax-item-tag-preview[data-color="#34C759"],.tax-item-tag-preview[data-color="#34c759"]{background-color:rgba(52,199,89,.14)!important;color:#28a745!important;border-color:rgba(52,199,89,.32)!important}
+.tag-badge[data-color="#FF9500"],.tag-badge[data-color="#ff9500"],.apple-pill[data-color="#FF9500"],.apple-pill[data-color="#ff9500"],.apple-tag-pill[data-color="#FF9500"],.apple-tag-pill[data-color="#ff9500"],.tax-item-tag-preview[data-color="#FF9500"],.tax-item-tag-preview[data-color="#ff9500"]{background-color:rgba(255,149,0,.14)!important;color:#d97706!important;border-color:rgba(255,149,0,.32)!important}
+.tag-badge[data-color="#AF52DE"],.tag-badge[data-color="#af52de"],.apple-pill[data-color="#AF52DE"],.apple-pill[data-color="#af52de"],.apple-tag-pill[data-color="#AF52DE"],.apple-tag-pill[data-color="#af52de"],.tax-item-tag-preview[data-color="#AF52DE"],.tax-item-tag-preview[data-color="#af52de"]{background-color:rgba(175,82,222,.14)!important;color:#8a38c2!important;border-color:rgba(175,82,222,.32)!important}
+.tag-badge[data-color="#FF3B30"],.tag-badge[data-color="#ff3b30"],.apple-pill[data-color="#FF3B30"],.apple-pill[data-color="#ff3b30"],.apple-tag-pill[data-color="#FF3B30"],.apple-tag-pill[data-color="#ff3b30"],.tax-item-tag-preview[data-color="#FF3B30"],.tax-item-tag-preview[data-color="#ff3b30"]{background-color:rgba(255,59,48,.14)!important;color:#e11d48!important;border-color:rgba(255,59,48,.32)!important}
+.tag-badge[data-color="#8E8E93"],.tag-badge[data-color="#8e8e93"],.apple-pill[data-color="#8E8E93"],.apple-pill[data-color="#8e8e93"],.apple-tag-pill[data-color="#8E8E93"],.apple-tag-pill[data-color="#8e8e93"],.tax-item-tag-preview[data-color="#8E8E93"],.tax-item-tag-preview[data-color="#8e8e93"]{background-color:rgba(142,142,147,.16)!important;color:#555558!important;border-color:rgba(142,142,147,.32)!important}
+.tag-badge[data-color="#30B0C7"],.tag-badge[data-color="#30b0c7"],.apple-pill[data-color="#30B0C7"],.apple-pill[data-color="#30b0c7"],.apple-tag-pill[data-color="#30B0C7"],.apple-tag-pill[data-color="#30b0c7"],.tax-item-tag-preview[data-color="#30B0C7"],.tax-item-tag-preview[data-color="#30b0c7"]{background-color:rgba(48,176,199,.14)!important;color:#0e7490!important;border-color:rgba(48,176,199,.32)!important}
+.tag-badge[data-color="#5856D6"],.tag-badge[data-color="#5856d6"],.apple-pill[data-color="#5856D6"],.apple-pill[data-color="#5856d6"],.apple-tag-pill[data-color="#5856D6"],.apple-tag-pill[data-color="#5856d6"],.tax-item-tag-preview[data-color="#5856D6"],.tax-item-tag-preview[data-color="#5856d6"]{background-color:rgba(88,86,214,.14)!important;color:#4338ca!important;border-color:rgba(88,86,214,.32)!important}
+.tag-badge[data-color="#FF2D55"],.tag-badge[data-color="#ff2d55"],.apple-pill[data-color="#FF2D55"],.apple-pill[data-color="#ff2d55"],.apple-tag-pill[data-color="#FF2D55"],.apple-tag-pill[data-color="#ff2d55"],.tax-item-tag-preview[data-color="#FF2D55"],.tax-item-tag-preview[data-color="#ff2d55"]{background-color:rgba(255,45,85,.14)!important;color:#e11d48!important;border-color:rgba(255,45,85,.32)!important}
+.tag-badge[data-color="#FFCC00"],.tag-badge[data-color="#ffcc00"],.apple-pill[data-color="#FFCC00"],.apple-pill[data-color="#ffcc00"],.apple-tag-pill[data-color="#FFCC00"],.apple-tag-pill[data-color="#ffcc00"],.tax-item-tag-preview[data-color="#FFCC00"],.tax-item-tag-preview[data-color="#ffcc00"]{background-color:rgba(255,204,0,.18)!important;color:#b45309!important;border-color:rgba(255,204,0,.38)!important}
 .form-section{margin-bottom:18px;padding-bottom:14px;border-bottom:1px solid var(--line)}
 .form-section:last-of-type{border-bottom:none;margin-bottom:0;padding-bottom:0}
 .form-section-title{font-size:13px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin:0 0 10px}
@@ -495,6 +495,7 @@ button.apple-tag-pill.active-selected{box-shadow:0 0 0 2px var(--surface),0 0 0 
 
 /* Apple Color Popover / Color Wells */
 .tax-color-picker{display:flex!important;flex-wrap:wrap!important;gap:8px!important;padding:6px 2px!important}
+.tax-color-picker[hidden]{display:none!important}
 .tax-color-dot{width:24px!important;height:24px!important;min-width:24px!important;min-height:24px!important;border-radius:50%!important;border:2px solid transparent!important;cursor:pointer!important;transition:transform .14s ease,box-shadow .14s ease!important;outline:none!important;padding:0!important;display:inline-block!important}
 .tax-color-dot:hover{transform:scale(1.18)!important}
 .tax-color-dot.selected{box-shadow:0 0 0 2px var(--surface),0 0 0 4px var(--ink)!important;transform:scale(1.08)!important}
@@ -819,6 +820,39 @@ button.apple-tag-pill.active-selected{box-shadow:0 0 0 2px var(--surface),0 0 0 
   align-items: center !important;
   justify-content: center !important;
 }
+
+/* Search Input Icon Alignment & Text Padding Fix */
+.search-field,
+.chat-search-label,
+.chat-sidebar-search-row .chat-search-label {
+  position: relative !important;
+  display: flex !important;
+  align-items: center !important;
+}
+
+.search-field input,
+.chat-search-label input,
+.chat-sidebar-search-row input,
+input[type="search"] {
+  padding-left: 38px !important;
+  box-sizing: border-box !important;
+}
+
+.search-field svg,
+.chat-search-label svg,
+.chat-sidebar-search-row svg {
+  position: absolute !important;
+  left: 12px !important;
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+  width: 16px !important;
+  height: 16px !important;
+  color: var(--muted) !important;
+  pointer-events: none !important;
+  margin: 0 !important;
+  z-index: 2 !important;
+}
+
 
 
 
