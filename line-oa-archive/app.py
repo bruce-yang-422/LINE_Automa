@@ -51,7 +51,7 @@ SCHEMA_VERSION = 2
 
 
 def initialize_database() -> None:
-    """Only create a fresh database or open the exact current schema; no legacy migration."""
+    """Open schema v2; apply authorized additive extensions without replacing data."""
     DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
     with database_connection() as conn:
         version = conn.execute("PRAGMA user_version").fetchone()[0]
@@ -64,6 +64,27 @@ def initialize_database() -> None:
         if not populated:
             conn.executescript((BASE_DIR / "schema.sql").read_text(encoding="utf-8"))
             conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+        # Approved additive v2 extension; idempotent and serialized across services.
+        conn.execute("BEGIN IMMEDIATE")
+        for table, column in (("organizations", "duty_enabled"),
+                              ("organization_members", "duty_manager")):
+            columns = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+            if column not in columns:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} INTEGER NOT NULL DEFAULT 0 CHECK ({column} IN (0, 1))")
+
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(recipients)")}
+        if "work_department" not in columns:
+            conn.execute("ALTER TABLE recipients ADD COLUMN work_department TEXT NOT NULL DEFAULT ''")
+
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(response_hours)")}
+        if "sticker_reply_enabled" not in columns:
+            conn.execute("ALTER TABLE response_hours ADD COLUMN sticker_reply_enabled INTEGER NOT NULL DEFAULT 0 CHECK (sticker_reply_enabled IN (0, 1))")
+
+        # New module tables only: no changes to existing business tables.
+        duty_schema = (BASE_DIR / "schema.sql").read_text(encoding="utf-8").split("-- ============ 值日生第二階段", 1)
+        if len(duty_schema) == 2:
+            conn.commit()
+            conn.executescript("-- ============ 值日生第二階段" + duty_schema[1])
 
 
 def valid_signature(body: bytes, signature: str, secret: str) -> bool:
@@ -124,6 +145,12 @@ def save_events(events: list[dict]) -> list:
                         (message_id, source_type, conversation_id,
                          sender_user_id, message_type, text, sent_at, reply_token),
                     )
+                    inserted = cur.rowcount == 1
+                    if inserted and not reply and source_type == "user" and message_type == "sticker" and reply_token:
+                        import chat
+                        auto_reply = chat.queue_sticker_reply(conn, message_id, conversation_id, reply_token)
+                        if auto_reply:
+                            replies.append(auto_reply)
                     now_iso = datetime.now(timezone.utc).isoformat()
                     cur.execute(
                         """
@@ -295,9 +322,15 @@ class Handler(BaseHTTPRequestHandler):
         if replies:
             import line_api
             for token, text in replies:
+                status = "sent"
                 try:
                     line_api.reply(token, text)
                 except ValueError:
+                    status = "unknown"
+                try:
+                    with database_connection() as conn:
+                        conn.execute("UPDATE line_messages SET delivery_status=?,reply_token='' WHERE channel_id=current_channel() AND direction='outbound' AND sent_by='系統（貼圖提示）' AND reply_token=?", (status, token))
+                except sqlite3.Error:
                     pass
 
 

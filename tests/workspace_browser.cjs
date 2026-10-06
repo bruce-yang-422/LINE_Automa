@@ -11,6 +11,9 @@ const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
     for(let i=0;i<100&&!fs.existsSync(stateFile);i++){if(child.exitCode!==null)throw Error(stderr);await delay(100);}
     const access=JSON.parse(fs.readFileSync(stateFile,'utf8')),url=`http://127.0.0.1:${access.port}/#${access.token}`;
     browser=await chromium.launch({channel:'chrome',headless:true});
+    if(process.env.TOOLS_ONLY!=='1')await require('./duty_browser_checks.cjs')(browser,access,null);
+    await require('./workspace_tools_checks.cjs')(browser,access,null);
+    if(process.env.DUTY_ONLY==='1'||process.env.TOOLS_ONLY==='1'){console.log('Duty and workspace tools checks passed');return;}
     const context=await browser.newContext({viewport:{width:1440,height:1050}}),page=await context.newPage(),errors=[];
     page.on('pageerror',error=>errors.push(error.message));
     await page.goto(url);await page.getByRole('heading',{name:'今天的工作，一目了然'}).waitFor();

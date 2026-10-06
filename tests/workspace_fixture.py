@@ -80,6 +80,15 @@ with tempfile.TemporaryDirectory(prefix='line-ui-fixture-') as temp:
     reports.save_user({'email':'company-admin@example.test','display_name':'公司管理員','role':'org_admin','organization_id':'示範公司','active':True},'admin@example.test')
     reports.save_membership({'email':'company-admin@example.test','org_id':'第二公司','role':'operator','active':True},'admin@example.test')
     reports.save_user({'email':'sender@example.test','display_name':'專案發送人員','role':'operator','organization_id':'示範公司','active':True},'admin@example.test')
+    with app.database_connection() as conn:
+        conn.execute("UPDATE organizations SET duty_enabled=1 WHERE org_id='示範公司'")
+        conn.execute("INSERT INTO organizations(org_id,name,duty_enabled) VALUES ('無OA組織','無OA組織',1)")
+    reports.save_membership({'email':'company-admin@example.test','org_id':'無OA組織','role':'org_admin','active':True},'admin@example.test')
+    sys.path.insert(0, str(REPO / 'line-oa-archive/tests'))
+    import duty_fixture
+    duty_fixture.seed(reports.account('company-admin@example.test'))
+    import duty_automation
+    duty_automation.send_push = lambda *args, **kwargs: 'fixture-duty-request'
     class FixtureHandler(admin_server.AdminHandler):
         def authorized(self, require_token=True):
             ok = super().authorized(require_token)

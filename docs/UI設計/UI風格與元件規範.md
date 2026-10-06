@@ -6,6 +6,8 @@
 
 以清楚的內容層級、平台系統字體、規律留白、圓角控制項與克制的半透明導覽呈現工作內容。參考 [Apple Human Interface Guidelines](https://developer.apple.com/design/human-interface-guidelines/) 的設計方向；這是跨平台網站，不宣稱為原生 Apple 應用程式或原生 Liquid Glass 實作。
 
+2026-10-06 新增全站[右側共用功能面板](../功能規格/右側共用功能面板.md)，依使用者指定參考 VS Code 的工作台切版。上方全寬工具列、左側主導覽、中間主要操作、右側目前內容的檢查／工具／大綱／說明（參考 Obsidian、Photoshop 輔助面板，不重複模組導覽與子分頁），以及底部狀態列；PC 中間與右側獨立捲動。切換面板不重建主要編輯區，大螢幕並排並支援調寬，較窄畫面使用抽屜，沿用現有配色、圖示及角色可見性。
+
 ## 全站改版首版
 
 已實作全站「Tailwind CSS＋Apple iOS／macOS UI／UX」首版並串接既有功能；桌面以側欄、工具列及分欄詳情為主，手機以單欄、分組設定與底部短表單為主。詳細方向見 [SaaS平台與全站Tailwind改版規劃.md](../需求與規劃/SaaS平台與全站Tailwind改版規劃.md) 第 5 節。站內登入已接續套用同一主題；多 OA 及審核仍屬後續功能。

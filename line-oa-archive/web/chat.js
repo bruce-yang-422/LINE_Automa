@@ -67,12 +67,15 @@ function chatPage() {
     <!-- 1. Left Sidebar: Chat List -->
     <aside class="chat-sidebar-col">
       <div class="chat-sidebar-header">
+        <div class="chat-sidebar-title-row">
+          <h2>聊天</h2>
+          <button type="button" class="btn small chat-settings-button" data-action="open-chat-settings" title="聊天設定與容量管理" aria-label="聊天設定">${icon("settings")}<span>聊天設定</span></button>
+        </div>
         <div class="chat-sidebar-search-row">
           <label class="search-field chat-search-label">
             ${icon("search")}
             <input id="chat-list-search" type="search" value="${esc(chatUI.query)}" placeholder="搜尋聯絡對象或訊息…" aria-label="搜尋聊天">
           </label>
-          <button type="button" class="icon-button" data-action="open-chat-settings" title="聊天設定與容量管理" aria-label="聊天設定">${icon("settings")}</button>
         </div>
         <div class="chat-filter-tabs segmented section-space">
           ${[["all", "全部"], ["unread", "未讀"], ["pending", "待處理"], ["done", "已完成"]].map(([id, t]) => `
@@ -464,10 +467,11 @@ function renderChatInfoContent(r) {
         ${contactEmail ? `<div>${icon("mail")}<span class="muted">Email</span><a href="mailto:${esc(contactEmail)}">${esc(contactEmail)}</a></div>` : ''}
       </div>` : ''}
       ${contactNotes ? `<div class="chat-contact-note" aria-label="聯絡人備註"><strong>${icon("file")} 備註</strong><div>${esc(contactNotes)}</div></div>` : ''}
-      ${(r.organization_name || r.job_title) ? `<details class="chat-profile-details"><summary>組織與職稱</summary><div class="chat-info-kv-grid">
+      ${(r.organization_name || r.job_title || r.work_department) ? `<details class="chat-profile-details"><summary>組織、部門與職稱</summary><div class="chat-info-kv-grid">
         ${r.organization_name ? `
         <div class="chat-info-k">對方組織</div>
         <div class="chat-info-v">${esc(r.organization_name)}</div>` : ''}
+        ${r.work_department ? `<div class="chat-info-k">部門</div><div class="chat-info-v">${esc(r.work_department)}</div>` : ''}
         ${r.job_title ? `
         <div class="chat-info-k">職稱</div>
         <div class="chat-info-v">${esc(r.job_title)}</div>` : ''}
@@ -828,6 +832,17 @@ async function openChatSettingsModal() {
           <input type="checkbox" id="chat-pref-preview" ${localStorage.getItem("chat_pref_preview") !== "0" ? "checked" : ""}>
           在通知中預覽訊息內容
         </label>
+      </div>
+
+      <div class="card">
+        <h3>貼圖自動回覆</h3>
+        <p class="muted">只回覆一對一聊天的貼圖，群組與多人聊天室不觸發。此設定適用目前 LINE OA。</p>
+        <form id="chat-sticker-reply-form">
+          <label class="check-label"><input type="checkbox" name="sticker_reply_enabled" ${hoursRes.sticker_reply_enabled?'checked':''} ${canSend()?'':'disabled'}>啟用貼圖自動回覆</label>
+          <p class="callout">系統無法辨識貼圖意圖，請改以文字輸入。</p>
+          <p class="muted" role="status" data-sticker-reply-status>目前${hoursRes.sticker_reply_enabled?'已啟用':'已關閉'} · 修改後按儲存生效</p>
+          ${canSend()?'<button type="submit" class="btn primary small">儲存貼圖回覆設定</button>':''}
+        </form>
       </div>
 
       <div class="card" data-s="s79a1c5a">

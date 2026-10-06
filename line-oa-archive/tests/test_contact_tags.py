@@ -211,6 +211,28 @@ class ContactTagTests(unittest.TestCase):
             data = json.load(resp)
             self.assertEqual(len(data["tags"]), 0)
 
+    def test_work_department_is_independent_and_validated(self):
+        with app.database_connection() as conn:
+            conn.execute('UPDATE recipients SET department=? WHERE recipient_id=?', ('北區客戶',USER1))
+            recipients.update_contact(conn,USER1,'王經理',contact_type='person_business',work_department=' 採購部 ')
+            row=next(c for c in recipients.list_contacts(conn) if c['recipient_id']==USER1)
+            self.assertEqual((row['department'],row['work_department']),('北區客戶','採購部'))
+            recipients.update_contact(conn,USER1,'新備註',contact_type='person_business')
+            self.assertEqual(conn.execute('SELECT work_department FROM recipients WHERE recipient_id=?',(USER1,)).fetchone()[0],'採購部')
+            with self.assertRaises(ValueError):
+                recipients.update_contact(conn,USER1,'',contact_type='person_business',work_department='部'*61)
+            recipients.update_contact(conn,USER1,'',contact_type='person_private')
+            self.assertEqual(conn.execute('SELECT work_department FROM recipients WHERE recipient_id=?',(USER1,)).fetchone()[0],'')
+
+    def test_existing_v2_adds_work_department_without_changing_group(self):
+        with app.database_connection() as conn:
+            conn.execute('UPDATE recipients SET department=? WHERE recipient_id=?',('網路部',USER1))
+            conn.execute('ALTER TABLE recipients DROP COLUMN work_department')
+        app.initialize_database()
+        app.initialize_database()
+        with app.database_connection() as conn:
+            self.assertEqual(conn.execute('SELECT department,work_department FROM recipients WHERE recipient_id=?',(USER1,)).fetchone(),('網路部',''))
+
     def test_contact_type_and_info_fields_persistence(self):
         with app.database_connection() as conn:
             recipients.update_contact(

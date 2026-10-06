@@ -21,6 +21,8 @@ from control_runtime import load_settings
 import line_api
 import recipients
 import reports
+import duty
+import duty_automation
 import site_auth
 from send_image import publish_image, verify_public_image, send_push
 import composer
@@ -84,6 +86,8 @@ class Dispatcher:
         self.lock = threading.Lock()
         self.closing = threading.Event()
         self.pool = ThreadPoolExecutor(max_workers=1)
+        self.duty_tick_task = None
+        duty_automation.recover()
         # A previous process may have died after LINE accepted a request. Never auto-resend it.
         with app.database_connection() as conn:
             conn.execute("UPDATE send_deliveries SET status='unknown', error='上次服務中斷，請先確認聊天室。' WHERE status='sending'")
@@ -109,6 +113,7 @@ class Dispatcher:
             with app.database_connection() as conn:
                 conn.execute("BEGIN IMMEDIATE")
                 due = conn.execute("SELECT job_id,scheduled_at FROM send_jobs WHERE status='scheduled' AND scheduled_at<=?", (now.isoformat(),)).fetchall()
+                duty_work=bool(conn.execute("SELECT 1 FROM organizations WHERE active=1 AND duty_enabled=1 UNION ALL SELECT 1 FROM duty_notice_deliveries WHERE status='pending' LIMIT 1").fetchone())
                 claimed = []
                 for job_id, stamp in due:
                     missed = (now - datetime.fromisoformat(stamp)).total_seconds() > 600
@@ -120,6 +125,8 @@ class Dispatcher:
                         claimed.append(job_id)
             for job_id in claimed:
                 self.pool.submit(self.run, job_id)
+            if duty_work and (self.duty_tick_task is None or self.duty_tick_task.done()):
+                self.duty_tick_task=self.pool.submit(duty_automation.tick,now,self.closing)
 
     def cancel(self, job_id, actor, organization=None):
         job_id = str(UUID(str(job_id)))
@@ -379,6 +386,9 @@ class AdminHandler(BaseHTTPRequestHandler):
     def select_line_channel(self):
         if not self.server.workspace_ready:
             return True
+        # Duty belongs to the selected organization, never the current OA.
+        if self.path.startswith('/api/duty'):
+            return True
         ids = self.headers.get_all('X-Line-Channel', [])
         if len(ids) > 1:
             self.respond(400, {'error': 'OA 標頭不能重複。'})
@@ -457,6 +467,9 @@ class AdminHandler(BaseHTTPRequestHandler):
             return
         files = {"/": (app.BASE_DIR.parent / "index.html", "text/html; charset=utf-8"),
                  "/index.html": (app.BASE_DIR.parent / "index.html", "text/html; charset=utf-8"),
+                 "/duty-automation-ui.js": (app.BASE_DIR / "web" / "duty-automation-ui.js", "text/javascript; charset=utf-8"),
+                 "/duty-roster-ui.js": (app.BASE_DIR / "web" / "duty-roster-ui.js", "text/javascript; charset=utf-8"),
+                 "/duty-ui.js": (app.BASE_DIR / "web" / "duty-ui.js", "text/javascript; charset=utf-8"),
                  "/admin.js": (app.BASE_DIR / "web" / "admin.js", "text/javascript; charset=utf-8"),
                  "/app.css": (app.BASE_DIR / "web" / "app.css", "text/css; charset=utf-8"),
                  "/channels.js": (app.BASE_DIR / "web" / "channels.js", "text/javascript; charset=utf-8"),
@@ -530,11 +543,48 @@ class AdminHandler(BaseHTTPRequestHandler):
                 self.respond(200, channels.share_recipients(self.path.rsplit('/', 1)[1], self.user))
             except ValueError as exc:
                 self.respond(403, {'error': str(exc)})
+        elif self.path in ('/api/duty/notice/settings','/api/duty/notice/impacts','/api/duty/notice/log','/api/duty/rotation/rules'):
+            try:
+                duty.authorize(self.user,organization_id=query.get('org_id'),preview=self.preview)
+                method={'/api/duty/notice/settings':duty_automation.settings_view,'/api/duty/notice/impacts':duty_automation.settings_impacts,
+                        '/api/duty/notice/log':lambda user:duty_automation.notice_log(user,query),'/api/duty/rotation/rules':duty_automation.rule_rows}[self.path]
+                self.respond(200,method(self.user))
+            except (PermissionError,ValueError) as exc:
+                self.respond(403,{'error':str(exc)})
+        elif self.path in ('/api/duty/rosters', '/api/duty/roster', '/api/duty/roster/activity', '/api/duty/roster/preview'):
+            try:
+                duty.authorize(self.user, organization_id=query.get('org_id'), preview=self.preview)
+                if self.path == '/api/duty/rosters':
+                    result = duty.roster_rows(self.user)
+                elif self.path == '/api/duty/roster':
+                    result = {'roster': duty.get_roster(self.user, query.get('roster_id'))}
+                elif self.path == '/api/duty/roster/activity':
+                    result = duty.roster_activity(self.user, query.get('roster_id'))
+                else:
+                    result = duty.notification_preview(self.user, query.get('roster_id'))
+                self.respond(200, result)
+            except (PermissionError, ValueError) as exc:
+                self.respond(403, {'error': str(exc)})
+        elif self.path in ('/api/duty/people', '/api/duty/tasks', '/api/duty/bindings'):
+            try:
+                duty.authorize(self.user, organization_id=query.get('org_id'), preview=self.preview)
+                method = {'/api/duty/people': duty.list_people, '/api/duty/tasks': duty.list_tasks,
+                          '/api/duty/bindings': duty.binding_candidates}[self.path]
+                self.respond(200, method(self.user, preview=self.preview))
+            except (PermissionError, ValueError) as exc:
+                self.respond(403, {'error': str(exc)})
+        elif self.path == "/api/duty":
+            try:
+                self.respond(200, duty.context(self.user, preview=self.preview, organization_id=query.get("org_id")))
+            except PermissionError as exc:
+                self.respond(403, {"error": str(exc)})
         elif self.path == "/api/session":
             self.respond(200, {"identity": self.identity, "user": self.user, "role": self.user["role"],
                                "principal": self.principal, "preview": self.preview, "auth": site_auth.status(self),
                                "memberships": [m for m in reports.memberships(self.identity) if m['active'] and m['org_active'] and m['role'] in {'org_admin','operator','collaborator'}] if not self.preview and self.server.workspace_ready else [],
-                               "modules": {'messaging': reports.module_enabled(self.user, 'messaging')},
+                               "modules": {'messaging': reports.module_enabled(self.user, 'messaging'),
+                                           'duty': reports.module_enabled(self.user, 'duty')},
+                               "duty_capabilities": duty.capabilities(self.user, preview=self.preview),
                                "needs_setup": getattr(self, 'auth_method', '') == 'local' and not reports.has_platform_admin(),
                                "limits": limits.as_dict()})
         elif self.path == '/api/organizations':
@@ -634,7 +684,7 @@ class AdminHandler(BaseHTTPRequestHandler):
             with app.database_connection() as conn:
                 conn.row_factory = sqlite3.Row
                 members = conn.execute("""
-                    SELECT m.email, m.role, m.department, m.active, u.display_name
+                    SELECT m.email, m.role, m.department, m.active, m.duty_manager, u.display_name
                     FROM organization_members m
                     JOIN workspace_users u ON u.email = m.email
                     WHERE m.org_id=?
@@ -794,6 +844,12 @@ class AdminHandler(BaseHTTPRequestHandler):
             '/api/chat/room-preference', '/api/chat/mark-read', '/api/chat/status', '/api/chat/media/cleanup'
         }
         allowed_operator_posts = allowed_collaborator_posts | {
+            '/api/duty/notice/settings','/api/duty/notice/preview','/api/duty/notice/send','/api/duty/notice/action','/api/duty/notice/trash',
+            '/api/duty/rotation/preview','/api/duty/rotation/save','/api/duty/rotation/apply',
+            '/api/duty/csv/import', '/api/duty/csv/export',
+            '/api/duty/roster/create', '/api/duty/roster/save', '/api/duty/roster/publish', '/api/duty/roster/delete',
+            '/api/duty/grants', '/api/duty/people/save', '/api/duty/people/bulk',
+            '/api/duty/tasks/save', '/api/duty/tasks/preview', '/api/duty/remove', '/api/duty/bindings/save',
             '/api/send', '/api/jobs/cancel', '/api/assets/upload', '/api/channels/save',
             '/api/channels/verify', '/api/channels/active', '/api/chat/send',
             '/api/chat/canned-replies/save', '/api/chat/canned-replies/delete', '/api/chat/response-hours/save',
@@ -845,7 +901,7 @@ class AdminHandler(BaseHTTPRequestHandler):
 
         try:
             size = int(self.headers.get("Content-Length", "0"))
-            maximum = 12 * 1024 * 1024 if self.path == '/api/assets/upload' else 65536
+            maximum = 12 * 1024 * 1024 if self.path == '/api/assets/upload' else (limits.DUTY_CSV_MAX_BYTES * 6 + 4096 if self.path == '/api/duty/csv/import' else 65536)
             if size <= 0 or size > maximum or self.headers.get_content_type() != "application/json":
                 raise ValueError("請求格式不正確。")
             payload = json.loads(self.rfile.read(size))
@@ -856,7 +912,48 @@ class AdminHandler(BaseHTTPRequestHandler):
             if self.preview:
                 actor_label = f"{self.principal}（於 {self.identity} 視角下）"
 
-            if self.path == '/api/channels/save':
+            if self.path in ('/api/duty/notice/settings','/api/duty/notice/preview','/api/duty/notice/send','/api/duty/notice/action','/api/duty/notice/trash','/api/duty/rotation/preview','/api/duty/rotation/save','/api/duty/rotation/apply'):
+                try:
+                    methods={'/api/duty/notice/settings':duty_automation.save_settings,'/api/duty/notice/preview':lambda user,payload,preview=False:duty_automation.notice_preview(user,payload),
+                        '/api/duty/notice/send':duty_automation.manual_notice,'/api/duty/notice/action':duty_automation.notice_action,'/api/duty/notice/trash':duty_automation.save_trash,
+                        '/api/duty/rotation/preview':lambda user,payload,preview=False:duty_automation.rule_preview(user,payload),
+                        '/api/duty/rotation/save':duty_automation.save_rule,'/api/duty/rotation/apply':duty_automation.apply_rule}
+                    self.respond(200,methods[self.path](self.user,payload,preview=self.preview))
+                except PermissionError as exc:
+                    self.respond(403,{'error':str(exc)})
+            elif self.path in ('/api/duty/csv/import','/api/duty/csv/export'):
+                try:
+                    method = duty.csv_import if self.path.endswith('/import') else duty.csv_export
+                    self.respond(200, method(self.user,payload,preview=self.preview))
+                except PermissionError as exc:
+                    self.respond(403, {'error':str(exc)})
+            elif self.path in ('/api/duty/roster/create','/api/duty/roster/save','/api/duty/roster/publish','/api/duty/roster/delete'):
+                try:
+                    method = {'/api/duty/roster/create':duty.create_draft, '/api/duty/roster/save':duty.save_draft,
+                              '/api/duty/roster/publish':duty.publish_roster, '/api/duty/roster/delete':duty.delete_draft}[self.path]
+                    self.respond(200, method(self.user,payload,preview=self.preview))
+                except PermissionError as exc:
+                    self.respond(403, {'error':str(exc)})
+            elif self.path in ('/api/duty/people/save', '/api/duty/people/bulk', '/api/duty/tasks/save',
+                              '/api/duty/tasks/preview', '/api/duty/remove', '/api/duty/bindings/save'):
+                try:
+                    duty.managed_org(self.user, payload, preview=self.preview)
+                    if self.path == '/api/duty/tasks/preview':
+                        result = {'days': duty.execution_preview(payload, payload.get('preview_start'))}
+                    else:
+                        method = {'/api/duty/people/save': duty.save_person, '/api/duty/people/bulk': duty.bulk_people,
+                                  '/api/duty/tasks/save': duty.save_task, '/api/duty/remove': duty.remove_resource,
+                                  '/api/duty/bindings/save': duty.save_binding}[self.path]
+                        result = method(self.user, payload, preview=self.preview)
+                    self.respond(200, result)
+                except PermissionError as exc:
+                    self.respond(403, {'error': str(exc)})
+            elif self.path == '/api/duty/grants':
+                try:
+                    self.respond(200, duty.grant(self.user, payload, preview=self.preview))
+                except PermissionError as exc:
+                    self.respond(403, {'error': str(exc)})
+            elif self.path == '/api/channels/save':
                 self.respond(200, channels.save(payload, self.user))
             elif self.path == '/api/channels/verify':
                 self.respond(200, channels.verify(payload.get('channel_id'), self.user))
@@ -1188,7 +1285,8 @@ class AdminHandler(BaseHTTPRequestHandler):
             elif self.path == '/api/chat/response-hours/save':
                 with app.database_connection() as conn:
                     res = chat.save_response_hours(conn, payload)
-                    reports.audit(conn, actor_label, "response_hours.save", "", "儲存回應時間設定", self.user.get('organization_id', ''))
+                    detail = ('貼圖自動回覆：' + ('啟用' if payload['sticker_reply_enabled'] else '關閉')) if 'sticker_reply_enabled' in payload else '儲存回應時間設定'
+                    reports.audit(conn, actor_label, "response_hours.save", "", detail, self.user.get('organization_id', ''))
                 self.respond(200, res)
             elif self.path == '/api/chat/media/cleanup':
                 res = chat.cleanup_expired_media(max_age_days=int(payload.get('days') or limits.MEDIA_RETENTION_DAYS))
@@ -1245,6 +1343,7 @@ class AdminHandler(BaseHTTPRequestHandler):
                         address=payload.get("address"),
                         organization_name=payload.get("organization_name"),
                         job_title=payload.get("job_title"),
+                        work_department=payload.get("work_department"),
                         work_phone=payload.get("work_phone"),
                         work_phone_ext=payload.get("work_phone_ext"),
                         work_email=payload.get("work_email")

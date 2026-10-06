@@ -154,6 +154,30 @@ class SiteAuthTests(unittest.TestCase):
         code,data,_=self.request('/api/auth/invite',{'email':'admin@example.test'},local=True,extra={'Authorization':'Bearer '+self.server.token})
         self.assertEqual(code,200);self.assertTrue(data['url'].startswith('https://admin.example.test/login#setup='))
 
+    def test_org_admin_login_links_are_scoped_to_own_members(self):
+        for email,role,org in [('manager@example.test','org_admin','A'),
+                               ('helper@example.test','collaborator','A'),
+                               ('other@example.test','operator','B'),
+                               ('peer@example.test','org_admin','A')]:
+            reports.save_user({'email':email,'role':role,'organization_id':org,'active':True},'admin@example.test')
+        site_auth.change_password('manager@example.test',None,PASSWORD)
+        cookie,csrf=self.login(email='manager@example.test')
+        for email in ['sender@example.test','helper@example.test']:
+            code,data,_=self.request('/api/auth/invite',{'email':email},cookie,csrf)
+            self.assertEqual(code,200)
+            self.assertEqual(data['expires_in'],1800)
+            self.assertTrue(data['url'].startswith('https://admin.example.test/login#setup='))
+            self.assertEqual(self.request('/api/auth/revoke',{'email':email},cookie,csrf)[0],200)
+        for email in ['admin@example.test','peer@example.test','manager@example.test','other@example.test']:
+            for route in ['/api/auth/invite','/api/auth/revoke']:
+                if route.endswith('/revoke') and email=='manager@example.test':continue
+                self.assertEqual(self.request(route,{'email':email},cookie,csrf)[0],403)
+        with app.database_connection() as conn:
+            conn.execute("INSERT INTO organization_members(email,org_id,role,active) VALUES ('sender@example.test','B','operator',1)")
+        self.assertEqual(self.request('/api/auth/invite',{'email':'sender@example.test'},cookie,csrf)[0],403)
+        self.assertEqual(self.request('/api/auth/invite',{'email':'helper@example.test'},cookie,csrf,
+                                      {'X-Workspace-View-As':'helper@example.test'})[0],403)
+
     def test_database_session_survives_server_restart(self):
         cookie,_=self.login()
         raw=cookie.split('=')[1]

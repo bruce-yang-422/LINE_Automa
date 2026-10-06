@@ -12,7 +12,8 @@ async function loadChannels(){
   state.channels=data.channels || [];
   lineUI.key='lineOA:'+state.session.identity+':'+(previewOrganization||'');
   let saved={};try{saved=JSON.parse(sessionStorage.getItem(lineUI.key)||'{}');}catch(_){}
-  lineUI.workspace=lineUI.spaces.some(w=>w.id===saved.workspace)?saved.workspace:(lineUI.channels.find(c=>c.active)?.workspace_id||lineUI.spaces[0]?.id||'');
+  const scopedWorkspace=state.session.role!=="platform_admin"?lineUI.spaces.find(w=>w.org_id===state.session.user.organization_id):null;
+  lineUI.workspace=scopedWorkspace?.id||(lineUI.spaces.some(w=>w.id===saved.workspace)?saved.workspace:(lineUI.channels.find(c=>c.active)?.workspace_id||lineUI.spaces[0]?.id||''));
   const available=lineUI.channels.filter(c=>c.workspace_id===lineUI.workspace&&c.active);
   lineUI.channel=available.some(c=>c.channel_id===saved.channel)?saved.channel:(available[0]?.channel_id||'');
   if(previousChannel&&previousChannel!==lineUI.channel){
@@ -34,8 +35,10 @@ function changeLineContext(workspace,channel){
   const draft=state.report||state.textDraft||messageDraft.items.length||document.getElementById('message-draft')?.value||document.querySelector('#composer-file-preview img');
   if(draft&&!window.confirm('切換 OA 會清除本頁尚未送出的內容與勾選對象。是否切換？'))return;
   sessionStorage.setItem(lineUI.key,JSON.stringify({workspace,channel}));
+  const nextWorkspace=lineUI.spaces.find(w=>w.id===workspace);
+  if(!state.session.preview&&state.session.role!=="platform_admin"&&nextWorkspace?.org_id)localStorage.setItem(organizationKey,nextWorkspace.org_id);
   // Navigation discards pending reads, selected recipients and drafts from the previous OA.
-  location.replace('/?view='+(['settings','organizations','channels'].includes(state.view)?state.view:'overview'));
+  location.replace('/?view='+(['settings','organizations','channels','duty'].includes(state.view)?state.view:'overview'));
 }
 
 function channelsPage(){

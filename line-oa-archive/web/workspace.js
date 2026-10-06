@@ -1,4 +1,163 @@
 "use strict";
+// Shared secondary sidebar. Updating this surface never re-renders an edited page.
+const workspaceTools={tab:'',width:360,focus:null,actions:[]};
+const workspaceToolsDock=window.matchMedia('(min-width:1600px)');
+const workspaceToolsHelp={
+  overview:['先確認上方組織與 LINE 帳號，再查看目前工作。','使用左側導覽進入聊天、排程或發送紀錄。'],
+  duty:['首頁可依月份與人員查看班表。','班表先建立草稿、分配人員，再檢查並發布。','工作提醒的日期與時間在工作項目中設定；通知設定決定傳送方式。'],
+  chat:['選擇對話後查看訊息與聯絡資訊。','切換對話前確認輸入中的訊息；發送後可查看對話紀錄。'],
+  'chat-notes':['使用搜尋與分類尋找記事。','開啟記事查看內容，再依需要更新或整理。'],
+  contacts:['使用搜尋與篩選找人或群組。','點選對象查看詳情；發送訊息前確認選取名單。'],
+  send:['先選對象與訊息內容，再預覽與確認。','可立即發送或預約時間；送出後到發送紀錄確認結果。'],
+  schedule:['查看預約時間與工作狀態。','更動或取消前確認是否已開始發送。'],
+  history:['依狀態查看發送結果。','結果不明時先確認是否收到訊息，避免重複發送。'],
+  cases:['依案件狀態與優先順序篩選。','開啟案件後管理負責人、內容與處理進度。'],
+  templates:['先選分類，再建立或編輯範本。','發送前仍需確認實際內容與收件人。'],
+  personnel:['先確認目前組織，再管理人員與權限。','值日生管理權在成員權限中個別授予。'],
+  organizations:['選擇組織後查看設定與模組。','不同組織的資料與權限分開管理。'],
+  channels:['先確認 LINE OA 所屬組織與連線狀態。','切換 LINE 帳號後，工作區會顯示該帳號的資料。'],
+  'oa-list':['搜尋組織或 LINE 帳號名稱。','選擇帳號後進入對應的工作區。'],
+  'org-settings':['確認組織名稱後調整設定。','變更完成後按該設定區的儲存按鈕。'],
+  'personal-settings':['選擇適合自己的文字大小與操作偏好。','右側面板可拖曳分隔線調整寬度，也可隨時收合。']
+};
+function workspaceToolsEnsure(){
+  if(document.getElementById('workspace-tools-rail'))return;
+  document.body.insertAdjacentHTML('beforeend',`<nav id="workspace-tools-rail" class="workspace-tools-rail" aria-label="右側功能列">${[['summary','grid','摘要'],['related','layers','工具'],['outline','grid','大綱'],['help','info','說明']].map(([id,name,title])=>`<button type="button" data-workspace-tool="${id}" aria-label="${title}面板" aria-expanded="false" aria-controls="workspace-tools-panel" title="${title}面板">${icon(name)}<span>${title}</span></button>`).join('')}</nav><button type="button" id="workspace-tools-backdrop" aria-label="關閉右側功能面板" hidden></button><aside id="workspace-tools-panel" class="workspace-tools-panel" aria-labelledby="workspace-tools-title" hidden><div class="workspace-tools-resize" role="separator" tabindex="0" aria-label="調整右側面板寬度" aria-orientation="vertical" aria-valuemin="280" aria-valuemax="480" aria-valuenow="360"></div><header><div><p id="workspace-tools-context"></p><h2 id="workspace-tools-title"></h2></div><button type="button" class="icon-button" data-workspace-tool-close aria-label="收合右側功能面板">${icon('close')}</button></header><div id="workspace-tools-body"></div></aside>`);
+  for(const [id,title] of [['summary','檢查'],['related','工具']]){const button=document.querySelector(`[data-workspace-tool="${id}"]`);button.querySelector('span').textContent=title;button.setAttribute('aria-label',title+'面板');button.title=title+'面板';}
+  document.querySelector('#workspace-tools-panel > header').insertAdjacentHTML('afterend',`<div class="workspace-tools-tabs" role="group" aria-label="子功能面板分類">${[['summary','檢查'],['related','工具'],['outline','大綱'],['help','說明']].map(([id,title])=>`<button type="button" data-workspace-tool-tab="${id}" aria-pressed="false">${title}</button>`).join('')}</div>`);
+  document.querySelector('.page-footer').insertAdjacentHTML('afterbegin','<span id="workspace-workbench-status" role="status"></span>');
+  new MutationObserver(()=>renderWorkspaceTools()).observe(document.getElementById('page'),{childList:true,subtree:true,attributes:true,attributeFilter:['data-dirty','aria-pressed','disabled']});
+  const updateTop=()=>document.documentElement.style.setProperty('--workspace-tools-top',Math.max(0,Math.min(innerHeight-100,document.querySelector('.topbar').getBoundingClientRect().bottom))+'px');
+  new ResizeObserver(updateTop).observe(document.querySelector('.topbar'));window.addEventListener('resize',updateTop);updateTop();
+}
+function workspaceToolsDirty(){return Boolean(document.querySelector('#page [data-dirty="true"]')||document.getElementById('chat-message-input')?.value.trim());}
+function workspaceToolsFunctions(){
+  const actions=[];
+  const safe=new Set(['person-new','task-new','bulk','new','back','versions','preview','rule-new','preview-notice','manual','test','new-organization','new-channel','new-account','new-case','new-chat-note','new-template','new-category','clear-selection']);
+  const seen=new Set();
+  for(const source of document.querySelectorAll('#page button')){
+    if(source.hidden||source.closest('[hidden]')||!source.getClientRects().length||source.disabled||source.hasAttribute('data-duty-tab'))continue;
+    const action=source.dataset.action||source.dataset.dutyAction||source.dataset.dutyRosterAction||source.dataset.dutyAuto;
+    const subfunction=source.matches('.segmented button,.mg-tabs button,[data-action$="-tab"],[data-action$="-filter"],[data-action="templates-switch-tab"],[data-action="toggle-notes-view-mode"]');
+    const saves=source.type==='submit'&&/儲存|保存/.test(source.textContent)&&!/發送|發布|刪除|移除/.test(source.textContent);
+    if(subfunction||(!safe.has(action)&&!source.hasAttribute('data-duty-csv')&&!saves))continue;
+    const title=(source.textContent.trim()||source.getAttribute('aria-label')||source.title).replace(/\s+/g,' ');
+    if(!title||seen.has(title))continue;seen.add(title);
+    actions.push({title,type:'source',source,active:source.getAttribute('aria-pressed')==='true'||source.classList.contains('active'),group:subfunction?'子功能':'目前操作'});
+  }
+  workspaceTools.actions=actions;
+  return `<p class="workspace-tools-intro">目前頁面可用的工具</p>${['目前操作'].map(group=>{const items=actions.map((action,index)=>({...action,index})).filter(action=>action.group===group);return items.length?`<section class="workspace-tools-function-group"><h3>${group}</h3><div class="workspace-tools-links">${items.map(action=>`<button type="button" data-workspace-tool-action="${action.index}" ${action.active?'aria-current="true"':''}><span>${esc(action.title)}</span>${action.active?'<small>目前</small>':icon('arrow')}</button>`).join('')}</div></section>`:'';}).join('')||'<p>此頁面目前沒有額外工具。</p>'}`;
+}
+function workspaceToolsOutline(){
+  const headings=[...document.querySelectorAll('#page h2,#page h3,#page h4')].filter(el=>!el.closest('[hidden]')&&el.textContent.trim());
+  workspaceTools.actions=headings.map(source=>({type:'section',source}));
+  return `<p class="workspace-tools-intro">點選標題，跳到目前頁面的對應區塊。</p><nav class="workspace-tools-outline" aria-label="目前頁面大綱">${headings.map((source,index)=>`<button type="button" data-workspace-tool-action="${index}" data-level="${source.tagName.toLowerCase()}">${esc(source.textContent.trim())}</button>`).join('')||'<p>此頁面沒有區塊標題。</p>'}</nav>`;
+}
+function workspaceToolsSummary(){
+  const groups={blocking:[],warnings:[],info:[]},actions=[],seen=new Set();
+  const add=(group,message,source=null,taskId='')=>{
+    if(!message||seen.has(group+message))return;seen.add(group+message);
+    const index=actions.length;actions.push({type:taskId?'check':'section',source,taskId});
+    groups[group].push({message,index,actionable:Boolean(source||taskId)});
+  };
+  if(workspaceToolsDirty())add('warnings','有未儲存變更',document.querySelector('#page [data-dirty="true"]'));
+  if(state.view==='duty'&&dutyContext){
+    // Only use checks for the visible roster; a previously opened roster is unrelated.
+    if(dutyTab==='roster'&&dutyRoster.record){
+      for(const group of Object.keys(groups))for(const check of dutyRoster.record.checks?.[group]||[])
+        add(group,check.message,document.querySelector('.duty-publish-checks'),check.task_id||'');
+    }
+    if(dutyTab==='home'){
+      if(dutyHome.error)add('blocking',dutyHome.error);
+      if(!dutyHome.loading&&!dutyHome.records.some(r=>r.period_type==='month'))add('info','本月尚未建立每月班表');
+      for(const roster of dutyHome.records)if(roster.status==='draft')add('info',roster.name+'：尚未發布');
+    }
+    if(dutyTab==='notify'&&dutyAutomation.settings){
+      const s=dutyAutomation.settings,c=s.config,enabled=c.monthly_enabled||c.reminders_enabled||c.publish_enabled||c.change_enabled;
+      if(enabled&&!s.channel_id)add('blocking','已開啟通知，但尚未指定 LINE 帳號',document.querySelector('.duty-notification-channel'));
+      if(enabled&&!c.personal&&!c.groups.length)add('warnings','已開啟通知，但尚未選擇通知對象',document.querySelector('.duty-notification-recipients'));
+      if(c.personal&&!s.subscribed)add('warnings','尚無已綁定且訂閱的個人通知對象',document.querySelector('.duty-notification-recipients'));
+      if(s.estimate?.missing)add('warnings','通知預估有 '+s.estimate.missing+' 項缺漏',document.querySelector('.duty-visual-advanced'));
+      if(!enabled)add('info','所有自動通知目前關閉');
+    }
+  }
+  // Other modules expose their own validation and delivery notices in the current page.
+  for(const source of document.querySelectorAll('#page [role="alert"],#page .callout.warn,#page .callout.error,#page .callout.info')){
+    if(source.hidden||source.closest('[hidden]')||!source.getClientRects().length)continue;
+    add(source.matches('[role="alert"],.error')?'blocking':source.matches('.warn')?'warnings':'info',source.textContent.trim(),source);
+  }
+  workspaceTools.actions=actions;
+  const total=Object.values(groups).reduce((n,items)=>n+items.length,0);
+  return `<p class="workspace-tools-intro">當前頁面的警告、通知與檢查結果</p><div class="workspace-status-counts">${[['blocking','必須處理'],['warnings','需確認'],['info','資訊']].map(([group,label])=>`<div data-severity="${group}"><strong>${groups[group].length}</strong><span>${label}</span></div>`).join('')}</div>${total?'':'<p class="workspace-status-empty">目前沒有待處理的警告或通知。</p>'}${[['blocking','必須處理'],['warnings','需確認'],['info','資訊']].map(([group,label])=>`<details class="workspace-status-group" data-severity="${group}" ${groups[group].length?'open':''}><summary>${label}（${groups[group].length}）</summary>${groups[group].map(item=>item.actionable?`<button type="button" data-workspace-tool-action="${item.index}">${esc(item.message)}<span>查看 →</span></button>`:`<p>${esc(item.message)}</p>`).join('')||'<p class="muted">沒有項目</p>'}</details>`).join('')}`;
+}
+function renderWorkspaceTools(){
+  workspaceToolsEnsure();
+  const visible=Boolean(state.session&&!state.session.needs_setup&&!state.authLost&&state.view!=='chat'),open=Boolean(visible&&workspaceTools.tab);
+  document.body.classList.toggle('workspace-tools-enabled',visible);
+  document.body.classList.toggle('workspace-tools-open',open);
+  document.getElementById('workspace-tools-rail').hidden=!visible;
+  const panel=document.getElementById('workspace-tools-panel');panel.hidden=!open;
+  document.getElementById('workspace-tools-backdrop').hidden=!open||workspaceToolsDock.matches;
+  panel.setAttribute('role',workspaceToolsDock.matches?'complementary':'dialog');
+  if(!workspaceToolsDock.matches&&open)panel.setAttribute('aria-modal','true');else panel.removeAttribute('aria-modal');
+  document.documentElement.style.setProperty('--workspace-tools-width',workspaceTools.width+'px');
+  document.querySelector('.workspace-tools-resize').setAttribute('aria-valuenow',workspaceTools.width);
+  document.querySelectorAll('[data-workspace-tool]').forEach(button=>button.setAttribute('aria-expanded',String(open&&button.dataset.workspaceTool===workspaceTools.tab)));
+  document.querySelectorAll('[data-workspace-tool-tab]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.workspaceToolTab===workspaceTools.tab)));
+  const status=document.getElementById('workspace-workbench-status'),statusText=(titles[state.view]||'工作台')+' · '+(state.busy?'處理中':workspaceToolsDirty()?'未儲存變更':'就緒');if(status.textContent!==statusText)status.textContent=statusText;
+  if(!open)return;
+  document.getElementById('workspace-tools-context').textContent=titles[state.view]||'工作台';
+  document.getElementById('workspace-tools-title').textContent={summary:'警告與檢查',related:'頁面工具',outline:'頁面大綱',help:'操作說明'}[workspaceTools.tab];
+  document.getElementById('workspace-tools-body').innerHTML=workspaceTools.tab==='summary'?workspaceToolsSummary():workspaceTools.tab==='related'?workspaceToolsFunctions():workspaceTools.tab==='outline'?workspaceToolsOutline():`<ol class="workspace-tools-help">${(workspaceToolsHelp[state.view]||['先確認目前工作空間，再開始操作。']).map(tip=>`<li>${esc(tip)}</li>`).join('')}</ol><p class="workspace-tools-intro">再次點選右側功能可收合面板。</p>`;
+}
+function workspaceToolsClose(){
+  workspaceTools.tab='';renderWorkspaceTools();
+  if(workspaceTools.focus?.isConnected)workspaceTools.focus.focus({preventScroll:true});
+}
+document.addEventListener('click',event=>{
+  const tab=event.target.closest('[data-workspace-tool],[data-workspace-tool-tab]');
+  if(tab){
+    const id=tab.dataset.workspaceTool||tab.dataset.workspaceToolTab;
+    if(workspaceTools.tab===id){if(tab.hasAttribute('data-workspace-tool'))workspaceToolsClose();return;}
+    if(tab.hasAttribute('data-workspace-tool'))workspaceTools.focus=tab;workspaceTools.tab=id;renderWorkspaceTools();
+    document.querySelector('[data-workspace-tool-close]').focus({preventScroll:true});
+  }else if(event.target.closest('[data-workspace-tool-close],#workspace-tools-backdrop'))workspaceToolsClose();
+  else if(event.target.closest('[data-workspace-tool-action]')){
+    const action=workspaceTools.actions[Number(event.target.closest('[data-workspace-tool-action]').dataset.workspaceToolAction)];if(!action)return;
+    if(!workspaceToolsDock.matches)workspaceToolsClose();
+    if(action.type==='check'){
+      const source=[...document.querySelectorAll('#page [data-duty-roster-action="focus"]')].find(el=>el.dataset.id===action.taskId);
+      if(source)source.click();
+      else if(action.source?.isConnected){action.source.open=true;action.source.closest('details')?.setAttribute('open','');if(action.source.matches('details'))action.source.open=true;action.source.scrollIntoView({block:'center'});}
+    }else if(action.source?.isConnected&&!action.source.disabled){
+      action.source.closest('details')?.setAttribute('open','');if(action.source.matches('details'))action.source.open=true;action.source.scrollIntoView({block:'center'});
+      if(action.type==='section'){action.source.tabIndex=-1;action.source.focus({preventScroll:true});}else action.source.click();
+    }
+  }
+});
+for(const type of ['input','change'])document.addEventListener(type,event=>{if(event.target.closest('#page'))queueMicrotask(()=>renderWorkspaceTools());});
+document.addEventListener('keydown',event=>{
+  if(!document.body.classList.contains('workspace-tools-open')||document.querySelector('dialog[open]'))return;
+  const panel=document.getElementById('workspace-tools-panel');
+  if(event.key==='Escape'&&(panel.contains(event.target)||!workspaceToolsDock.matches)){event.preventDefault();workspaceToolsClose();return;}
+  if(event.target.matches('.workspace-tools-resize')&&['ArrowLeft','ArrowRight','Home','End'].includes(event.key)){
+    event.preventDefault();workspaceTools.width=event.key==='Home'?280:event.key==='End'?480:Math.min(480,Math.max(280,workspaceTools.width+(event.key==='ArrowLeft'?20:-20)));
+    document.documentElement.style.setProperty('--workspace-tools-width',workspaceTools.width+'px');event.target.setAttribute('aria-valuenow',workspaceTools.width);return;
+  }
+  if(event.key==='Tab'&&!workspaceToolsDock.matches){
+    const items=[...panel.querySelectorAll('button,[tabindex="0"]')].filter(el=>el.getClientRects().length),first=items[0],last=items.at(-1);
+    if(event.shiftKey&&(event.target===first||!panel.contains(event.target))){event.preventDefault();last?.focus();}
+    else if(!event.shiftKey&&(event.target===last||!panel.contains(event.target))){event.preventDefault();first?.focus();}
+  }
+});
+document.addEventListener('pointerdown',event=>{
+  if(!event.target.matches('.workspace-tools-resize')||!workspaceToolsDock.matches||event.button!==0)return;
+  event.preventDefault();const handle=event.target,start=event.clientX,width=workspaceTools.width;handle.setPointerCapture(event.pointerId);
+  const move=e=>{workspaceTools.width=Math.min(480,Math.max(280,width+start-e.clientX));document.documentElement.style.setProperty('--workspace-tools-width',workspaceTools.width+'px');handle.setAttribute('aria-valuenow',workspaceTools.width);};
+  const finish=()=>{handle.removeEventListener('pointermove',move);handle.removeEventListener('pointerup',finish);handle.removeEventListener('pointercancel',finish);};
+  handle.addEventListener('pointermove',move);handle.addEventListener('pointerup',finish);handle.addEventListener('pointercancel',finish);
+});
+workspaceToolsDock.addEventListener('change',()=>{if(document.getElementById('workspace-tools-rail')){renderWorkspaceTools();if(document.body.classList.contains('workspace-tools-open')&&!workspaceToolsDock.matches)document.querySelector('[data-workspace-tool-close]').focus({preventScroll:true});}});
 // These views use only data returned by the authenticated, scoped APIs.
 const workspaceUI={contactDetail:"",scheduleFilter:"scheduled"};
 
@@ -39,6 +198,7 @@ function contactDetailPanel(){
         <dl>
           <dt>對象類型</dt><dd>${contactTypeBadge(r.contact_type)}</dd>
           ${r.organization_name?`<dt>對方組織</dt><dd>${esc(r.organization_name)}</dd>`:""}
+          ${r.work_department?`<dt>部門</dt><dd>${esc(r.work_department)}</dd>`:""}
           ${r.job_title?`<dt>職稱</dt><dd>${esc(r.job_title)}</dd>`:""}
           ${r.phone?`<dt>聯絡電話</dt><dd><a href="tel:${esc(r.phone)}">${esc(r.phone)}</a></dd>`:""}
           ${fullWorkPhone?`<dt>公務電話</dt><dd>${esc(fullWorkPhone)}</dd>`:""}
@@ -54,7 +214,7 @@ function contactDetailPanel(){
         <h4 data-s="s1aae5cd">系統設定</h4>
         <dl>
           <dt>系統組織</dt><dd>${esc(r.organization_id?orgName(r.organization_id):"尚未設定")}</dd>
-          <dt>系統部門</dt><dd>${esc(r.department||"尚未設定")}</dd>
+          <dt>內部分組</dt><dd>${esc(r.department||"尚未設定")}</dd>
           <dt>接收狀態</dt><dd>${badge(r.active?"可接收":"已停用",r.active?"good":"")}</dd>
           <dt>最近互動</dt><dd>${esc(when(r.last_seen))}</dd>
         </dl>

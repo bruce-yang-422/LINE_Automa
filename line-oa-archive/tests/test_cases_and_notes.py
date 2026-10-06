@@ -172,19 +172,25 @@ class CasesAndNotesTests(unittest.TestCase):
 
     def test_tag_limits(self):
         with app.database_connection() as conn:
-            # 1. Per contact limit (10)
+            # 1. Per contact limit (30), including truncation above the cap.
             tag_ids = []
-            for i in range(12):
+            for i in range(32):
                 tid = recipients.save_tag(conn, f"Tag_{i}")
                 tag_ids.append(tid)
 
             recipients.set_contact_tags(conn, 'U_user_1', tag_ids)
             contacts = recipients.list_contacts(conn)
-            self.assertEqual(len(contacts[0]['tags']), 10)
+            self.assertEqual(len(contacts[0]['tags']), 30)
 
-            # 2. Bulk tag update skips contacts with 10 tags
-            res = recipients.bulk_update_tags(conn, ['U_user_1'], [tag_ids[11]], 'add')
+            # 2. Bulk tag update skips contacts with 30 tags.
+            res = recipients.bulk_update_tags(conn, ['U_user_1'], [tag_ids[31]], 'add')
             self.assertEqual(res['skipped'], 1)
+            # 3. Bulk addition uses the final slot without exceeding 30.
+            recipients.set_contact_tags(conn, 'U_user_1', tag_ids[:29])
+            res = recipients.bulk_update_tags(conn, ['U_user_1'], tag_ids[29:], 'add')
+            self.assertEqual(res['updated'], 1)
+            contacts = recipients.list_contacts(conn)
+            self.assertEqual(len(contacts[0]['tags']), 30)
 
     def test_http_case_and_notes_endpoints(self):
         import json

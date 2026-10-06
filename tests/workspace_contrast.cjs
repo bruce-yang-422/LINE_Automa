@@ -47,6 +47,9 @@ async function contrast(page,label){
     for(let i=0;i<100&&!fs.existsSync(stateFile);i++){if(child.exitCode!==null)throw Error(stderr);await delay(100);}
     const access=JSON.parse(fs.readFileSync(stateFile,'utf8'));
     browser=await chromium.launch({channel:'chrome',headless:true});
+    if(process.env.TOOLS_ONLY!=='1')await require('./duty_browser_checks.cjs')(browser,access,contrast);
+    await require('./workspace_tools_checks.cjs')(browser,access,contrast);
+    if(process.env.DUTY_ONLY==='1'||process.env.TOOLS_ONLY==='1'){console.log('Duty and workspace tools checks passed');return;}
     const theme=process.env.WORKSPACE_THEME||'light';
     const page=await browser.newPage({viewport:{width:1440,height:1000},reducedMotion:'reduce',colorScheme:theme}),results=[];
     await page.goto(`http://127.0.0.1:${access.port}/login`);

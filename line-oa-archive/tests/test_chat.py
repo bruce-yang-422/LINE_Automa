@@ -13,6 +13,76 @@ import chat
 
 
 class ChatSystemTests(unittest.TestCase):
+    def test_sticker_auto_reply_setting_and_event_scope(self):
+        event={'type':'message','source':{'type':'user','userId':'U_sticker'},'replyToken':'reply-sticker',
+               'message':{'id':'sticker-1','type':'sticker'}}
+        with patch('subscriptions.handle_event',return_value=None),patch('recipients.handle_event'):
+            self.assertEqual(app.save_events([event]),[])
+            with app.database_connection() as conn:
+                chat.save_response_hours(conn,{'enabled':True,'weekly':{'1':{'start':'08:30','end':'17:30'}}})
+                chat.save_response_hours(conn,{'sticker_reply_enabled':True})
+                config=chat.get_response_hours(conn)
+                self.assertTrue(config['enabled'])
+                self.assertEqual(config['weekly']['1']['start'],'08:30')
+                chat.save_response_hours(conn,{'enabled':False})
+                self.assertTrue(chat.get_response_hours(conn)['sticker_reply_enabled'])
+                with self.assertRaises(ValueError):chat.save_response_hours(conn,{'sticker_reply_enabled':'true'})
+            # Enabling must not reply to an already archived message.
+            self.assertEqual(app.save_events([event]),[])
+            new={**event,'message':{'id':'sticker-2','type':'sticker'}}
+            self.assertEqual(app.save_events([new]),[('reply-sticker','系統無法辨識貼圖意圖，請改以文字輸入。')])
+            self.assertEqual(app.save_events([new]),[])
+            for kind in ['group','room']:
+                other={**event,'source':{'type':kind,kind+'Id':'C_test','userId':'U_sticker'},
+                       'message':{'id':'sticker-'+kind,'type':'sticker'}}
+                self.assertEqual(app.save_events([other]),[])
+            self.assertEqual(app.save_events([{**event,'message':{'id':'text-1','type':'text','text':'hi'}}]),[])
+            self.assertEqual(app.save_events([{**event,'replyToken':'','message':{'id':'sticker-no-token','type':'sticker'}}]),[])
+            with app.database_connection() as conn:
+                self.assertEqual(conn.execute("SELECT reply_token FROM line_messages WHERE message_id='sticker-2'").fetchone()[0],'')
+                self.assertEqual(conn.execute("SELECT count(*) FROM line_messages WHERE sent_by='系統（貼圖提示）'").fetchone()[0],1)
+                chat.save_response_hours(conn,{'sticker_reply_enabled':False})
+            self.assertEqual(app.save_events([{**event,'message':{'id':'sticker-off','type':'sticker'}}]),[])
+
+    def test_sticker_auto_reply_settings_isolated_and_migrate(self):
+        import channels
+        with app.database_connection() as conn:
+            chat.save_response_hours(conn,{'sticker_reply_enabled':True})
+            with channels.use('another-oa'):
+                self.assertFalse(chat.get_response_hours(conn)['sticker_reply_enabled'])
+            conn.execute('ALTER TABLE response_hours DROP COLUMN sticker_reply_enabled')
+        app.initialize_database()
+        app.initialize_database()
+        with app.database_connection() as conn:
+            self.assertFalse(chat.get_response_hours(conn)['sticker_reply_enabled'])
+
+    def test_sticker_webhook_records_reply_result_without_retries(self):
+        import base64
+        import hashlib
+        import hmac
+        import io
+        from types import SimpleNamespace
+        import channels
+        channel=channels.get()
+        with app.database_connection() as conn:chat.save_response_hours(conn,{'sticker_reply_enabled':True})
+        for message_id,failure in [('auto-success',False),('auto-failure',True)]:
+            event={'type':'message','source':{'type':'user','userId':self.user1},'replyToken':'token-'+message_id,
+                   'message':{'id':message_id,'type':'sticker'}}
+            body=json.dumps({'destination':channel['bot_user_id'],'events':[event]}).encode()
+            signature=base64.b64encode(hmac.new(channels.credentials()[1].encode(),body,hashlib.sha256).digest()).decode()
+            handler=SimpleNamespace(headers={'Content-Length':str(len(body)),'x-line-signature':signature},
+                                    rfile=io.BytesIO(body),respond=MagicMock())
+            with patch('line_api.reply',side_effect=ValueError('failed') if failure else None) as send,patch('subscriptions.export'),patch('recipients.handle_event'),patch('subscriptions.handle_event',return_value=None):
+                app.Handler.receive_webhook(handler,channel)
+                send.assert_called_once_with(event['replyToken'],'系統無法辨識貼圖意圖，請改以文字輸入。')
+                handler.respond.assert_called_with(200,'ok')
+                handler.rfile=io.BytesIO(body)
+                app.Handler.receive_webhook(handler,channel)
+                self.assertEqual(send.call_count,1)
+            with app.database_connection() as conn:
+                row=conn.execute('SELECT delivery_status,reply_token FROM line_messages WHERE message_id=?',('auto-sticker:'+message_id,)).fetchone()
+                self.assertEqual(row,('unknown' if failure else 'sent',''))
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

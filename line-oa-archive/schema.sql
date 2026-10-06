@@ -1,5 +1,5 @@
 -- LINE 自動化平台資料結構（PRAGMA user_version = 2，由 app.initialize_database() 寫入）。
--- 這是唯一的資料結構來源：全新安裝直接建表，啟動不搬移、不補欄位、不修補舊版資料。
+-- 全新安裝直接建表；同版本僅允許已授權的值日生模組附加欄位。
 -- 結構改版須備份並重置；程式僅接受相同 user_version，不提供舊版升級補丁。
 -- 業務時間採 UTC ISO 8601；登入與快取期限採 Unix seconds。
 -- 所有營運資料都屬於某個 OA：channel_id 為 line_channels.channel_id 或共用範圍 line_channel_shares.share_id。
@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS organizations (
         CHECK (kind IN ('company', 'unit', 'association', 'club', 'family', 'personal', 'other')),
     active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
     messaging_enabled INTEGER NOT NULL DEFAULT 1 CHECK (messaging_enabled IN (0, 1)),
+    duty_enabled INTEGER NOT NULL DEFAULT 0 CHECK (duty_enabled IN (0, 1)),
     -- 記事政策設定：鎖定政策與標籤政策（對話記事本管理規格 5.2 與 7.2.3）
     note_lock_policy TEXT NOT NULL DEFAULT 'disabled'
         CHECK (note_lock_policy IN ('disabled', 'collaborative', 'strict_admin')),
@@ -37,6 +38,7 @@ CREATE TABLE IF NOT EXISTS organization_members (
     role TEXT NOT NULL CHECK (role IN ('org_admin', 'operator', 'collaborator')),
     department TEXT NOT NULL DEFAULT '',
     active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+    duty_manager INTEGER NOT NULL DEFAULT 0 CHECK (duty_manager IN (0, 1)),
     PRIMARY KEY (email, org_id)
 );
 
@@ -196,6 +198,7 @@ CREATE TABLE IF NOT EXISTS canned_replies (
 -- 回應時間只控制瀏覽器通知（聊天規格 12.4）；weekly 為 {"0".."6": {"start","end"}}。
 CREATE TABLE IF NOT EXISTS response_hours (
     channel_id TEXT PRIMARY KEY,
+    sticker_reply_enabled INTEGER NOT NULL DEFAULT 0 CHECK (sticker_reply_enabled IN (0, 1)),
     enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0, 1)),
     timezone TEXT NOT NULL DEFAULT 'Asia/Taipei',
     weekly TEXT NOT NULL DEFAULT '{}',
@@ -222,6 +225,7 @@ CREATE TABLE IF NOT EXISTS recipients (
     address TEXT NOT NULL DEFAULT '',
     organization_name TEXT NOT NULL DEFAULT '',
     job_title TEXT NOT NULL DEFAULT '',
+    work_department TEXT NOT NULL DEFAULT '',
     work_phone TEXT NOT NULL DEFAULT '',
     work_phone_ext TEXT NOT NULL DEFAULT '',
     work_email TEXT NOT NULL DEFAULT '',
@@ -506,4 +510,98 @@ CREATE TABLE IF NOT EXISTS chat_room_preferences (
  is_pinned INTEGER NOT NULL DEFAULT 0 CHECK(is_pinned IN (0,1)),
  marker TEXT NOT NULL DEFAULT '' CHECK(marker IN ('','star','flag')),
  PRIMARY KEY(channel_id,actor,recipient_id)
+);
+
+-- ============ 值日生第二階段（可在既有 v2 資料庫建立） ============
+CREATE TABLE IF NOT EXISTS duty_people (
+ person_id TEXT PRIMARY KEY, org_id TEXT NOT NULL REFERENCES organizations(org_id),
+ full_name TEXT NOT NULL, display_name TEXT NOT NULL DEFAULT '', department TEXT NOT NULL DEFAULT '', floor TEXT NOT NULL DEFAULT '',
+ active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)), deleted INTEGER NOT NULL DEFAULT 0 CHECK(deleted IN (0,1)),
+ created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS duty_positions (
+ position_id TEXT PRIMARY KEY, org_id TEXT NOT NULL REFERENCES organizations(org_id), code TEXT NOT NULL,
+ sort_order INTEGER NOT NULL, vacant INTEGER NOT NULL DEFAULT 1 CHECK(vacant IN (0,1)), UNIQUE(org_id,code)
+);
+CREATE TABLE IF NOT EXISTS duty_position_members (
+ membership_id TEXT PRIMARY KEY, position_id TEXT NOT NULL REFERENCES duty_positions(position_id),
+ person_id TEXT NOT NULL REFERENCES duty_people(person_id), effective_from TEXT NOT NULL, effective_to TEXT,
+ CHECK(effective_to IS NULL OR effective_to>=effective_from)
+);
+CREATE INDEX IF NOT EXISTS duty_members_period ON duty_position_members(position_id,effective_from,effective_to);
+CREATE TABLE IF NOT EXISTS duty_person_bindings (
+ org_id TEXT NOT NULL REFERENCES organizations(org_id), person_id TEXT NOT NULL REFERENCES duty_people(person_id),
+ channel_id TEXT NOT NULL, recipient_id TEXT NOT NULL, updated_at TEXT NOT NULL,
+ PRIMARY KEY(org_id,person_id,channel_id), UNIQUE(org_id,channel_id,recipient_id)
+);
+CREATE TABLE IF NOT EXISTS duty_tasks (
+ task_id TEXT PRIMARY KEY, org_id TEXT NOT NULL REFERENCES organizations(org_id), active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)),
+ deleted INTEGER NOT NULL DEFAULT 0 CHECK(deleted IN (0,1)), sort_order INTEGER NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS duty_task_versions (
+ version_id TEXT PRIMARY KEY, task_id TEXT NOT NULL REFERENCES duty_tasks(task_id), version INTEGER NOT NULL,
+ effective_from TEXT NOT NULL, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', area TEXT NOT NULL DEFAULT '',
+ kind TEXT NOT NULL CHECK(kind IN ('normal','rest','blank')), rotation TEXT NOT NULL CHECK(rotation IN ('year','month','week','fixed')),
+ allow_multiple INTEGER NOT NULL DEFAULT 0 CHECK(allow_multiple IN (0,1)), created_at TEXT NOT NULL,
+ UNIQUE(task_id,version)
+);
+CREATE TABLE IF NOT EXISTS duty_task_items (
+ item_id TEXT PRIMARY KEY, version_id TEXT NOT NULL REFERENCES duty_task_versions(version_id), content TEXT NOT NULL,
+ frequency TEXT NOT NULL CHECK(frequency IN ('daily','weekly','monthly','annual')),
+ weekdays TEXT NOT NULL DEFAULT '[]', day_start INTEGER NOT NULL DEFAULT 1, day_end INTEGER NOT NULL DEFAULT 31,
+ annual_date TEXT NOT NULL DEFAULT '', excluded_dates TEXT NOT NULL DEFAULT '[]', reminder_time TEXT NOT NULL DEFAULT '',
+ reminder_enabled INTEGER NOT NULL DEFAULT 0 CHECK(reminder_enabled IN (0,1)), sort_order INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS duty_rosters (
+ roster_id TEXT PRIMARY KEY, org_id TEXT NOT NULL REFERENCES organizations(org_id), name TEXT NOT NULL,
+ period_type TEXT NOT NULL CHECK(period_type IN ('week','month','year')), date_from TEXT NOT NULL, date_to TEXT NOT NULL,
+ status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','published','replaced','cancelled')),
+ version INTEGER NOT NULL DEFAULT 0, published_by TEXT NOT NULL DEFAULT '', published_at TEXT NOT NULL DEFAULT '',
+ reason TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL, CHECK(date_to>=date_from)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS duty_one_draft ON duty_rosters(org_id,date_from,date_to) WHERE status='draft';
+CREATE UNIQUE INDEX IF NOT EXISTS duty_one_published ON duty_rosters(org_id,date_from,date_to) WHERE status='published';
+CREATE TABLE IF NOT EXISTS duty_assignments (
+ assignment_id TEXT PRIMARY KEY, roster_id TEXT NOT NULL REFERENCES duty_rosters(roster_id), task_id TEXT NOT NULL REFERENCES duty_tasks(task_id),
+ person_ids TEXT NOT NULL DEFAULT '[]', note TEXT NOT NULL DEFAULT '', snapshot TEXT NOT NULL DEFAULT '{}', UNIQUE(roster_id,task_id)
+);
+CREATE TABLE IF NOT EXISTS duty_substitutions (
+ substitution_id TEXT PRIMARY KEY, assignment_id TEXT NOT NULL REFERENCES duty_assignments(assignment_id),
+ original_person_id TEXT NOT NULL REFERENCES duty_people(person_id), substitute_person_id TEXT NOT NULL REFERENCES duty_people(person_id),
+ date_from TEXT NOT NULL, date_to TEXT NOT NULL, CHECK(date_to>=date_from)
+);
+
+CREATE TABLE IF NOT EXISTS duty_notice_settings (
+ org_id TEXT PRIMARY KEY REFERENCES organizations(org_id), channel_id TEXT NOT NULL DEFAULT '',
+ config TEXT NOT NULL DEFAULT '{}', revision INTEGER NOT NULL DEFAULT 1, actor TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS duty_notice_jobs (
+ job_id TEXT PRIMARY KEY, org_id TEXT NOT NULL REFERENCES organizations(org_id), event_key TEXT NOT NULL UNIQUE,
+ kind TEXT NOT NULL, roster_ids TEXT NOT NULL, scheduled_at TEXT NOT NULL, expires_at TEXT NOT NULL,
+ channel_id TEXT NOT NULL, settings_revision INTEGER NOT NULL, actor TEXT NOT NULL,
+ missing TEXT NOT NULL DEFAULT '[]', created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS duty_notice_deliveries (
+ delivery_id TEXT PRIMARY KEY, job_id TEXT NOT NULL REFERENCES duty_notice_jobs(job_id), recipient_id TEXT NOT NULL,
+ person_id TEXT NOT NULL DEFAULT '', kind TEXT NOT NULL, label TEXT NOT NULL, task_ids TEXT NOT NULL,
+ message TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','sending','accepted','failed','cancelled','unknown')),
+ retry_key TEXT NOT NULL, request_id TEXT NOT NULL DEFAULT '', error TEXT NOT NULL DEFAULT '', attempts TEXT NOT NULL DEFAULT '[]',
+ UNIQUE(job_id,recipient_id)
+);
+CREATE INDEX IF NOT EXISTS duty_notice_due ON duty_notice_jobs(scheduled_at,org_id);
+CREATE TABLE IF NOT EXISTS duty_subscriptions (
+ org_id TEXT NOT NULL REFERENCES organizations(org_id), channel_id TEXT NOT NULL, person_id TEXT NOT NULL REFERENCES duty_people(person_id),
+ recipient_id TEXT NOT NULL, subscribed INTEGER NOT NULL DEFAULT 0 CHECK(subscribed IN (0,1)), updated_at TEXT NOT NULL,
+ PRIMARY KEY(org_id,channel_id,person_id)
+);
+CREATE TABLE IF NOT EXISTS duty_rotation_versions (
+ rule_version_id TEXT PRIMARY KEY, org_id TEXT NOT NULL REFERENCES organizations(org_id), period_type TEXT NOT NULL CHECK(period_type IN ('week','month','year')),
+ version INTEGER NOT NULL, effective_from TEXT NOT NULL, config TEXT NOT NULL, automatic INTEGER NOT NULL DEFAULT 0,
+ actor TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE(org_id,period_type,version)
+);
+CREATE TABLE IF NOT EXISTS duty_rotation_runs (
+ rule_version_id TEXT NOT NULL REFERENCES duty_rotation_versions(rule_version_id), date_from TEXT NOT NULL,
+ roster_id TEXT NOT NULL DEFAULT '', status TEXT NOT NULL, error TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL,
+ PRIMARY KEY(rule_version_id,date_from)
 );

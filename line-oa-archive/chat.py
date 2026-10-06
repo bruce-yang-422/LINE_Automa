@@ -533,17 +533,19 @@ def delete_canned_reply(conn, reply_id):
 def get_response_hours(conn):
     """Get response hours configuration for the current channel."""
     row = conn.execute(
-        "SELECT enabled, timezone, weekly, holidays FROM response_hours WHERE channel_id=current_channel()"
+        "SELECT enabled, timezone, weekly, holidays, sticker_reply_enabled FROM response_hours WHERE channel_id=current_channel()"
     ).fetchone()
     if not row:
         return {
             "enabled": False,
+            "sticker_reply_enabled": False,
             "timezone": "Asia/Taipei",
             "weekly": {},
             "holidays": [],
         }
     return {
         "enabled": bool(row[0]),
+        "sticker_reply_enabled": bool(row[4]),
         "timezone": row[1] or "Asia/Taipei",
         "weekly": json.loads(row[2] or "{}"),
         "holidays": json.loads(row[3] or "[]"),
@@ -552,6 +554,10 @@ def get_response_hours(conn):
 
 def save_response_hours(conn, data):
     """Save response hours configuration."""
+    if "sticker_reply_enabled" in data and type(data["sticker_reply_enabled"]) is not bool:
+        raise ValueError("貼圖自動回覆設定格式錯誤。")
+    existing = get_response_hours(conn)
+    data = {**existing, **data}
     enabled = int(bool(data.get("enabled")))
     tz = (data.get("timezone") or "Asia/Taipei").strip()
     # weekly：{"0"(週日)…"6": {"start": "HH:MM", "end": "HH:MM"}}，沒有的星期即非回應時間
@@ -579,14 +585,31 @@ def save_response_hours(conn, data):
     now_iso = datetime.now(timezone.utc).isoformat()
 
     conn.execute(
-        """INSERT INTO response_hours (channel_id, enabled, timezone, weekly, holidays, updated_at)
-           VALUES (current_channel(), ?, ?, ?, ?, ?)
+        """INSERT INTO response_hours (channel_id, enabled, timezone, weekly, holidays, updated_at, sticker_reply_enabled)
+           VALUES (current_channel(), ?, ?, ?, ?, ?, ?)
            ON CONFLICT(channel_id) DO UPDATE
            SET enabled=excluded.enabled, timezone=excluded.timezone, weekly=excluded.weekly,
-               holidays=excluded.holidays, updated_at=excluded.updated_at""",
-        (enabled, tz, weekly, holidays, now_iso)
+               holidays=excluded.holidays, updated_at=excluded.updated_at, sticker_reply_enabled=excluded.sticker_reply_enabled""",
+        (enabled, tz, weekly, holidays, now_iso, int(data["sticker_reply_enabled"]))
     )
     return {"ok": True}
+
+
+STICKER_REPLY_TEXT = "系統無法辨識貼圖意圖，請改以文字輸入。"
+
+
+def queue_sticker_reply(conn, message_id, conversation_id, reply_token):
+    """Called only for newly inserted one-to-one sticker messages; never push or replay."""
+    if not get_response_hours(conn)["sticker_reply_enabled"]:
+        return None
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute("UPDATE line_messages SET reply_token='' WHERE channel_id=current_channel() AND message_id=?", (message_id,))
+    conn.execute("""INSERT INTO line_messages
+                 (channel_id,message_id,conversation_type,conversation_id,message_type,text_content,
+                  sent_at,direction,sent_by,send_method,delivery_status,reply_token)
+                 VALUES (current_channel(),?,'user',?,'text',?,?,'outbound','系統（貼圖提示）','reply','pending',?)""",
+                 ('auto-sticker:'+message_id,conversation_id,STICKER_REPLY_TEXT,now,reply_token))
+    return reply_token, STICKER_REPLY_TEXT
 
 
 def cache_group_member(conn, group_id, user_id, display_name, picture_url=""):

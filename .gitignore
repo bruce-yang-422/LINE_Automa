@@ -31,3 +31,12 @@ Desktop.ini
 
 # Scratch scripts
 scratch/
+
+# Local duty roster source data containing real employee names.
+/docs/工作項目_範本.csv
+/docs/值日人員_範本.csv
+/docs/值日生班表_年度先匯入.csv
+/docs/值日生班表_範本.csv
+/docs/LINE_NOTE_261006_1.jpg
+/docs/LINE_NOTE_261006_1.md
+/docs/10月值日生CSV匯入說明.md

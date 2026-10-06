@@ -268,7 +268,7 @@ def list_contacts(conn):
 
 def update_contact(conn, recipient_id, custom_name, notes=None, tag_ids=None,
                    contact_type=None, phone=None, email=None, postal_code=None, address=None,
-                   organization_name=None, job_title=None, work_phone=None, work_phone_ext=None, work_email=None,
+                   organization_name=None, job_title=None, work_department=None, work_phone=None, work_phone_ext=None, work_email=None,
                    **kwargs):
     if not isinstance(custom_name, str) or len(custom_name) > 80:
         raise ValueError("自訂名稱最多 80 字。")
@@ -284,6 +284,13 @@ def update_contact(conn, recipient_id, custom_name, notes=None, tag_ids=None,
     if notes is not None and (not isinstance(notes, str) or len(notes) > 2000):
         raise ValueError("備忘筆記請限制在 2000 字以內。")
 
+    if work_department is not None and (not isinstance(work_department,str) or len(work_department.strip()) > 60):
+        raise ValueError("聯絡部門請限制在 60 字以內。")
+    if work_department is None:
+        work_department = conn.execute('SELECT work_department FROM recipients WHERE channel_id=current_channel() AND recipient_id=?', (recipient_id,)).fetchone()[0]
+    work_department = work_department.strip()
+    if contact_type in {'organization','person_private'}:
+        work_department = ""
     phone = str(phone).strip() if phone is not None else ""
     email = str(email).strip() if email is not None else ""
     postal_code = str(postal_code).strip() if postal_code is not None else ""
@@ -310,10 +317,10 @@ def update_contact(conn, recipient_id, custom_name, notes=None, tag_ids=None,
 
     conn.execute("""UPDATE recipients SET
                     custom_name=?, notes=?, contact_type=?, phone=?, email=?, postal_code=?, address=?,
-                    organization_name=?, job_title=?, work_phone=?, work_phone_ext=?, work_email=?
+                    organization_name=?, job_title=?, work_department=?, work_phone=?, work_phone_ext=?, work_email=?
                     WHERE recipients.channel_id=current_channel() AND recipient_id=?""",
                  (custom_name.strip(), notes_val, contact_type or "", phone, email, postal_code, address,
-                  organization_name, job_title, work_phone, work_phone_ext, work_email, recipient_id))
+                  organization_name, job_title, work_department, work_phone, work_phone_ext, work_email, recipient_id))
 
     if tag_ids is not None and isinstance(tag_ids, list):
         try:

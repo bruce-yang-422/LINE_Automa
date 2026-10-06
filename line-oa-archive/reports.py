@@ -68,7 +68,7 @@ def account(email, organization_id=None):
     if not selected:
         return None
     return {**user,'role':selected['role'],'organization_id':selected['org_id'],'department':selected['department'],
-            'organization_name':selected['name']}
+            'organization_name':selected['name'], 'duty_manager':selected.get('duty_manager', 0)}
 
 
 def module_enabled(user, module):
@@ -101,6 +101,9 @@ def save_organization(payload, actor):
     """平台管理員：組織資料、啟用狀態與訊息模組。"""
     name, kind = org_profile(payload)
     flags=[payload.get(k) for k in ('active','messaging_enabled')]
+    duty_flag = payload.get('duty_enabled')
+    if duty_flag is not None and type(duty_flag) is not bool:
+        raise ValueError('值日生模組開關格式不正確。')
     if any(type(v) is not bool for v in flags):
         raise ValueError('組織狀態與模組授權格式不正確。')
     org_id=payload.get('org_id') or uuid4().hex
@@ -111,6 +114,8 @@ def save_organization(payload, actor):
                         VALUES (?,?,?,?,?) ON CONFLICT(org_id) DO UPDATE SET name=excluded.name,kind=excluded.kind,
                         active=excluded.active,messaging_enabled=excluded.messaging_enabled''',
                      (org_id,name,kind,*[int(v) for v in flags]))
+        if duty_flag is not None:
+            conn.execute('UPDATE organizations SET duty_enabled=? WHERE org_id=?', (int(duty_flag), org_id))
         audit(conn,actor,'organization.update',org_id,name,org_id)
     return {'org_id':org_id}
 
@@ -142,6 +147,8 @@ def save_membership(payload, actor):
         conn.execute('''INSERT INTO organization_members(email,org_id,role,department,active) VALUES (?,?,?,?,?)
                         ON CONFLICT(email,org_id) DO UPDATE SET role=excluded.role,department=excluded.department,active=excluded.active''',
                      (email,org_id,role,department.strip(),int(active)))
+        if role != 'operator':
+            conn.execute('UPDATE organization_members SET duty_manager=0 WHERE email=? AND org_id=?', (email, org_id))
         conn.execute("UPDATE workspace_users SET role=?,department=? WHERE email=? AND organization_id=? AND role<>'platform_admin'",
                      (role,department.strip(),email,org_id))
         if 'channel_ids' in payload and isinstance(payload['channel_ids'], list):
@@ -263,6 +270,8 @@ def save_user(payload, actor):
             conn.execute('''INSERT INTO organization_members(email,org_id,role,department,active) VALUES (?,?,?,?,?)
                             ON CONFLICT(email,org_id) DO UPDATE SET role=excluded.role,department=excluded.department,active=excluded.active''',
                          (email,fields['organization_id'],role,fields['department'],int(active)))
+        if role != 'operator' and fields['organization_id']:
+            conn.execute('UPDATE organization_members SET duty_manager=0 WHERE email=? AND org_id=?', (email, fields['organization_id']))
         conn.execute("""INSERT INTO workspace_users(email,role,active,display_name,organization_id,department)
                         VALUES (?,?,?,?,?,?) ON CONFLICT(email) DO UPDATE SET role=excluded.role,active=excluded.active,
                         display_name=excluded.display_name,organization_id=excluded.organization_id,department=excluded.department""",

@@ -338,8 +338,20 @@ def handle_post(handler):
                 handler.respond(200,{'ok':True})
             elif handler.path in {'/api/auth/invite','/api/auth/revoke'}:
                 target = email_value(payload.get('email'))
-                if handler.user['role']!='platform_admin' and not (handler.path.endswith('/revoke') and target==handler.principal):
-                    raise AuthError('只有平台管理員能管理其他人的登入。',403)
+                own_revoke = handler.path.endswith('/revoke') and target==handler.principal
+                can_manage = handler.user['role']=='platform_admin'
+                if handler.user['role']=='org_admin':
+                    org_id = handler.user.get('organization_id')
+                    account = next((u for u in reports.users() if u['email']==target),None)
+                    member = reports.account(target,org_id)
+                    # Password setup affects the entire account, including other memberships.
+                    can_manage = bool(account and account['organization_id']==org_id
+                                      and account['role'] in {'operator','collaborator'}
+                                      and member and member['role'] in {'operator','collaborator'}
+                                      and not any(m['active'] and m['org_id']!=org_id
+                                                  for m in reports.memberships(target)))
+                if not can_manage and not own_revoke:
+                    raise AuthError('只能管理本組織的操作或協作人員登入；跨組織帳號請由平台管理員處理。',403)
                 if handler.path.endswith('/invite'):
                     raw = issue_activation(target,handler.identity)
                     public = handler.server.public_host
