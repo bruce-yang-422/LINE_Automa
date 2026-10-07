@@ -298,7 +298,7 @@ async function api(path,payload,original=false,root=false){
   const result=await response.json();
   if(result.auth)authCsrf=result.auth.csrf||"";
   if(response.status===401&&result.login_url==='/login'){location.replace('/login');throw new Error('登入已逾時，請重新登入。');}
-  if(!response.ok){const error=new Error(result.error||"操作未完成。");error.status=response.status;if(response.status===401)state.authLost=true;throw error;}
+  if(!response.ok){const error=new Error(result.error||"操作未完成。");error.status=response.status;error.errors=result.errors||{};if(response.status===401)state.authLost=true;throw error;}
   return result;
 }
 async function load(){
@@ -2914,9 +2914,9 @@ document.addEventListener("change",event=>{
   }
 });
 window.addEventListener("beforeunload",event=>{
-  if(document.querySelector('.duty-grant-form[data-dirty="true"], [data-duty-form][data-dirty="true"], [data-form-editor][data-dirty="true"]')){event.preventDefault();event.returnValue="";}
+  if(document.querySelector('.duty-grant-form[data-dirty="true"], [data-duty-form][data-dirty="true"], [data-form-editor][data-dirty="true"], [data-form-designer][data-dirty="true"]')){event.preventDefault();event.returnValue="";}
 });
-function navigate(view){if(state.busy)return;if(document.querySelector('.duty-grant-form[data-dirty="true"], [data-duty-form][data-dirty="true"], [data-form-editor][data-dirty="true"]')&&!confirm("有未儲存變更，確定離開？"))return;notice("");state.view=view;state.search="";state.kind="all";state.organization_id="";state.department="";state.tagFilter="";state.page=1;setSidebarOpen(false);history.replaceState(null,"","/?view="+encodeURIComponent(view)+(view==="duty"?"&tab="+encodeURIComponent(dutyTab):""));render();$("content").scrollTo({top:0});window.scrollTo({top:0});}
+function navigate(view){if(state.busy)return;if(document.querySelector('.duty-grant-form[data-dirty="true"], [data-duty-form][data-dirty="true"], [data-form-editor][data-dirty="true"], [data-form-designer][data-dirty="true"]')&&!confirm("有未儲存變更，確定離開？"))return;notice("");if(state.view==="forms"&&view!=="forms"){formsUI.mode="basic";formDesignerReset();}state.view=view;state.search="";state.kind="all";state.organization_id="";state.department="";state.tagFilter="";state.page=1;setSidebarOpen(false);history.replaceState(null,"","/?view="+encodeURIComponent(view)+(view==="duty"?"&tab="+encodeURIComponent(dutyTab):""));render();$("content").scrollTo({top:0});window.scrollTo({top:0});}
 function modal(title,html){$("modal-title").textContent=title;$("modal-body").innerHTML=html;$("modal-error").hidden=true;if(!$("modal").open)$("modal").showModal();$("modal").scrollTop=0;$("modal-close").focus({preventScroll:true});}
 async function editContact(id){
   let r=state.contacts.find(x=>x.recipient_id===id);
@@ -4138,7 +4138,7 @@ document.addEventListener("change",event=>{
   if(el.dataset.select){el.checked?state.selected.add(el.dataset.select):state.selected.delete(el.dataset.select);updateSelection();}
   else if(["contact-kind","contact-company","contact-department"].includes(el.id)){state[{"contact-kind":"kind","contact-company":"organization_id","contact-department":"department"}[el.id]]=el.value;state.page=1;if(el.id==="contact-company"){state.department="";render();}else $("contact-list").innerHTML=contactList();}
 });
-document.addEventListener("submit",async event=>{if(event.target.id==="password-form"||event.target.hasAttribute("data-duty-form")||event.target.hasAttribute("data-form-editor"))return;event.preventDefault();const form=event.target,values=Object.fromEntries(new FormData(form)),submit=form.querySelector('[type="submit"]');if(!submit||submit.disabled)return;submit.disabled=true;$("modal-error").hidden=true;
+document.addEventListener("submit",async event=>{if(event.target.id==="password-form"||event.target.hasAttribute("data-duty-form")||event.target.hasAttribute("data-form-editor")||event.target.hasAttribute("data-form-designer")||event.target.hasAttribute("data-form-preview"))return;event.preventDefault();const form=event.target,values=Object.fromEntries(new FormData(form)),submit=form.querySelector('[type="submit"]');if(!submit||submit.disabled)return;submit.disabled=true;$("modal-error").hidden=true;
   try{
     if(form.classList.contains("duty-grant-form")){
       const checked=form.elements.duty_manager.checked,status=form.querySelector('.duty-grant-status');

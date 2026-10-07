@@ -1,0 +1,2777 @@
+[
+  {
+    "name": "mobile-leading-zero",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "short_text",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": true,
+          "format": "phone",
+          "phone_mode": "tw_mobile"
+        }
+      }
+    ],
+    "answers": {
+      "q": "0912345678"
+    },
+    "expected": {}
+  },
+  {
+    "name": "mobile-spaces",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "short_text",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": true,
+          "format": "phone",
+          "phone_mode": "tw_mobile"
+        }
+      }
+    ],
+    "answers": {
+      "q": "0912 345-678"
+    },
+    "expected": {}
+  },
+  {
+    "name": "mobile-invalid",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "short_text",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": true,
+          "format": "phone",
+          "phone_mode": "tw_mobile"
+        }
+      }
+    ],
+    "answers": {
+      "q": "812345678"
+    },
+    "expected": {
+      "q": "phone"
+    }
+  },
+  {
+    "name": "mobile-not-number",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "short_text",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": true,
+          "format": "phone",
+          "phone_mode": "tw_mobile"
+        }
+      }
+    ],
+    "answers": {
+      "q": 912345678
+    },
+    "expected": {
+      "q": "text"
+    }
+  },
+  {
+    "name": "mobile-extension",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "short_text",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": true,
+          "format": "phone",
+          "phone_mode": "tw_mobile"
+        }
+      }
+    ],
+    "answers": {
+      "q": "0912345678x12"
+    },
+    "expected": {
+      "q": "phone"
+    }
+  },
+  {
+    "name": "mobile-international-mode-mismatch",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "short_text",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": true,
+          "format": "phone",
+          "phone_mode": "tw_mobile"
+        }
+      }
+    ],
+    "answers": {
+      "q": "+886912345678"
+    },
+    "expected": {
+      "q": "phone"
+    }
+  },
+  {
+    "name": "optional-phone-empty",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "short_text",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": true,
+          "format": "phone",
+          "phone_mode": "tw_mobile"
+        }
+      }
+    ],
+    "answers": {
+      "q": ""
+    },
+    "expected": {}
+  },
+  {
+    "name": "optional-phone-spaces",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "short_text",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": true,
+          "format": "phone",
+          "phone_mode": "tw_mobile"
+        }
+      }
+    ],
+    "answers": {
+      "q": " \t　"
+    },
+    "expected": {}
+  },
+  {
+    "name": "landline",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "short_text",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": true,
+          "format": "phone",
+          "phone_mode": "tw_landline",
+          "allow_extension": true
+        }
+      }
+    ],
+    "answers": {
+      "q": "02-2345-6789"
+    },
+    "expected": {}
+  },
+  {
+    "name": "landline-local",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "short_text",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": true,
+          "format": "phone",
+          "phone_mode": "tw_landline",
+          "allow_extension": true
+        }
+      }
+    ],
+    "answers": {
+      "q": "037 1234567"
+    },
+    "expected": {}
+  },
+  {
+    "name": "landline-extension-x",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "short_text",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": true,
+          "format": "phone",
+          "phone_mode": "tw_landline",
+          "allow_extension": true
+        }
+      }
+    ],
+    "answers": {
+      "q": "02-2345-6789 x123"
+    },
+    "expected": {}
+  },
+  {
+    "name": "landline-extension-word",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "short_text",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": true,
+          "format": "phone",
+          "phone_mode": "tw_landline",
+          "allow_extension": true
+        }
+      }
+    ],
+    "answers": {
+      "q": "02 2345 6789 分機 123"
+    },
+    "expected": {}
+  },
+  {
+    "name": "landline-extension-ext",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "short_text",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": true,
+          "format": "phone",
+          "phone_mode": "tw_landline",
+          "allow_extension": true
+        }
+      }
+    ],
+    "answers": {
+      "q": "02-2345-6789 ext.123"
+    },
+    "expected": {}
+  },
+  {
+    "name": "landline-invalid",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "short_text",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": true,
+          "format": "phone",
+          "phone_mode": "tw_landline",
+          "allow_extension": true
+        }
+      }
+    ],
+    "answers": {
+      "q": "1234"
+    },
+    "expected": {
+      "q": "phone"
+    }
+  },
+  {
+    "name": "extension-disabled",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "short_text",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": true,
+          "format": "phone",
+          "phone_mode": "tw_landline"
+        }
+      }
+    ],
+    "answers": {
+      "q": "02-2345-6789#123"
+    },
+    "expected": {
+      "q": "phone"
+    }
+  },
+  {
+    "name": "international-plus",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "short_text",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": true,
+          "format": "phone",
+          "phone_mode": "international"
+        }
+      }
+    ],
+    "answers": {
+      "q": "+886 912-345-678"
+    },
+    "expected": {}
+  },
+  {
+    "name": "international-plain",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "short_text",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": true,
+          "format": "phone",
+          "phone_mode": "international"
+        }
+      }
+    ],
+    "answers": {
+      "q": "14155552671"
+    },
+    "expected": {}
+  },
+  {
+    "name": "international-short",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "short_text",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": true,
+          "format": "phone",
+          "phone_mode": "international"
+        }
+      }
+    ],
+    "answers": {
+      "q": "+12"
+    },
+    "expected": {
+      "q": "phone"
+    }
+  },
+  {
+    "name": "email-valid",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "short_text",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": true,
+          "format": "email"
+        }
+      }
+    ],
+    "answers": {
+      "q": "person+tag@example.com"
+    },
+    "expected": {}
+  },
+  {
+    "name": "email-invalid",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "short_text",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": true,
+          "format": "email"
+        }
+      }
+    ],
+    "answers": {
+      "q": "person@localhost"
+    },
+    "expected": {
+      "q": "email"
+    }
+  },
+  {
+    "name": "email-optional-empty",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "short_text",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": true,
+          "format": "email"
+        }
+      }
+    ],
+    "answers": {
+      "q": ""
+    },
+    "expected": {}
+  },
+  {
+    "name": "email-internal-nbsp",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "short_text",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": true,
+          "format": "email"
+        }
+      }
+    ],
+    "answers": {
+      "q": "a b@example.com"
+    },
+    "expected": {
+      "q": "email"
+    }
+  },
+  {
+    "name": "email-end-trim",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "short_text",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": true,
+          "format": "email"
+        }
+      }
+    ],
+    "answers": {
+      "q": "person@example.com\n"
+    },
+    "expected": {}
+  },
+  {
+    "name": "email-multiple-at",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "short_text",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": true,
+          "format": "email"
+        }
+      }
+    ],
+    "answers": {
+      "q": "a@b@example.com"
+    },
+    "expected": {
+      "q": "email"
+    }
+  },
+  {
+    "name": "phone-validation-disabled",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "short_text",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {
+      "q": "invalid phone"
+    },
+    "expected": {}
+  },
+  {
+    "name": "email-validation-disabled",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "short_text",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {
+      "q": "not an email"
+    },
+    "expected": {}
+  },
+  {
+    "name": "required-whitespace",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "short_text",
+        "required": true,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {
+      "q": " \t﻿"
+    },
+    "expected": {
+      "q": "required"
+    }
+  },
+  {
+    "name": "required-null",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "short_text",
+        "required": true,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {
+      "q": null
+    },
+    "expected": {
+      "q": "required"
+    }
+  },
+  {
+    "name": "text-object",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "short_text",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {
+      "q": {
+        "value": "文字"
+      }
+    },
+    "expected": {
+      "q": "text"
+    }
+  },
+  {
+    "name": "text-codepoint-length",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "short_text",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": true,
+          "min_length": 2,
+          "max_length": 2
+        }
+      }
+    ],
+    "answers": {
+      "q": "😀中"
+    },
+    "expected": {}
+  },
+  {
+    "name": "text-length-failed",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "short_text",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": true,
+          "min_length": 2,
+          "max_length": 3
+        }
+      }
+    ],
+    "answers": {
+      "q": "a"
+    },
+    "expected": {
+      "q": "length"
+    }
+  },
+  {
+    "name": "paragraph-length",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "paragraph",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": true,
+          "max_length": 3
+        }
+      }
+    ],
+    "answers": {
+      "q": "一\n二"
+    },
+    "expected": {}
+  },
+  {
+    "name": "paragraph-length-failed",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "paragraph",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": true,
+          "max_length": 3
+        }
+      }
+    ],
+    "answers": {
+      "q": "abcd"
+    },
+    "expected": {
+      "q": "length"
+    }
+  },
+  {
+    "name": "platform-text-limit",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "short_text",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {
+      "q": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "expected": {
+      "q": "text_limit"
+    }
+  },
+  {
+    "name": "custom-message",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "short_text",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": true,
+          "format": "email",
+          "message": "請輸入正確信箱"
+        }
+      }
+    ],
+    "answers": {
+      "q": "no-email"
+    },
+    "expected": {
+      "q": "custom"
+    }
+  },
+  {
+    "name": "numeric-zero",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "number",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {
+      "q": 0
+    },
+    "expected": {}
+  },
+  {
+    "name": "numeric-negative",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "number",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {
+      "q": "-1.5"
+    },
+    "expected": {}
+  },
+  {
+    "name": "numeric-exponent",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "number",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {
+      "q": "1e2"
+    },
+    "expected": {}
+  },
+  {
+    "name": "numeric-unlimited-fraction",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "number",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {
+      "q": "1.2"
+    },
+    "expected": {}
+  },
+  {
+    "name": "numeric-empty",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "number",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {
+      "q": ""
+    },
+    "expected": {}
+  },
+  {
+    "name": "numeric-bool",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "number",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {
+      "q": true
+    },
+    "expected": {
+      "q": "number"
+    }
+  },
+  {
+    "name": "numeric-infinity",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "number",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {
+      "q": "Infinity"
+    },
+    "expected": {
+      "q": "number"
+    }
+  },
+  {
+    "name": "numeric-overflow",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "number",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {
+      "q": "1e999"
+    },
+    "expected": {
+      "q": "number"
+    }
+  },
+  {
+    "name": "numeric-junk",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "number",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {
+      "q": "1a"
+    },
+    "expected": {
+      "q": "number"
+    }
+  },
+  {
+    "name": "numeric-object",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "number",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {
+      "q": {}
+    },
+    "expected": {
+      "q": "number"
+    }
+  },
+  {
+    "name": "numeric-linebreak",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "number",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {
+      "q": "12\n3"
+    },
+    "expected": {
+      "q": "number"
+    }
+  },
+  {
+    "name": "numeric-integer",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "number",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": true,
+          "integer": true,
+          "min": 0,
+          "max": 10
+        }
+      }
+    ],
+    "answers": {
+      "q": "2"
+    },
+    "expected": {}
+  },
+  {
+    "name": "numeric-fraction-rejected",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "number",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": true,
+          "integer": true
+        }
+      }
+    ],
+    "answers": {
+      "q": "1.2"
+    },
+    "expected": {
+      "q": "integer"
+    }
+  },
+  {
+    "name": "numeric-min-rejected",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "number",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": true,
+          "min": 1,
+          "max": 3
+        }
+      }
+    ],
+    "answers": {
+      "q": 0
+    },
+    "expected": {
+      "q": "range"
+    }
+  },
+  {
+    "name": "numeric-disabled-range",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "number",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": false,
+          "min": 1,
+          "max": 3
+        }
+      }
+    ],
+    "answers": {
+      "q": 9
+    },
+    "expected": {}
+  },
+  {
+    "name": "single_choice-option",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "single_choice",
+        "required": false,
+        "options": [
+          {
+            "id": "a",
+            "label": "選項一"
+          },
+          {
+            "id": "b",
+            "label": "選項二"
+          }
+        ],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {
+      "q": "a"
+    },
+    "expected": {}
+  },
+  {
+    "name": "single_choice-invalid",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "single_choice",
+        "required": false,
+        "options": [
+          {
+            "id": "a",
+            "label": "選項一"
+          },
+          {
+            "id": "b",
+            "label": "選項二"
+          }
+        ],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {
+      "q": "c"
+    },
+    "expected": {
+      "q": "choice"
+    }
+  },
+  {
+    "name": "single_choice-array",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "single_choice",
+        "required": false,
+        "options": [
+          {
+            "id": "a",
+            "label": "選項一"
+          },
+          {
+            "id": "b",
+            "label": "選項二"
+          }
+        ],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {
+      "q": [
+        "a",
+        "b"
+      ]
+    },
+    "expected": {
+      "q": "structure"
+    }
+  },
+  {
+    "name": "single_choice-empty",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "single_choice",
+        "required": false,
+        "options": [
+          {
+            "id": "a",
+            "label": "選項一"
+          },
+          {
+            "id": "b",
+            "label": "選項二"
+          }
+        ],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {
+      "q": ""
+    },
+    "expected": {}
+  },
+  {
+    "name": "single_choice-null",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "single_choice",
+        "required": false,
+        "options": [
+          {
+            "id": "a",
+            "label": "選項一"
+          },
+          {
+            "id": "b",
+            "label": "選項二"
+          }
+        ],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {
+      "q": null
+    },
+    "expected": {}
+  },
+  {
+    "name": "single_choice-object",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "single_choice",
+        "required": false,
+        "options": [
+          {
+            "id": "a",
+            "label": "選項一"
+          },
+          {
+            "id": "b",
+            "label": "選項二"
+          }
+        ],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {
+      "q": {
+        "option_id": "b",
+        "other": ""
+      }
+    },
+    "expected": {}
+  },
+  {
+    "name": "dropdown-option",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "dropdown",
+        "required": false,
+        "options": [
+          {
+            "id": "a",
+            "label": "選項一"
+          },
+          {
+            "id": "b",
+            "label": "選項二"
+          }
+        ],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {
+      "q": "a"
+    },
+    "expected": {}
+  },
+  {
+    "name": "dropdown-invalid",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "dropdown",
+        "required": false,
+        "options": [
+          {
+            "id": "a",
+            "label": "選項一"
+          },
+          {
+            "id": "b",
+            "label": "選項二"
+          }
+        ],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {
+      "q": "c"
+    },
+    "expected": {
+      "q": "choice"
+    }
+  },
+  {
+    "name": "dropdown-array",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "dropdown",
+        "required": false,
+        "options": [
+          {
+            "id": "a",
+            "label": "選項一"
+          },
+          {
+            "id": "b",
+            "label": "選項二"
+          }
+        ],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {
+      "q": [
+        "a",
+        "b"
+      ]
+    },
+    "expected": {
+      "q": "structure"
+    }
+  },
+  {
+    "name": "dropdown-empty",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "dropdown",
+        "required": false,
+        "options": [
+          {
+            "id": "a",
+            "label": "選項一"
+          },
+          {
+            "id": "b",
+            "label": "選項二"
+          }
+        ],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {
+      "q": ""
+    },
+    "expected": {}
+  },
+  {
+    "name": "dropdown-null",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "dropdown",
+        "required": false,
+        "options": [
+          {
+            "id": "a",
+            "label": "選項一"
+          },
+          {
+            "id": "b",
+            "label": "選項二"
+          }
+        ],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {
+      "q": null
+    },
+    "expected": {}
+  },
+  {
+    "name": "dropdown-object",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "dropdown",
+        "required": false,
+        "options": [
+          {
+            "id": "a",
+            "label": "選項一"
+          },
+          {
+            "id": "b",
+            "label": "選項二"
+          }
+        ],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {
+      "q": {
+        "option_id": "b",
+        "other": ""
+      }
+    },
+    "expected": {}
+  },
+  {
+    "name": "single-other",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "single_choice",
+        "required": false,
+        "options": [
+          {
+            "id": "a",
+            "label": "選項一"
+          },
+          {
+            "id": "b",
+            "label": "選項二"
+          }
+        ],
+        "allow_other": true,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {
+      "q": {
+        "option_id": "__other__",
+        "other": "其他答案"
+      }
+    },
+    "expected": {}
+  },
+  {
+    "name": "single-other-blank",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "single_choice",
+        "required": false,
+        "options": [
+          {
+            "id": "a",
+            "label": "選項一"
+          },
+          {
+            "id": "b",
+            "label": "選項二"
+          }
+        ],
+        "allow_other": true,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {
+      "q": {
+        "option_id": "__other__",
+        "other": " "
+      }
+    },
+    "expected": {
+      "q": "other"
+    }
+  },
+  {
+    "name": "single-other-disabled",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "single_choice",
+        "required": false,
+        "options": [
+          {
+            "id": "a",
+            "label": "選項一"
+          },
+          {
+            "id": "b",
+            "label": "選項二"
+          }
+        ],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {
+      "q": {
+        "option_id": "__other__",
+        "other": "text"
+      }
+    },
+    "expected": {
+      "q": "choice"
+    }
+  },
+  {
+    "name": "single-orphan-other",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "single_choice",
+        "required": false,
+        "options": [
+          {
+            "id": "a",
+            "label": "選項一"
+          },
+          {
+            "id": "b",
+            "label": "選項二"
+          }
+        ],
+        "allow_other": true,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {
+      "q": {
+        "option_id": "a",
+        "other": "other"
+      }
+    },
+    "expected": {
+      "q": "choice"
+    }
+  },
+  {
+    "name": "multiple-valid",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "multiple_choice",
+        "required": false,
+        "options": [
+          {
+            "id": "a",
+            "label": "選項一"
+          },
+          {
+            "id": "b",
+            "label": "選項二"
+          }
+        ],
+        "allow_other": true,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {
+      "q": [
+        "a",
+        "b"
+      ]
+    },
+    "expected": {}
+  },
+  {
+    "name": "multiple-empty",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "multiple_choice",
+        "required": false,
+        "options": [
+          {
+            "id": "a",
+            "label": "選項一"
+          },
+          {
+            "id": "b",
+            "label": "選項二"
+          }
+        ],
+        "allow_other": true,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {
+      "q": []
+    },
+    "expected": {}
+  },
+  {
+    "name": "multiple-duplicate",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "multiple_choice",
+        "required": false,
+        "options": [
+          {
+            "id": "a",
+            "label": "選項一"
+          },
+          {
+            "id": "b",
+            "label": "選項二"
+          }
+        ],
+        "allow_other": true,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {
+      "q": [
+        "a",
+        "a"
+      ]
+    },
+    "expected": {
+      "q": "structure"
+    }
+  },
+  {
+    "name": "multiple-string",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "multiple_choice",
+        "required": false,
+        "options": [
+          {
+            "id": "a",
+            "label": "選項一"
+          },
+          {
+            "id": "b",
+            "label": "選項二"
+          }
+        ],
+        "allow_other": true,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {
+      "q": "a"
+    },
+    "expected": {
+      "q": "structure"
+    }
+  },
+  {
+    "name": "multiple-invalid",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "multiple_choice",
+        "required": false,
+        "options": [
+          {
+            "id": "a",
+            "label": "選項一"
+          },
+          {
+            "id": "b",
+            "label": "選項二"
+          }
+        ],
+        "allow_other": true,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {
+      "q": [
+        "c"
+      ]
+    },
+    "expected": {
+      "q": "choice"
+    }
+  },
+  {
+    "name": "multiple-other",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "multiple_choice",
+        "required": false,
+        "options": [
+          {
+            "id": "a",
+            "label": "選項一"
+          },
+          {
+            "id": "b",
+            "label": "選項二"
+          }
+        ],
+        "allow_other": true,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {
+      "q": {
+        "option_ids": [
+          "a",
+          "__other__"
+        ],
+        "other": "新選項"
+      }
+    },
+    "expected": {}
+  },
+  {
+    "name": "multiple-other-blank",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "multiple_choice",
+        "required": false,
+        "options": [
+          {
+            "id": "a",
+            "label": "選項一"
+          },
+          {
+            "id": "b",
+            "label": "選項二"
+          }
+        ],
+        "allow_other": true,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {
+      "q": {
+        "option_ids": [
+          "__other__"
+        ],
+        "other": ""
+      }
+    },
+    "expected": {
+      "q": "other"
+    }
+  },
+  {
+    "name": "multiple-required",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "multiple_choice",
+        "required": true,
+        "options": [
+          {
+            "id": "a",
+            "label": "選項一"
+          },
+          {
+            "id": "b",
+            "label": "選項二"
+          }
+        ],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {
+      "q": []
+    },
+    "expected": {
+      "q": "required"
+    }
+  },
+  {
+    "name": "multiple-exact-includes-other",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "multiple_choice",
+        "required": false,
+        "options": [
+          {
+            "id": "a",
+            "label": "選項一"
+          },
+          {
+            "id": "b",
+            "label": "選項二"
+          }
+        ],
+        "allow_other": true,
+        "validation": {
+          "enabled": true,
+          "count_exact": 2
+        }
+      }
+    ],
+    "answers": {
+      "q": {
+        "option_ids": [
+          "a",
+          "__other__"
+        ],
+        "other": "補充"
+      }
+    },
+    "expected": {}
+  },
+  {
+    "name": "multiple-exact-failed",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "multiple_choice",
+        "required": false,
+        "options": [
+          {
+            "id": "a",
+            "label": "選項一"
+          },
+          {
+            "id": "b",
+            "label": "選項二"
+          }
+        ],
+        "allow_other": false,
+        "validation": {
+          "enabled": true,
+          "count_exact": 2
+        }
+      }
+    ],
+    "answers": {
+      "q": [
+        "a"
+      ]
+    },
+    "expected": {
+      "q": "count"
+    }
+  },
+  {
+    "name": "multiple-count-disabled",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "multiple_choice",
+        "required": false,
+        "options": [
+          {
+            "id": "a",
+            "label": "選項一"
+          },
+          {
+            "id": "b",
+            "label": "選項二"
+          }
+        ],
+        "allow_other": false,
+        "validation": {
+          "enabled": false,
+          "count_min": 2
+        }
+      }
+    ],
+    "answers": {
+      "q": [
+        "a"
+      ]
+    },
+    "expected": {}
+  },
+  {
+    "name": "date-leap",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "date",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {
+      "q": "2024-02-29"
+    },
+    "expected": {}
+  },
+  {
+    "name": "date-century-leap",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "date",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {
+      "q": "2000-02-29"
+    },
+    "expected": {}
+  },
+  {
+    "name": "date-nonleap",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "date",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {
+      "q": "2023-02-29"
+    },
+    "expected": {
+      "q": "date"
+    }
+  },
+  {
+    "name": "date-century-nonleap",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "date",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {
+      "q": "1900-02-29"
+    },
+    "expected": {
+      "q": "date"
+    }
+  },
+  {
+    "name": "date-month",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "date",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {
+      "q": "2026-13-01"
+    },
+    "expected": {
+      "q": "date"
+    }
+  },
+  {
+    "name": "date-zero-year",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "date",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {
+      "q": "0000-01-01"
+    },
+    "expected": {
+      "q": "date"
+    }
+  },
+  {
+    "name": "date-noncanonical",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "date",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {
+      "q": "2026-1-01"
+    },
+    "expected": {
+      "q": "date"
+    }
+  },
+  {
+    "name": "date-numeric",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "date",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {
+      "q": 20260101
+    },
+    "expected": {
+      "q": "date"
+    }
+  },
+  {
+    "name": "date-empty",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "date",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {
+      "q": ""
+    },
+    "expected": {}
+  },
+  {
+    "name": "date-lower-bound",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "date",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": true,
+          "date_min": "2026-01-01",
+          "date_max": "2026-12-31"
+        }
+      }
+    ],
+    "answers": {
+      "q": "2026-01-01"
+    },
+    "expected": {}
+  },
+  {
+    "name": "date-range-failed",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "date",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": true,
+          "date_min": "2026-01-01"
+        }
+      }
+    ],
+    "answers": {
+      "q": "2025-12-31"
+    },
+    "expected": {
+      "q": "date_range"
+    }
+  },
+  {
+    "name": "time-valid",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "time",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {
+      "q": "23:59"
+    },
+    "expected": {}
+  },
+  {
+    "name": "time-midnight",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "time",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {
+      "q": "00:00"
+    },
+    "expected": {}
+  },
+  {
+    "name": "time-invalid",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "time",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {
+      "q": "24:00"
+    },
+    "expected": {
+      "q": "time"
+    }
+  },
+  {
+    "name": "time-seconds",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "time",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {
+      "q": "12:30:00"
+    },
+    "expected": {
+      "q": "time"
+    }
+  },
+  {
+    "name": "time-newline",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "time",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {
+      "q": "12:30\n"
+    },
+    "expected": {
+      "q": "time"
+    }
+  },
+  {
+    "name": "rating-valid",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "rating",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        },
+        "rating": {
+          "min": 1,
+          "max": 5,
+          "lower_label": "不滿意",
+          "upper_label": "滿意"
+        }
+      }
+    ],
+    "answers": {
+      "q": "5"
+    },
+    "expected": {}
+  },
+  {
+    "name": "rating-zero",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "rating",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        },
+        "rating": {
+          "min": 1,
+          "max": 5,
+          "lower_label": "不滿意",
+          "upper_label": "滿意"
+        }
+      }
+    ],
+    "answers": {
+      "q": 0
+    },
+    "expected": {
+      "q": "range"
+    }
+  },
+  {
+    "name": "rating-fraction",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "rating",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        },
+        "rating": {
+          "min": 1,
+          "max": 5,
+          "lower_label": "不滿意",
+          "upper_label": "滿意"
+        }
+      }
+    ],
+    "answers": {
+      "q": 2.5
+    },
+    "expected": {
+      "q": "integer"
+    }
+  },
+  {
+    "name": "rating-nan",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "rating",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        },
+        "rating": {
+          "min": 1,
+          "max": 5,
+          "lower_label": "不滿意",
+          "upper_label": "滿意"
+        }
+      }
+    ],
+    "answers": {
+      "q": "abc"
+    },
+    "expected": {
+      "q": "number"
+    }
+  },
+  {
+    "name": "attachment-optional",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "attachment",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        },
+        "attachment": {
+          "extensions": [
+            "jpg",
+            "png",
+            "pdf"
+          ],
+          "max_files": 5,
+          "max_file_bytes": 20971520,
+          "max_total_bytes": 52428800
+        }
+      }
+    ],
+    "answers": {
+      "q": []
+    },
+    "expected": {}
+  },
+  {
+    "name": "attachment-required",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "attachment",
+        "required": true,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        },
+        "attachment": {
+          "extensions": [
+            "jpg",
+            "png",
+            "pdf"
+          ],
+          "max_files": 5,
+          "max_file_bytes": 20971520,
+          "max_total_bytes": 52428800
+        }
+      }
+    ],
+    "answers": {
+      "q": []
+    },
+    "expected": {
+      "q": "required"
+    }
+  },
+  {
+    "name": "attachment-forged-id",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "attachment",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        },
+        "attachment": {
+          "extensions": [
+            "jpg",
+            "png",
+            "pdf"
+          ],
+          "max_files": 5,
+          "max_file_bytes": 20971520,
+          "max_total_bytes": 52428800
+        }
+      }
+    ],
+    "answers": {
+      "q": [
+        "fake"
+      ]
+    },
+    "expected": {
+      "q": "attachment"
+    }
+  },
+  {
+    "name": "section-not-required",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "section",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {},
+    "expected": {}
+  },
+  {
+    "name": "unknown-question",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "short_text",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {
+      "other": "x"
+    },
+    "expected": {
+      "_form": "unknown"
+    }
+  },
+  {
+    "name": "single-null-option",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "single_choice",
+        "required": false,
+        "options": [
+          {
+            "id": "a",
+            "label": "選項一"
+          },
+          {
+            "id": "b",
+            "label": "選項二"
+          }
+        ],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {
+      "q": {
+        "option_id": null
+      }
+    },
+    "expected": {
+      "q": "structure"
+    }
+  },
+  {
+    "name": "single-null-other",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "single_choice",
+        "required": false,
+        "options": [
+          {
+            "id": "a",
+            "label": "選項一"
+          },
+          {
+            "id": "b",
+            "label": "選項二"
+          }
+        ],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {
+      "q": {
+        "option_id": "a",
+        "other": null
+      }
+    },
+    "expected": {
+      "q": "structure"
+    }
+  },
+  {
+    "name": "multi-null-options",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "multiple_choice",
+        "required": false,
+        "options": [
+          {
+            "id": "a",
+            "label": "選項一"
+          },
+          {
+            "id": "b",
+            "label": "選項二"
+          }
+        ],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        }
+      }
+    ],
+    "answers": {
+      "q": {
+        "option_ids": null
+      }
+    },
+    "expected": {
+      "q": "structure"
+    }
+  }
+]

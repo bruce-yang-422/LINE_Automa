@@ -473,6 +473,8 @@ class AdminHandler(BaseHTTPRequestHandler):
                  "/duty-ui.js": (app.BASE_DIR / "web" / "duty-ui.js", "text/javascript; charset=utf-8"),
                  "/admin.js": (app.BASE_DIR / "web" / "admin.js", "text/javascript; charset=utf-8"),
                  "/forms-ui.js": (app.BASE_DIR / "web" / "forms-ui.js", "text/javascript; charset=utf-8"),
+                 "/forms-validation.js": (app.BASE_DIR / "web" / "forms-validation.js", "text/javascript; charset=utf-8"),
+                 "/forms-designer.js": (app.BASE_DIR / "web" / "forms-designer.js", "text/javascript; charset=utf-8"),
                  "/app.css": (app.BASE_DIR / "web" / "app.css", "text/css; charset=utf-8"),
                  "/channels.js": (app.BASE_DIR / "web" / "channels.js", "text/javascript; charset=utf-8"),
                  "/chat.js": (app.BASE_DIR / "web" / "chat.js", "text/javascript; charset=utf-8"),
@@ -842,11 +844,12 @@ class AdminHandler(BaseHTTPRequestHandler):
             self.respond(403, {'error':'沒有操作權限。'})
             return
 
-        if self.preview and not getattr(self, 'preview_edit', False):
+        if self.preview and not getattr(self, 'preview_edit', False) and self.path != '/api/forms/preview':
             self.respond(403, {'error': '視角預覽僅供檢視，請先切換為編輯狀態或返回原帳號操作。'})
             return
 
         allowed_collaborator_posts = {
+            '/api/forms/preview',
             '/api/contacts/bulk', '/api/contact', '/api/tags/save', '/api/tags/delete',
             '/api/chat-notes', '/api/chat-notes/save', '/api/chat-notes/delete',
             '/api/chat-notes/pin', '/api/chat-notes/lock', '/api/chat-notes/restore', '/api/chat-notes/convert-to-case',
@@ -861,6 +864,7 @@ class AdminHandler(BaseHTTPRequestHandler):
             '/api/chat/room-preference', '/api/chat/mark-read', '/api/chat/status', '/api/chat/media/cleanup'
         }
         allowed_operator_posts = allowed_collaborator_posts | {
+            '/api/forms/design',
             '/api/forms/save', '/api/forms/copy', '/api/forms/delete', '/api/forms/status',
             '/api/duty/notice/settings','/api/duty/notice/preview','/api/duty/notice/send','/api/duty/notice/action','/api/duty/notice/trash',
             '/api/duty/rotation/preview','/api/duty/rotation/save','/api/duty/rotation/apply',
@@ -919,7 +923,7 @@ class AdminHandler(BaseHTTPRequestHandler):
 
         try:
             size = int(self.headers.get("Content-Length", "0"))
-            maximum = 12 * 1024 * 1024 if self.path == '/api/assets/upload' else (limits.DUTY_CSV_MAX_BYTES * 6 + 4096 if self.path == '/api/duty/csv/import' else 65536)
+            maximum = limits.FORM_DESIGN_MAX_BYTES if self.path in ('/api/forms/design', '/api/forms/preview') else (12 * 1024 * 1024 if self.path == '/api/assets/upload' else (limits.DUTY_CSV_MAX_BYTES * 6 + 4096 if self.path == '/api/duty/csv/import' else 65536))
             if size <= 0 or size > maximum or self.headers.get_content_type() != "application/json":
                 raise ValueError("請求格式不正確。")
             payload = json.loads(self.rfile.read(size))
@@ -930,13 +934,21 @@ class AdminHandler(BaseHTTPRequestHandler):
             if self.preview:
                 actor_label = f"{self.principal}（於 {self.identity} 視角下）"
 
-            if self.path in ('/api/forms/save', '/api/forms/copy', '/api/forms/delete', '/api/forms/status'):
+            if self.path in ('/api/forms/save', '/api/forms/copy', '/api/forms/delete', '/api/forms/status', '/api/forms/design', '/api/forms/preview'):
                 try:
                     method = {'/api/forms/save': forms.save, '/api/forms/copy': forms.duplicate,
-                              '/api/forms/delete': forms.delete, '/api/forms/status': forms.transition}[self.path]
-                    self.respond(200, method(self.user, payload, actor=actor_label, preview=self.preview and not self.preview_edit))
+                              '/api/forms/delete': forms.delete, '/api/forms/status': forms.transition,
+                              '/api/forms/design': forms.save_design, '/api/forms/preview': forms.preview_answers}[self.path]
+                    result = method(self.user, payload, actor=actor_label, preview=self.preview and not self.preview_edit)
+                    if self.path == '/api/forms/preview' and self.principal_role == 'platform_admin':
+                        with app.database_connection() as conn:
+                            reports.audit(conn, self.principal, 'vendor.view', channels.current_id(),
+                                          '平台管理員檢視客戶營運內容（表單預覽）', self.user['organization_id'])
+                    self.respond(200, result)
                 except PermissionError as exc:
                     self.respond(403, {'error': str(exc)})
+                except forms.forms_validation.DefinitionError as exc:
+                    self.respond(400, {'error': str(exc), 'errors': exc.errors})
             elif self.path in ('/api/duty/notice/settings','/api/duty/notice/preview','/api/duty/notice/send','/api/duty/notice/action','/api/duty/notice/trash','/api/duty/rotation/preview','/api/duty/rotation/save','/api/duty/rotation/apply'):
                 try:
                     methods={'/api/duty/notice/settings':duty_automation.save_settings,'/api/duty/notice/preview':lambda user,payload,preview=False:duty_automation.notice_preview(user,payload),

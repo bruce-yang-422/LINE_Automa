@@ -9,6 +9,7 @@ import app
 import channels
 import limits
 import reports
+import forms_validation
 
 ACTIONS = ('view', 'maintain', 'publish', 'send', 'export')
 
@@ -107,6 +108,7 @@ def listing(user, *, preview=False):
         rows = conn.execute('SELECT * FROM forms WHERE channel_id=? AND organization_id=? ORDER BY updated_at DESC,form_id', _scope(user)).fetchall()
         return {'forms': [_public(conn, dict(row)) for row in rows],
                 'templates': [{'id': key, 'name': value['name']} for key, value in TEMPLATES.items()],
+                'rules': forms_validation.configuration(),
                 'capabilities': capabilities(user, preview=preview)}
 
 
@@ -124,6 +126,41 @@ def invitation_form(user, form_id, *, preview=False):
         if row['status'] != 'collecting' or row['expired']:
             raise ValueError('表單尚未發布、已停止收件或已截止，不能發送邀請。')
         return row
+
+
+def design_impact(old_questions, new_questions):
+    old = {q['id']: q for q in old_questions}
+    new = {q['id']: q for q in new_questions}
+    return any(key not in new or old[key]['type'] != new[key]['type'] or old[key].get('options', []) != new[key].get('options', []) for key in old)
+
+
+def save_design(user, payload, *, actor=None, preview=False):
+    user = authorize(user, 'maintain', preview=preview)
+    questions = forms_validation.validate_questions(payload.get('questions'))
+    with app.database_connection() as conn:
+        conn.execute('BEGIN IMMEDIATE')
+        row = _find(conn, user, payload.get('form_id'))
+        if payload.get('expected_updated_at') != row['updated_at']:
+            raise ValueError('表單已由其他人更新，請重新開啟後再編輯；目前修改仍保留在畫面。')
+        responses = _counts(conn, row['form_id'])['responses']
+        if responses and design_impact(json.loads(row['questions_json']), questions) and payload.get('confirm_response_impact') is not True:
+            raise ValueError('已有回覆，刪題、改題型或修改選項會影響新填寫者；舊答案仍依提交快照解讀。請確認後再儲存。')
+        actor = actor or user['email']
+        conn.execute('UPDATE forms SET questions_json=?,updated_by=?,updated_at=? WHERE form_id=?',
+                     (json.dumps(questions, ensure_ascii=False), actor, datetime.now(timezone.utc).isoformat(), row['form_id']))
+        _audit(conn, actor, 'design', row, f'{len(questions)} 個題目／分區')
+        return {'form': _public(conn, _find(conn, user, row['form_id']))}
+
+
+def preview_answers(user, payload, *, actor=None, preview=False):
+    user = authorize(user, 'view', preview=preview)
+    with app.database_connection() as conn:
+        row = _find(conn, user, payload.get('form_id'))
+    # Unsaved designer content can be previewed without writing any business records.
+    questions = forms_validation.validate_questions(payload.get('questions', json.loads(row['questions_json'])))
+    answers = payload.get('answers')
+    errors = forms_validation.validate_answers(questions, answers)
+    return {'valid': not errors, 'errors': errors, 'answers': answers if not errors else None}
 
 
 def _text(payload, key, maximum, *, required=False, default=''):
@@ -218,8 +255,9 @@ def transition(user, payload, *, actor=None, preview=False):
         if status == 'stopped' and row['status'] == 'draft':
             raise ValueError('草稿尚未發布。')
         if status == 'collecting':
-            if not json.loads(row['questions_json']):
-                raise ValueError('請先新增題目；目前可從內建範本建立表單。')
+            questions = forms_validation.validate_questions(json.loads(row['questions_json']))
+            if not any(q['type'] != 'section' for q in questions):
+                raise ValueError('請先新增至少一個題目。')
             if row['deadline_at'] and datetime.fromisoformat(row['deadline_at']) <= datetime.now(timezone.utc):
                 raise ValueError('截止時間已過，請先調整截止時間再重新開放。')
         actor = actor or user['email']
