@@ -1871,3 +1871,19 @@ dialog { border-radius:18px; }
 }
 
 
+.form-list-filters { display:flex; align-items:end; flex-wrap:wrap; gap:16px; margin-bottom:16px; }
+.form-list-filters .field { flex:1; min-width:160px; }
+.form-list { display:grid; gap:12px; }
+.form-card { display:flex; justify-content:space-between; gap:16px; padding:16px; border:1px solid #dfe4e1; border-radius:12px; min-width:0; }
+.form-card > div { min-width:0; }
+.form-card h3 { margin:0 0 8px; overflow-wrap:anywhere; }
+.form-description { white-space:pre-wrap; overflow-wrap:anywhere; color:#45564d; }
+.form-card-actions { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
+.form-basic-editor { display:grid; gap:14px; max-width:800px; }
+.form-basic-editor input,.form-basic-editor textarea { max-width:100%; min-width:0; box-sizing:border-box; }
+.form-section { margin-top:16px; }
+.form-status,.form-save-status { color:#24372a; }
+.form-error { color:#8b2525; }
+.form-question-summary { padding-left:24px; }
+.form-question-summary li { padding:8px; overflow-wrap:anywhere; }
+@media(max-width:768px) { .form-card { flex-direction:column; } .form-card-actions .btn { min-height:44px; } }

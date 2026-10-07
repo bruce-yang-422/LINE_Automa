@@ -102,6 +102,9 @@ def save_organization(payload, actor):
     name, kind = org_profile(payload)
     flags=[payload.get(k) for k in ('active','messaging_enabled')]
     duty_flag = payload.get('duty_enabled')
+    forms_flag = payload.get('forms_enabled')
+    if forms_flag is not None and type(forms_flag) is not bool:
+        raise ValueError('表單模組開關格式不正確。')
     if duty_flag is not None and type(duty_flag) is not bool:
         raise ValueError('值日生模組開關格式不正確。')
     if any(type(v) is not bool for v in flags):
@@ -116,6 +119,8 @@ def save_organization(payload, actor):
                      (org_id,name,kind,*[int(v) for v in flags]))
         if duty_flag is not None:
             conn.execute('UPDATE organizations SET duty_enabled=? WHERE org_id=?', (int(duty_flag), org_id))
+        if forms_flag is not None:
+            conn.execute('UPDATE organizations SET forms_enabled=? WHERE org_id=?', (int(forms_flag), org_id))
         audit(conn,actor,'organization.update',org_id,name,org_id)
     return {'org_id':org_id}
 

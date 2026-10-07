@@ -11,6 +11,8 @@ const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
     for(let i=0;i<100&&!fs.existsSync(stateFile);i++){if(child.exitCode!==null)throw Error(stderr);await delay(100);}
     const access=JSON.parse(fs.readFileSync(stateFile,'utf8')),url=`http://127.0.0.1:${access.port}/#${access.token}`;
     browser=await chromium.launch({channel:'chrome',headless:true});
+    await require('./forms_browser_checks.cjs')(browser,access,null);
+    if(process.env.FORMS_ONLY==='1'){console.log('Forms checks passed');return;}
     if(process.env.TOOLS_ONLY!=='1')await require('./duty_browser_checks.cjs')(browser,access,null);
     await require('./workspace_tools_checks.cjs')(browser,access,null);
     if(process.env.DUTY_ONLY==='1'||process.env.TOOLS_ONLY==='1'){console.log('Duty and workspace tools checks passed');return;}

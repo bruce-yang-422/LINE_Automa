@@ -85,7 +85,7 @@ $("logout").hidden=!remote;
 const state={session:null,view:new URLSearchParams(location.search).get("view")||"overview",contacts:[],tags:[],jobs:[],cases:[],caseFilter:"all",casePriority:"all",caseQuery:"",savedFilters:[],chatNotes:new Map(),noteCategories:[],noteTags:[],globalNotes:[],globalNotesStats:null,globalNotesCategories:[],globalNotesTags:[],noteHubQuery:"",noteHubCategory:"",noteHubTag:"",noteHubStatus:"all",noteHubChannel:"",noteHubViewMode:"grid",settings:{users:[]},events:[],selected:new Set(),tagAudienceMode:"any",selectedAudienceTags:new Set(),selectedFilterId:"",orgSettingsTab:"general",report:null,step:1,audience:"selected",search:"",kind:"all",organization_id:"",department:"",tagFilter:"",page:1,historyFilter:"all",busy:false,loaded:false,authLost:false};
 let dutyContext=null;
 let dutyTab=new URLSearchParams(location.search).get("tab")||"home";
-const titles={duty:"值日生","personal-settings":"個人化設定",overview:"工作總覽","oa-list":"OA 一覽",chat:"聊天對話","chat-notes":"對話記事本",send:"建立發送",cases:"案件管理",templates:"範本與分類管理",contacts:"聯絡對象",history:"發送紀錄",schedule:"排程管理",personnel:"人員與權限","org-settings":"組織設定",organizations:"組織管理",channels:"LINE OA 管理"};
+const titles={forms:"表單",duty:"值日生","personal-settings":"個人化設定",overview:"工作總覽","oa-list":"OA 一覽",chat:"聊天對話","chat-notes":"對話記事本",send:"建立發送",cases:"案件管理",templates:"範本與分類管理",contacts:"聯絡對象",history:"發送紀錄",schedule:"排程管理",personnel:"人員與權限","org-settings":"組織設定",organizations:"組織管理",channels:"LINE OA 管理"};
 const admin=()=>["platform_admin","org_admin","operator","collaborator"].includes(state.session?.role);
 const manager=()=>["platform_admin","org_admin"].includes(state.session?.role);
 // 數量上限只由後端 limits.py 定義，經 /api/session 取得
@@ -355,8 +355,9 @@ async function load(){
   if(state.view==="channels"&&!navAllowed["platform-org"])state.view="overview";
   if(!lineDataReady()&&!["organizations","channels","oa-list","personnel","org-settings","templates","personal-settings","duty"].includes(state.view))state.view=superAdmin()?"organizations":"channels";
   if(superAdmin()&&!["organizations","channels","personal-settings"].includes(state.view))state.view="organizations";
+  await loadForms();
   const dutyVisible=Boolean(state.session.duty_capabilities?.view);
-  $("duty-nav-label").hidden=!dutyVisible;
+  $("duty-nav-label").hidden=!dutyVisible&&!state.session.forms_capabilities?.view;
   document.querySelector('nav [data-view="duty"]').hidden=!dutyVisible;
   dutyContext=dutyVisible?await api("/api/duty"):null;
   await loadDutySetup();
@@ -2451,6 +2452,7 @@ function render(){
   if(!lineDataReady()&&!["organizations","channels","oa-list","personnel","org-settings","templates","personal-settings","duty"].includes(state.view))state.view=superAdmin()?"organizations":"channels";
   if(superAdmin()&&!["organizations","channels","personal-settings"].includes(state.view))state.view="organizations";
   if(!titles[state.view])state.view="overview";
+  if(state.view==="forms"&&!state.session?.forms_capabilities?.view)state.view=superAdmin()?"organizations":"overview";
   if(state.view==="duty"&&!state.session?.duty_capabilities?.view)state.view=superAdmin()?"organizations":"overview";
   $("crumb").textContent=titles[state.view]||"工作空間";document.title=(titles[state.view]||"工作台")+" · LINE 自動化";
   document.querySelectorAll("nav [data-view]").forEach(el=>{const current=el.dataset.view===state.view;el.classList.toggle("active",current);if(current)el.setAttribute("aria-current","page");else el.removeAttribute("aria-current");});
@@ -2458,6 +2460,7 @@ function render(){
   const pages={
     overview,
     duty:dutyPage,
+    forms:formsPage,
     "oa-list": oaListPage,
     chat:()=>chatPage(),
     "chat-notes": chatNotesPage,
@@ -2911,9 +2914,9 @@ document.addEventListener("change",event=>{
   }
 });
 window.addEventListener("beforeunload",event=>{
-  if(document.querySelector('.duty-grant-form[data-dirty="true"], [data-duty-form][data-dirty="true"]')){event.preventDefault();event.returnValue="";}
+  if(document.querySelector('.duty-grant-form[data-dirty="true"], [data-duty-form][data-dirty="true"], [data-form-editor][data-dirty="true"]')){event.preventDefault();event.returnValue="";}
 });
-function navigate(view){if(state.busy)return;if(document.querySelector('.duty-grant-form[data-dirty="true"], [data-duty-form][data-dirty="true"]')&&!confirm("管理權有未儲存變更，確定離開？"))return;notice("");state.view=view;state.search="";state.kind="all";state.organization_id="";state.department="";state.tagFilter="";state.page=1;setSidebarOpen(false);history.replaceState(null,"","/?view="+encodeURIComponent(view)+(view==="duty"?"&tab="+encodeURIComponent(dutyTab):""));render();$("content").scrollTo({top:0});window.scrollTo({top:0});}
+function navigate(view){if(state.busy)return;if(document.querySelector('.duty-grant-form[data-dirty="true"], [data-duty-form][data-dirty="true"], [data-form-editor][data-dirty="true"]')&&!confirm("有未儲存變更，確定離開？"))return;notice("");state.view=view;state.search="";state.kind="all";state.organization_id="";state.department="";state.tagFilter="";state.page=1;setSidebarOpen(false);history.replaceState(null,"","/?view="+encodeURIComponent(view)+(view==="duty"?"&tab="+encodeURIComponent(dutyTab):""));render();$("content").scrollTo({top:0});window.scrollTo({top:0});}
 function modal(title,html){$("modal-title").textContent=title;$("modal-body").innerHTML=html;$("modal-error").hidden=true;if(!$("modal").open)$("modal").showModal();$("modal").scrollTop=0;$("modal-close").focus({preventScroll:true});}
 async function editContact(id){
   let r=state.contacts.find(x=>x.recipient_id===id);
@@ -3022,6 +3025,7 @@ function viewPicker(){
   modal("切換檢視視角",`<p class="subtitle">目前登入：${esc(principalSession.identity)}。預覽會套用該帳號的角色、公司、部門與個人資料權限，並禁止寫入操作。</p><div class="view-options">${button("返回原帳號視角","apply-view","",'data-id=""')}${viewOptions.map(user=>button(`<strong>${esc(user.display_name||user.email)}</strong><small>${esc(user.email)} · ${esc(roleName(user.role))} · ${esc(user.organization_name||orgName(user.organization_id))} / ${esc(user.department||"未分部門")}</small>`,"apply-view",user.email===viewAs&&user.organization_id===previewOrganization?"active":"",`data-id="${esc(user.email+"|"+user.organization_id)}"`)).join("")}</div>${!viewOptions.length?'<p class="callout">目前沒有可預覽的帳號；平台管理員可在「帳號與設定」新增或調整角色。</p>':""}<p class="subtitle">本瀏覽器會記住選擇；預覽不會變更真正的登入帳號。Cloudflare 登入到期後仍需驗證。</p>`);
 }
 function switchView(email){
+  if(!formCanLeave())return;
   if(email&&!viewOptions.some(user=>user.email+"|"+user.organization_id===email))throw new Error("請重新整理可用帳號。");
   if(email)localStorage.setItem(viewKey,email);else localStorage.removeItem(viewKey);
   // A full navigation discards in-flight previews and all previous-role data.
@@ -4086,7 +4090,7 @@ document.addEventListener("change",event=>{
     loadTemplatesTabContent();
     return;
   }
-  if(el.id==="organization-select"){localStorage.setItem(organizationKey,el.value);location.replace(location.pathname+"?view=overview");return;}
+  if(el.id==="organization-select"){if(!formCanLeave()){el.value=organization;return;}localStorage.setItem(organizationKey,el.value);location.replace(location.pathname+"?view=overview");return;}
   if(el.id==="select-all-visible"){const visible=filteredContacts().slice((state.page-1)*10,state.page*10);if(el.checked)visible.forEach(r=>state.selected.add(r.recipient_id));else visible.forEach(r=>state.selected.delete(r.recipient_id));updateSelection();return;}
   if(el.id==="case-priority-filter"){state.casePriority=el.value;if(state.view==="cases")render();return;}
   if(el.id==="apply-saved-filter"){
@@ -4134,7 +4138,7 @@ document.addEventListener("change",event=>{
   if(el.dataset.select){el.checked?state.selected.add(el.dataset.select):state.selected.delete(el.dataset.select);updateSelection();}
   else if(["contact-kind","contact-company","contact-department"].includes(el.id)){state[{"contact-kind":"kind","contact-company":"organization_id","contact-department":"department"}[el.id]]=el.value;state.page=1;if(el.id==="contact-company"){state.department="";render();}else $("contact-list").innerHTML=contactList();}
 });
-document.addEventListener("submit",async event=>{if(event.target.id==="password-form"||event.target.hasAttribute("data-duty-form"))return;event.preventDefault();const form=event.target,values=Object.fromEntries(new FormData(form)),submit=form.querySelector('[type="submit"]');if(!submit||submit.disabled)return;submit.disabled=true;$("modal-error").hidden=true;
+document.addEventListener("submit",async event=>{if(event.target.id==="password-form"||event.target.hasAttribute("data-duty-form")||event.target.hasAttribute("data-form-editor"))return;event.preventDefault();const form=event.target,values=Object.fromEntries(new FormData(form)),submit=form.querySelector('[type="submit"]');if(!submit||submit.disabled)return;submit.disabled=true;$("modal-error").hidden=true;
   try{
     if(form.classList.contains("duty-grant-form")){
       const checked=form.elements.duty_manager.checked,status=form.querySelector('.duty-grant-status');
@@ -4398,7 +4402,7 @@ document.addEventListener("submit",async event=>{if(event.target.id==="password-
       if(!tag_ids.length)throw new Error("請至少勾選一個標籤。");
       await api('/api/contacts/bulk',{action:'remove_tags',contact_ids:[...state.selected],tag_ids});
     }
-    else if(form.id==="organization-form")await api('/api/organizations/save',{...values,org_id:form.dataset.id||undefined,...Object.fromEntries(['active','messaging_enabled','duty_enabled'].map(k=>[k,form.elements[k].checked]))});
+    else if(form.id==="organization-form")await api('/api/organizations/save',{...values,org_id:form.dataset.id||undefined,...Object.fromEntries(['active','messaging_enabled','duty_enabled','forms_enabled'].map(k=>[k,form.elements[k].checked]))});
     else if(form.id==="membership-form")await api('/api/memberships/save',{...values,active:form.elements.active.checked});
     else if(form.id==="personnel-form"){
       const channel_ids=new FormData(form).getAll('channel_ids');
@@ -4493,7 +4497,7 @@ document.addEventListener("keydown",event=>{
   }
 });
 $("logout").addEventListener("click",async()=>{try{await api('/api/auth/logout',{},true,true);sessionStorage.removeItem('lineAdminToken');location.replace('/login');}catch(error){notice(error.message,true);}});
-$("refresh").addEventListener("click",async()=>{if(state.busy)return;$("refresh").disabled=true;try{await load();render();notice("資料已更新。");await recoverSubmission();}catch(error){notice(error.message,true);}finally{$("refresh").disabled=false;}});
+$("refresh").addEventListener("click",async()=>{if(state.busy||!formCanLeave())return;$("refresh").disabled=true;try{await load();render();notice("資料已更新。");await recoverSubmission();}catch(error){notice(error.message,true);}finally{$("refresh").disabled=false;}});
 async function boot(){try{await load();render();await recoverSubmission();}catch(error){$("page").innerHTML=empty("暫時無法開啟工作台",remote?"請重新整理登入，或聯絡管理員確認帳號已啟用。":"請確認 LINE 服務已更新並啟動，再從控制台重新開啟管理頁。");notice(error.message,true);$("connection").textContent="連線未完成";}}
 boot();
 let polling=false;

@@ -67,6 +67,7 @@ def initialize_database() -> None:
         # Approved additive v2 extension; idempotent and serialized across services.
         conn.execute("BEGIN IMMEDIATE")
         for table, column in (("organizations", "duty_enabled"),
+                              ("organizations", "forms_enabled"),
                               ("organization_members", "duty_manager")):
             columns = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
             if column not in columns:
@@ -84,7 +85,11 @@ def initialize_database() -> None:
         duty_schema = (BASE_DIR / "schema.sql").read_text(encoding="utf-8").split("-- ============ 值日生第二階段", 1)
         if len(duty_schema) == 2:
             conn.commit()
-            conn.executescript("-- ============ 值日生第二階段" + duty_schema[1])
+            conn.executescript("-- ============ 值日生第二階段" + duty_schema[1].split("-- ============ 表單第一階段", 1)[0])
+        forms_schema = (BASE_DIR / "schema.sql").read_text(encoding="utf-8").split("-- ============ 表單第一階段", 1)
+        if len(forms_schema) == 2:
+            conn.commit()
+            conn.executescript("-- ============ 表單第一階段" + forms_schema[1])
 
 
 def valid_signature(body: bytes, signature: str, secret: str) -> bool:

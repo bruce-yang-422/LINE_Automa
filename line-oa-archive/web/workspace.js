@@ -4,6 +4,7 @@ const workspaceTools={tab:'',width:360,focus:null,actions:[]};
 const workspaceToolsDock=window.matchMedia('(min-width:1600px)');
 const workspaceToolsHelp={
   overview:['先確認上方組織與 LINE 帳號，再查看目前工作。','使用左側導覽進入聊天、排程或發送紀錄。'],
+  forms:['先新增空白表單或選擇範本，再編輯基本資料。','儲存後發布；需要結束收件時按停止收件。截止時間顯示為台北時間。'],
   duty:['首頁可依月份與人員查看班表。','班表先建立草稿、分配人員，再檢查並發布。','工作提醒的日期與時間在工作項目中設定；通知設定決定傳送方式。'],
   chat:['選擇對話後查看訊息與聯絡資訊。','切換對話前確認輸入中的訊息；發送後可查看對話紀錄。'],
   'chat-notes':['使用搜尋與分類尋找記事。','開啟記事查看內容，再依需要更新或整理。'],
@@ -33,7 +34,7 @@ function workspaceToolsEnsure(){
 function workspaceToolsDirty(){return Boolean(document.querySelector('#page [data-dirty="true"]')||document.getElementById('chat-message-input')?.value.trim());}
 function workspaceToolsFunctions(){
   const actions=[];
-  const safe=new Set(['person-new','task-new','bulk','new','back','versions','preview','rule-new','preview-notice','manual','test','new-organization','new-channel','new-account','new-case','new-chat-note','new-template','new-category','clear-selection']);
+  const safe=new Set(['person-new','task-new','bulk','new','back','versions','preview','rule-new','preview-notice','manual','test','new-organization','new-channel','new-account','new-case','new-chat-note','new-template','new-category','clear-selection','form-new','form-back','form-copy','form-delete','form-status']);
   const seen=new Set();
   for(const source of document.querySelectorAll('#page button')){
     if(source.hidden||source.closest('[hidden]')||!source.getClientRects().length||source.disabled||source.hasAttribute('data-duty-tab'))continue;

@@ -22,6 +22,7 @@ import line_api
 import recipients
 import reports
 import duty
+import forms
 import duty_automation
 import site_auth
 from send_image import publish_image, verify_public_image, send_push
@@ -471,6 +472,7 @@ class AdminHandler(BaseHTTPRequestHandler):
                  "/duty-roster-ui.js": (app.BASE_DIR / "web" / "duty-roster-ui.js", "text/javascript; charset=utf-8"),
                  "/duty-ui.js": (app.BASE_DIR / "web" / "duty-ui.js", "text/javascript; charset=utf-8"),
                  "/admin.js": (app.BASE_DIR / "web" / "admin.js", "text/javascript; charset=utf-8"),
+                 "/forms-ui.js": (app.BASE_DIR / "web" / "forms-ui.js", "text/javascript; charset=utf-8"),
                  "/app.css": (app.BASE_DIR / "web" / "app.css", "text/css; charset=utf-8"),
                  "/channels.js": (app.BASE_DIR / "web" / "channels.js", "text/javascript; charset=utf-8"),
                  "/chat.js": (app.BASE_DIR / "web" / "chat.js", "text/javascript; charset=utf-8"),
@@ -538,6 +540,19 @@ class AdminHandler(BaseHTTPRequestHandler):
             self.respond(200, path.read_bytes(), mime)
         elif self.path == '/api/channels':
             self.respond(200, channels.catalogue(self.user))
+        elif self.path in ('/api/forms', '/api/forms/detail'):
+            try:
+                if self.path == '/api/forms':
+                    result = forms.listing(self.user, preview=self.preview and not self.preview_edit)
+                else:
+                    result = forms.detail(self.user, query.get('form_id'), preview=self.preview and not self.preview_edit)
+                if self.principal_role == 'platform_admin':
+                    with app.database_connection() as conn:
+                        reports.audit(conn, self.principal, 'vendor.view', channels.current_id(),
+                                      '平台管理員檢視客戶營運內容（表單）', self.user['organization_id'])
+                self.respond(200, result)
+            except PermissionError as exc:
+                self.respond(403, {'error': str(exc)})
         elif re.fullmatch(r'/api/channels/shares/[0-9a-f]{32}', self.path):
             try:
                 self.respond(200, channels.share_recipients(self.path.rsplit('/', 1)[1], self.user))
@@ -583,7 +598,9 @@ class AdminHandler(BaseHTTPRequestHandler):
                                "principal": self.principal, "preview": self.preview, "auth": site_auth.status(self),
                                "memberships": [m for m in reports.memberships(self.identity) if m['active'] and m['org_active'] and m['role'] in {'org_admin','operator','collaborator'}] if not self.preview and self.server.workspace_ready else [],
                                "modules": {'messaging': reports.module_enabled(self.user, 'messaging'),
-                                           'duty': reports.module_enabled(self.user, 'duty')},
+                                           'duty': reports.module_enabled(self.user, 'duty'),
+                                           'forms': reports.module_enabled(self.user, 'forms')},
+                               "forms_capabilities": forms.capabilities(self.user, preview=self.preview and not self.preview_edit) if channels.current_id() else {action: False for action in forms.ACTIONS},
                                "duty_capabilities": duty.capabilities(self.user, preview=self.preview),
                                "needs_setup": getattr(self, 'auth_method', '') == 'local' and not reports.has_platform_admin(),
                                "limits": limits.as_dict()})
@@ -844,6 +861,7 @@ class AdminHandler(BaseHTTPRequestHandler):
             '/api/chat/room-preference', '/api/chat/mark-read', '/api/chat/status', '/api/chat/media/cleanup'
         }
         allowed_operator_posts = allowed_collaborator_posts | {
+            '/api/forms/save', '/api/forms/copy', '/api/forms/delete', '/api/forms/status',
             '/api/duty/notice/settings','/api/duty/notice/preview','/api/duty/notice/send','/api/duty/notice/action','/api/duty/notice/trash',
             '/api/duty/rotation/preview','/api/duty/rotation/save','/api/duty/rotation/apply',
             '/api/duty/csv/import', '/api/duty/csv/export',
@@ -912,7 +930,14 @@ class AdminHandler(BaseHTTPRequestHandler):
             if self.preview:
                 actor_label = f"{self.principal}（於 {self.identity} 視角下）"
 
-            if self.path in ('/api/duty/notice/settings','/api/duty/notice/preview','/api/duty/notice/send','/api/duty/notice/action','/api/duty/notice/trash','/api/duty/rotation/preview','/api/duty/rotation/save','/api/duty/rotation/apply'):
+            if self.path in ('/api/forms/save', '/api/forms/copy', '/api/forms/delete', '/api/forms/status'):
+                try:
+                    method = {'/api/forms/save': forms.save, '/api/forms/copy': forms.duplicate,
+                              '/api/forms/delete': forms.delete, '/api/forms/status': forms.transition}[self.path]
+                    self.respond(200, method(self.user, payload, actor=actor_label, preview=self.preview and not self.preview_edit))
+                except PermissionError as exc:
+                    self.respond(403, {'error': str(exc)})
+            elif self.path in ('/api/duty/notice/settings','/api/duty/notice/preview','/api/duty/notice/send','/api/duty/notice/action','/api/duty/notice/trash','/api/duty/rotation/preview','/api/duty/rotation/save','/api/duty/rotation/apply'):
                 try:
                     methods={'/api/duty/notice/settings':duty_automation.save_settings,'/api/duty/notice/preview':lambda user,payload,preview=False:duty_automation.notice_preview(user,payload),
                         '/api/duty/notice/send':duty_automation.manual_notice,'/api/duty/notice/action':duty_automation.notice_action,'/api/duty/notice/trash':duty_automation.save_trash,

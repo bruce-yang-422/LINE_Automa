@@ -31,6 +31,7 @@ async function loadChannels(){
 }
 
 function changeLineContext(workspace,channel){
+  if(!formCanLeave())return;
   if(state.busy||sessionStorage.getItem('linePendingJob')){notice('請先確認這次提交的結果，再切換 OA。',true);return;}
   const draft=state.report||state.textDraft||messageDraft.items.length||document.getElementById('message-draft')?.value||document.querySelector('#composer-file-preview img');
   if(draft&&!window.confirm('切換 OA 會清除本頁尚未送出的內容與勾選對象。是否切換？'))return;

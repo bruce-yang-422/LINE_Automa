@@ -1,5 +1,5 @@
 -- LINE 自動化平台資料結構（PRAGMA user_version = 2，由 app.initialize_database() 寫入）。
--- 全新安裝直接建表；同版本僅允許已授權的值日生模組附加欄位。
+-- 全新安裝直接建表；同版本僅允許已授權的模組附加欄位（值日生、表單）。
 -- 結構改版須備份並重置；程式僅接受相同 user_version，不提供舊版升級補丁。
 -- 業務時間採 UTC ISO 8601；登入與快取期限採 Unix seconds。
 -- 所有營運資料都屬於某個 OA：channel_id 為 line_channels.channel_id 或共用範圍 line_channel_shares.share_id。
@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS organizations (
     active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
     messaging_enabled INTEGER NOT NULL DEFAULT 1 CHECK (messaging_enabled IN (0, 1)),
     duty_enabled INTEGER NOT NULL DEFAULT 0 CHECK (duty_enabled IN (0, 1)),
+    forms_enabled INTEGER NOT NULL DEFAULT 0 CHECK (forms_enabled IN (0, 1)),
     -- 記事政策設定：鎖定政策與標籤政策（對話記事本管理規格 5.2 與 7.2.3）
     note_lock_policy TEXT NOT NULL DEFAULT 'disabled'
         CHECK (note_lock_policy IN ('disabled', 'collaborative', 'strict_admin')),
@@ -605,3 +606,19 @@ CREATE TABLE IF NOT EXISTS duty_rotation_runs (
  roster_id TEXT NOT NULL DEFAULT '', status TEXT NOT NULL, error TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL,
  PRIMARY KEY(rule_version_id,date_from)
 );
+
+-- ============ 表單第一階段 ============
+CREATE TABLE IF NOT EXISTS forms (
+ form_id TEXT PRIMARY KEY,
+ organization_id TEXT NOT NULL REFERENCES organizations(org_id),
+ channel_id TEXT NOT NULL,
+ name TEXT NOT NULL,
+ description TEXT NOT NULL DEFAULT '',
+ questions_json TEXT NOT NULL DEFAULT '[]',
+ status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','collecting','stopped')),
+ deadline_at TEXT NOT NULL DEFAULT '',
+ submission_message TEXT NOT NULL DEFAULT '',
+ created_by TEXT NOT NULL, updated_by TEXT NOT NULL,
+ created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS forms_scope_idx ON forms(organization_id,channel_id,updated_at);
