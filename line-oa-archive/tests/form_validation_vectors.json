@@ -2773,5 +2773,149 @@
     "expected": {
       "q": "structure"
     }
+  },
+  {
+    "name": "attachment-valid-id",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "attachment",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        },
+        "attachment": {
+          "extensions": [
+            "jpg",
+            "png",
+            "pdf"
+          ],
+          "max_files": 5,
+          "max_file_bytes": 20971520,
+          "max_total_bytes": 52428800
+        }
+      }
+    ],
+    "answers": {
+      "q": [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      ]
+    },
+    "expected": {}
+  },
+  {
+    "name": "attachment-duplicate-id",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "attachment",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        },
+        "attachment": {
+          "extensions": [
+            "jpg",
+            "png",
+            "pdf"
+          ],
+          "max_files": 5,
+          "max_file_bytes": 20971520,
+          "max_total_bytes": 52428800
+        }
+      }
+    ],
+    "answers": {
+      "q": [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      ]
+    },
+    "expected": {
+      "q": "attachment"
+    }
+  },
+  {
+    "name": "attachment-over-count",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "attachment",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        },
+        "attachment": {
+          "extensions": [
+            "jpg",
+            "png",
+            "pdf"
+          ],
+          "max_files": 5,
+          "max_file_bytes": 20971520,
+          "max_total_bytes": 52428800
+        }
+      }
+    ],
+    "answers": {
+      "q": [
+        "00000000000000000000000000000000",
+        "00000000000000000000000000000001",
+        "00000000000000000000000000000002",
+        "00000000000000000000000000000003",
+        "00000000000000000000000000000004",
+        "00000000000000000000000000000005"
+      ]
+    },
+    "expected": {
+      "q": "attachment"
+    }
+  },
+  {
+    "name": "attachment-malformed-ids",
+    "questions": [
+      {
+        "id": "q",
+        "title": "題目",
+        "description": "",
+        "type": "attachment",
+        "required": false,
+        "options": [],
+        "allow_other": false,
+        "validation": {
+          "enabled": false
+        },
+        "attachment": {
+          "extensions": [
+            "jpg",
+            "png",
+            "pdf"
+          ],
+          "max_files": 5,
+          "max_file_bytes": 20971520,
+          "max_total_bytes": 52428800
+        }
+      }
+    ],
+    "answers": {
+      "q": [
+        null
+      ]
+    },
+    "expected": {
+      "q": "attachment"
+    }
   }
 ]

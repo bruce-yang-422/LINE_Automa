@@ -33,8 +33,9 @@ function workspaceToolsEnsure(){
 }
 function workspaceToolsDirty(){return Boolean(document.querySelector('#page [data-dirty="true"]')||document.getElementById('chat-message-input')?.value.trim());}
 function workspaceToolsFunctions(){
+  if(state.view==='forms'&&document.querySelector('#page form[data-form-designer]'))return formSortTools();
   const actions=[];
-  const safe=new Set(['person-new','task-new','bulk','new','back','versions','preview','rule-new','preview-notice','manual','test','new-organization','new-channel','new-account','new-case','new-chat-note','new-template','new-category','clear-selection','form-new','form-back','form-copy','form-delete','form-status','add-question','add-section','basic','back-design']);
+  const safe=new Set(['person-new','task-new','bulk','new','back','versions','preview','rule-new','preview-notice','manual','test','new-organization','new-channel','new-account','new-case','new-chat-note','new-template','new-category','clear-selection','form-new','form-back','form-copy','form-delete','form-status','form-send','form-remind','form-send-history','form-responses','form-response-list','form-response-filter','form-response-export','add-question','add-section','basic','back-design']);
   const seen=new Set();
   for(const source of document.querySelectorAll('#page button')){
     if(source.hidden||source.closest('[hidden]')||!source.getClientRects().length||source.disabled||source.hasAttribute('data-duty-tab'))continue;
@@ -108,7 +109,7 @@ function renderWorkspaceTools(){
   const status=document.getElementById('workspace-workbench-status'),statusText=(titles[state.view]||'工作台')+' · '+(state.busy?'處理中':workspaceToolsDirty()?'未儲存變更':'就緒');if(status.textContent!==statusText)status.textContent=statusText;
   if(!open)return;
   document.getElementById('workspace-tools-context').textContent=titles[state.view]||'工作台';
-  document.getElementById('workspace-tools-title').textContent={summary:'警告與檢查',related:'頁面工具',outline:'頁面大綱',help:'操作說明'}[workspaceTools.tab];
+  document.getElementById('workspace-tools-title').textContent={summary:'警告與檢查',related:state.view==='forms'&&document.querySelector('#page form[data-form-designer]')?'題目排序':'頁面工具',outline:'頁面大綱',help:'操作說明'}[workspaceTools.tab];
   document.getElementById('workspace-tools-body').innerHTML=workspaceTools.tab==='summary'?workspaceToolsSummary():workspaceTools.tab==='related'?workspaceToolsFunctions():workspaceTools.tab==='outline'?workspaceToolsOutline():`<ol class="workspace-tools-help">${(workspaceToolsHelp[state.view]||['先確認目前工作空間，再開始操作。']).map(tip=>`<li>${esc(tip)}</li>`).join('')}</ol><p class="workspace-tools-intro">再次點選右側功能可收合面板。</p>`;
 }
 function workspaceToolsClose(){

@@ -86,17 +86,26 @@ def _find(conn, user, form_id):
 
 
 def _counts(conn, form_id):
-    # Later phases add invitation/response tables; phase one has no recipients.
-    tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-    invitations = conn.execute('SELECT count(*) FROM form_invitations WHERE form_id=?', (form_id,)).fetchone()[0] if 'form_invitations' in tables else 0
-    responses = conn.execute('SELECT count(*) FROM form_responses r JOIN form_invitations i ON i.invitation_id=r.invitation_id WHERE i.form_id=?', (form_id,)).fetchone()[0] if {'form_invitations', 'form_responses'} <= tables else 0
-    return {'invitations': invitations, 'responses': responses}
+    notifications=conn.execute('SELECT count(*) FROM form_notifications WHERE form_id=?',(form_id,)).fetchone()[0]
+    responses=conn.execute('SELECT count(*) FROM form_submissions WHERE form_id=?',(form_id,)).fetchone()[0]
+    return {'notifications':notifications,'responses':responses}
+
+
+def _ensure_public_link(conn,form_id):
+    import secrets
+    conn.execute('INSERT OR IGNORE INTO form_public_links VALUES (?,?)',(form_id,secrets.token_urlsafe(32)))
 
 
 def _public(conn, row):
     result = {**row, 'questions': json.loads(row['questions_json']),
               'counts': _counts(conn, row['form_id'])}
     result.pop('questions_json')
+    folder = conn.execute('SELECT folder_id FROM form_folder_items WHERE form_id=?', (row['form_id'],)).fetchone()
+    result['folder_id'] = folder[0] if folder else ''
+    link=conn.execute('SELECT token FROM form_public_links WHERE form_id=?',(row['form_id'],)).fetchone()
+    import os
+    base=os.environ.get('PUBLIC_BASE_URL','').rstrip('/')
+    result['public_url']=base+'/forms/'+row['form_id']+'?token='+link[0] if base and link else ''
     result['expired'] = bool(row['deadline_at'] and datetime.fromisoformat(row['deadline_at']) <= datetime.now(timezone.utc))
     return result
 
@@ -108,6 +117,7 @@ def listing(user, *, preview=False):
         rows = conn.execute('SELECT * FROM forms WHERE channel_id=? AND organization_id=? ORDER BY updated_at DESC,form_id', _scope(user)).fetchall()
         return {'forms': [_public(conn, dict(row)) for row in rows],
                 'templates': [{'id': key, 'name': value['name']} for key, value in TEMPLATES.items()],
+                'folders': [dict(folder) for folder in conn.execute('SELECT folder_id,name FROM form_folders WHERE channel_id=? AND organization_id=? ORDER BY name,folder_id', _scope(user))],
                 'rules': forms_validation.configuration(),
                 'capabilities': capabilities(user, preview=preview)}
 
@@ -140,6 +150,8 @@ def save_design(user, payload, *, actor=None, preview=False):
     with app.database_connection() as conn:
         conn.execute('BEGIN IMMEDIATE')
         row = _find(conn, user, payload.get('form_id'))
+        import form_content
+        form_content.validate_images(conn, row, questions)
         if payload.get('expected_updated_at') != row['updated_at']:
             raise ValueError('表單已由其他人更新，請重新開啟後再編輯；目前修改仍保留在畫面。')
         responses = _counts(conn, row['form_id'])['responses']
@@ -158,8 +170,13 @@ def preview_answers(user, payload, *, actor=None, preview=False):
         row = _find(conn, user, payload.get('form_id'))
     # Unsaved designer content can be previewed without writing any business records.
     questions = forms_validation.validate_questions(payload.get('questions', json.loads(row['questions_json'])))
+    import form_content
+    with app.database_connection() as conn:form_content.validate_images(conn, row, questions)
     answers = payload.get('answers')
     errors = forms_validation.validate_answers(questions, answers)
+    for q in questions:
+        if q['type']=='attachment' and isinstance(answers,dict) and answers.get(q['id']):
+            errors[q['id']]='預覽不接受正式附件，請使用公開填寫頁上傳。'
     return {'valid': not errors, 'errors': errors, 'answers': answers if not errors else None}
 
 
@@ -217,6 +234,12 @@ def save(user, payload, *, actor=None, preview=False):
             questions = copy.deepcopy(template.get('questions', []))
             conn.execute('INSERT INTO forms(form_id,channel_id,organization_id,name,description,questions_json,deadline_at,submission_message,created_by,updated_by,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
                          (form_id, *_scope(user), name, description, json.dumps(questions, ensure_ascii=False), deadline, message, actor, actor, now, now))
+        if not existing and payload.get('folder_id'):
+            folder_id = payload['folder_id']
+            if not isinstance(folder_id, str) or not conn.execute('SELECT 1 FROM form_folders WHERE folder_id=? AND channel_id=? AND organization_id=?', (folder_id, *_scope(user))).fetchone():
+                raise PermissionError('找不到授權範圍內的資料夾。')
+            conn.execute('INSERT INTO form_folder_items VALUES (?,?)', (form_id,folder_id))
+        _ensure_public_link(conn,form_id)
         row = _find(conn, user, form_id)
         _audit(conn, actor, 'update' if existing else 'create', row)
         return {'form': _public(conn, row)}
@@ -239,6 +262,10 @@ def duplicate(user, payload, *, actor=None, preview=False):
         actor = actor or user['email']
         conn.execute("INSERT INTO forms(form_id,channel_id,organization_id,name,description,questions_json,status,deadline_at,submission_message,created_by,updated_by,created_at,updated_at) VALUES (?,?,?,?,?,?,'draft','',?,?,?,?,?)",
                      (new_id, *_scope(user), name, original['description'], original['questions_json'], original['submission_message'], actor, actor, now, now))
+        folder = conn.execute('SELECT folder_id FROM form_folder_items WHERE form_id=?', (original['form_id'],)).fetchone()
+        if folder:
+            conn.execute('INSERT INTO form_folder_items VALUES (?,?)', (new_id,folder[0]))
+        _ensure_public_link(conn,new_id)
         row = _find(conn, user, new_id)
         _audit(conn, actor, 'copy', row)
         return {'form': _public(conn, row)}
@@ -256,10 +283,11 @@ def transition(user, payload, *, actor=None, preview=False):
             raise ValueError('草稿尚未發布。')
         if status == 'collecting':
             questions = forms_validation.validate_questions(json.loads(row['questions_json']))
-            if not any(q['type'] != 'section' for q in questions):
+            if not any(q['type'] not in forms_validation.RULES['display_types'] for q in questions):
                 raise ValueError('請先新增至少一個題目。')
             if row['deadline_at'] and datetime.fromisoformat(row['deadline_at']) <= datetime.now(timezone.utc):
                 raise ValueError('截止時間已過，請先調整截止時間再重新開放。')
+        _ensure_public_link(conn,row['form_id'])
         actor = actor or user['email']
         conn.execute('UPDATE forms SET status=?,updated_by=?,updated_at=? WHERE form_id=?',
                      (status, actor, datetime.now(timezone.utc).isoformat(), row['form_id']))
@@ -274,10 +302,52 @@ def delete(user, payload, *, actor=None, preview=False):
         row = _find(conn, user, payload.get('form_id'))
         counts = _counts(conn, row['form_id'])
         if payload.get('confirm_counts') != counts:
-            raise ValueError('邀請或回覆數量已變更，請重新確認刪除。')
-        # Phase one never creates invitations or responses. Later phases add cleanup.
-        if any(counts.values()):
-            raise ValueError('含邀請或回覆的表單需透過回覆管理清理後刪除。')
+            raise ValueError('通知或回覆數量已變更，請重新確認刪除。')
+        conn.execute("UPDATE form_attachments SET status='deleted' WHERE form_id=?",(row['form_id'],))
+        conn.execute('DELETE FROM form_upload_drafts WHERE form_id=?',(row['form_id'],))
+        conn.execute('DELETE FROM form_submissions WHERE form_id=?', (row['form_id'],))
+        conn.execute('DELETE FROM form_public_links WHERE form_id=?', (row['form_id'],))
+        conn.execute('DELETE FROM form_notifications WHERE form_id=?', (row['form_id'],))
+        conn.execute('DELETE FROM form_folder_items WHERE form_id=?', (row['form_id'],))
         conn.execute('DELETE FROM forms WHERE form_id=?', (row['form_id'],))
-        _audit(conn, actor or user['email'], 'delete', row, f"邀請 {counts['invitations']}、回覆 {counts['responses']}")
-        return {'ok': True}
+        _audit(conn, actor or user['email'], 'delete', row, f"通知 {counts['notifications']}、回覆 {counts['responses']}")
+    import form_attachments
+    form_attachments.cleanup()
+    return {'ok': True}
+
+
+def folder_action(user, payload, *, actor=None, preview=False):
+    """Maintain OA-scoped folders; deleting a folder never deletes its forms."""
+    user = authorize(user, 'maintain', preview=preview)
+    action = payload.get('action')
+    if action not in ('create', 'rename', 'delete', 'move'):
+        raise ValueError('資料夾操作不正確。')
+    with app.database_connection() as conn:
+        conn.execute('BEGIN IMMEDIATE')
+        folder_id = '' if action == 'create' else payload.get('folder_id', '')
+        folder = None
+        if action != 'create' and (action != 'move' or folder_id != ''):
+            if not isinstance(folder_id, str):
+                raise PermissionError('找不到授權範圍內的資料夾。')
+            folder = conn.execute('SELECT name FROM form_folders WHERE folder_id=? AND channel_id=? AND organization_id=?', (folder_id, *_scope(user))).fetchone()
+            if not folder:
+                raise PermissionError('找不到授權範圍內的資料夾。')
+        if action in ('create', 'rename'):
+            name = _text(payload, 'name', limits.FORM_NAME_MAX, required=True)
+            if conn.execute('SELECT 1 FROM form_folders WHERE channel_id=? AND organization_id=? AND name=? AND folder_id<>?', (*_scope(user), name, folder_id)).fetchone():
+                raise ValueError('已有同名資料夾，請使用其他名稱。')
+            if action == 'create':
+                folder_id = uuid4().hex
+                conn.execute('INSERT INTO form_folders VALUES (?,?,?,?,?)', (folder_id,user['organization_id'],channels.current_id(),name,datetime.now(timezone.utc).isoformat()))
+            else:
+                conn.execute('UPDATE form_folders SET name=? WHERE folder_id=?', (name,folder_id))
+        elif action == 'delete':
+            conn.execute('DELETE FROM form_folder_items WHERE folder_id=?', (folder_id,))
+            conn.execute('DELETE FROM form_folders WHERE folder_id=?', (folder_id,))
+        else:
+            row = _find(conn, user, payload.get('form_id'))
+            conn.execute('DELETE FROM form_folder_items WHERE form_id=?', (row['form_id'],))
+            if folder_id:
+                conn.execute('INSERT INTO form_folder_items VALUES (?,?)', (row['form_id'],folder_id))
+        reports.audit(conn, actor or user['email'], 'forms.folder.'+action, folder_id or payload.get('form_id',''), '問卷資料夾管理', user['organization_id'])
+        return {'ok': True, 'folder_id': folder_id}

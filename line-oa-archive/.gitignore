@@ -13,6 +13,7 @@ data/
 backups/
 instance/
 published-images/
+private/
 *.db
 *.db-wal
 *.db-shm

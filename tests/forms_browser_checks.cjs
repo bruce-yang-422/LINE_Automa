@@ -13,7 +13,7 @@ module.exports=async function formsBrowserChecks(browser,access,contrast){
     await page.goto(url);await page.getByRole('heading',{name:'表單',exact:true}).waitFor();
     assert(await page.locator('nav [data-view="forms"]').isVisible());
     await check('empty list');
-    await page.locator('[data-action="form-new"]').click();
+    await page.locator('[data-action="form-new"]').click();await page.locator('[data-form-create-mode=template]').click();
     await page.locator('[name="template_id"]').selectOption('group_buy');
     await page.locator('#modal [name="name"]').fill('驗收團購');
     await check('create dialog');
@@ -65,7 +65,7 @@ module.exports=async function formsBrowserChecks(browser,access,contrast){
     await page.locator('#form-search').fill('副本');assert.equal(await page.locator('.form-card').count(),1);
     await page.locator('[data-action="form-delete"]').click();
     await page.locator('[data-action="form-confirm-delete"]').waitFor();
-    assert((await page.locator('#modal-body').textContent()).includes('0 份邀請、0 份回覆'));
+    assert((await page.locator('#modal-body').textContent()).includes('0 份通知、0 份回覆'));
     await check('delete dialog mobile');
     await page.locator('[data-action="form-confirm-delete"]').click();
     await page.waitForFunction(()=>!document.querySelector('dialog[open]'));
@@ -74,13 +74,13 @@ module.exports=async function formsBrowserChecks(browser,access,contrast){
     assert.equal(await page.locator('.form-card').count(),1);await check('filtered list mobile');
     const operator=await browser.newContext({viewport:{width:768,height:960},extraHTTPHeaders:{'X-Fixture-Role':'operator'}});
     const opPage=await operator.newPage();opPage.on('pageerror',e=>errors.push(e.message));
-    await opPage.goto(url);await opPage.locator(`[data-action="form-open"][data-id="${id}"]`).click();
+    await opPage.goto(url);await opPage.locator(`.btn[data-action="form-open"][data-id="${id}"]`).click();
     await opPage.getByRole('button',{name:'儲存基本資料',exact:true}).waitFor();
     assert(await opPage.getByRole('button',{name:'儲存基本資料',exact:true}).isVisible());
     await operator.close();
     const readonly=await browser.newContext({viewport:{width:390,height:844},extraHTTPHeaders:{'X-Fixture-Role':'collaborator'}});
     const roPage=await readonly.newPage();roPage.on('pageerror',e=>errors.push(e.message));
-    await roPage.goto(url);await roPage.locator(`[data-action="form-open"][data-id="${id}"]`).click();
+    await roPage.goto(url);await roPage.locator(`.btn[data-action="form-open"][data-id="${id}"]`).click();
     await roPage.locator('#page [data-form-editor]').waitFor();
     assert.equal(await roPage.locator('[data-action="form-status"]').count(),0);
     assert.equal(await roPage.locator('[data-form-editor] [type="submit"]').count(),0);
@@ -95,7 +95,7 @@ module.exports=async function formsBrowserChecks(browser,access,contrast){
     assert.equal((await disabledPage.evaluate(()=>api('/api/forms').catch(e=>({status:e.status})))).status,403);
     await disabled.close();
     // Cleanup our original form so existing workspace suites see their original fixture.
-    await page.evaluate(id=>api('/api/forms/delete',{form_id:id,confirm_counts:{invitations:0,responses:0}}),id);
+    await page.evaluate(id=>api('/api/forms/delete',{form_id:id,confirm_counts:{notifications:0,responses:0}}),id);
     assert.deepEqual(errors,[]);
     if(contrast)fs.writeFileSync('test-results/workspace_contrast/forms-contrast.json',JSON.stringify(contrastResults,null,2));
   }catch(error){

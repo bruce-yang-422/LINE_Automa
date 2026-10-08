@@ -23,7 +23,7 @@ module.exports=async function formsDesignerChecks(browser,access,contrast){
   }
   try{
     await page.goto(`http://127.0.0.1:${access.port}/?view=forms#${access.token}`);
-    await page.locator('[data-action="form-new"]').click();await page.locator('#modal [name="name"]').fill('設計器驗收');
+    await page.locator('[data-action="form-new"]').click();await page.locator('[data-form-create-mode=blank]').click();await page.locator('#modal [name="name"]').fill('設計器驗收');
     await page.getByRole('button',{name:'建立草稿',exact:true}).click();await page.locator('#page [data-form-editor]').waitFor();
     const formId=await page.locator('#page [data-form-editor]').getAttribute('data-id');
     await page.locator('[data-action="form-design"]').click();await page.locator('form[data-form-designer]').waitFor();
@@ -67,7 +67,8 @@ module.exports=async function formsDesignerChecks(browser,access,contrast){
     await field(multi,'validation.count_exact').fill('2');
     let prevented=false;page.once('dialog',async dialog=>{prevented=true;await dialog.dismiss();});
     await page.evaluate(()=>navigate('overview'));assert(prevented);assert(await page.locator('form[data-form-designer]').isVisible());
-    await page.locator('[data-workspace-tool="related"]').click();await page.locator('[data-workspace-tool-action]').filter({hasText:'儲存題目'}).click();
+    await page.locator('[data-workspace-tool="related"]').click();assert.equal(await page.locator('[data-form-sort-id]').count(),13);
+    await page.locator('[data-workspace-tool-close]').click();await page.getByRole('button',{name:'儲存題目',exact:true}).click();
     await page.waitForFunction(()=>document.querySelector('form[data-form-designer]')?.dataset.dirty==='false');
     if(await page.locator('[data-workspace-tool-close]').isVisible())await page.locator('[data-workspace-tool-close]').click();
     const stored=await page.evaluate(id=>api('/api/forms/detail?form_id='+id),formId);
@@ -99,7 +100,7 @@ module.exports=async function formsDesignerChecks(browser,access,contrast){
     await page.getByRole('button',{name:'儲存題目',exact:true}).click();assert(impact);
     await page.evaluate(id=>{formsUI.rows.find(row=>row.form_id===id).counts.responses=0;},formId);
     await save();assert.equal((await page.evaluate(id=>api('/api/forms/detail?form_id='+id),formId)).form.questions.find(q=>q.id===phone).id,phone);
-    await page.evaluate(id=>api('/api/forms/delete',{form_id:id,confirm_counts:{invitations:0,responses:0}}),formId);
+    await page.evaluate(id=>api('/api/forms/delete',{form_id:id,confirm_counts:{notifications:0,responses:0}}),formId);
     assert.deepEqual(errors,[]);
     if(contrast)fs.writeFileSync('test-results/workspace_contrast/forms-designer-contrast.json',JSON.stringify(results,null,2));
   }finally{await context.close();}

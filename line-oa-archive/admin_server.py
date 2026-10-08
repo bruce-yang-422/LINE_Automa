@@ -23,6 +23,10 @@ import recipients
 import reports
 import duty
 import forms
+import form_send
+import form_attachments
+import form_content
+import form_responses
 import duty_automation
 import site_auth
 from send_image import publish_image, verify_public_image, send_push
@@ -126,6 +130,7 @@ class Dispatcher:
                         claimed.append(job_id)
             for job_id in claimed:
                 self.pool.submit(self.run, job_id)
+            form_attachments.cleanup(now)
             if duty_work and (self.duty_tick_task is None or self.duty_tick_task.done()):
                 self.duty_tick_task=self.pool.submit(duty_automation.tick,now,self.closing)
 
@@ -142,7 +147,7 @@ class Dispatcher:
             conn.execute("UPDATE send_deliveries SET status='cancelled' WHERE job_id=? AND status='pending'", (job_id,))
             reports.audit(conn, actor, "send.cancel", job_id, "取消預約", user['organization_id'])
 
-    def submit(self, payload, actor="本機管理員", organization=None):
+    def submit(self, payload, actor="本機管理員", organization=None, form_context=None):
         job_id = str(UUID(str(payload.get("job_id", ""))))
         with self.lock:
             user = reports.actor_user(actor, organization)
@@ -152,6 +157,10 @@ class Dispatcher:
                 raise ValueError("服務正在停止，請稍後再發送。")
             existing = job_status(job_id)
             if existing:
+                if form_context:
+                    with app.database_connection() as conn:
+                        mapping=conn.execute('SELECT form_id,mode,body FROM form_send_jobs WHERE job_id=?',(job_id,)).fetchone()
+                    if not mapping or tuple(mapping)!=(form_context['form_id'],form_context['mode'],form_context['body']) or existing[0]['message_text']!=form_context['message'] or sorted(d['recipient_id'] for d in existing[0]['deliveries'])!=form_context['ids']:raise ValueError('提交識別碼已用於不同內容。')
                 if not job_status(job_id, user):
                     raise ValueError('無法存取此工作。')
                 return existing[0]
@@ -211,10 +220,13 @@ class Dispatcher:
             if prepared and user['role'] == 'platform_admin':
                 organization_id = next((item['asset']['organization_id'] for item in prepared['items'] if item['asset']['organization_id']), '')
             with app.database_connection() as conn:
+                conn.execute('BEGIN IMMEDIATE')
+                if form_context and not form_send.active(conn,form_context,channels.current_id(),organization_id):raise ValueError('問卷已停止、截止或停用，未建立發送工作。')
                 conn.execute('INSERT INTO send_jobs (channel_id,job_id,audience,image_path,image_url,actor,report_title,scheduled_at,message_text,status,organization_id,messages_json) VALUES (current_channel(),?,?,?,?,?,?,?,?,?,?,?)',
                              (job_id, audience, str(source), url, actor, report_title, scheduled_at, message_text, 'scheduled' if scheduled_at else 'queued', organization_id, json.dumps(messages, ensure_ascii=False)))
                 conn.executemany("INSERT INTO send_deliveries (job_id,recipient_id,label,retry_key) VALUES (?,?,?,?)",
                                  [(job_id, r["recipient_id"], contact_label(r), str(uuid4())) for r in selected])
+                if form_context:conn.execute('INSERT INTO form_send_jobs VALUES (?,?,?,?)',(job_id,form_context['form_id'],form_context['mode'],form_context['body']))
                 reports.audit(conn, actor, "send.create", job_id, f"{report_title} · {len(selected)} 個聊天室", organization_id)
             if not scheduled_at:
                 self.pool.submit(self.run, job_id)
@@ -236,6 +248,7 @@ class Dispatcher:
                 conn.row_factory = sqlite3.Row
                 job = conn.execute('SELECT * FROM send_jobs WHERE send_jobs.channel_id=current_channel() AND job_id=?', (job_id,)).fetchone()
                 rows = conn.execute("SELECT * FROM send_deliveries WHERE job_id=?", (job_id,)).fetchall()
+                context=conn.execute('SELECT * FROM form_send_jobs WHERE job_id=?',(job_id,)).fetchone()
                 claimed = conn.execute("UPDATE send_jobs SET status='running' WHERE send_jobs.channel_id=current_channel() AND job_id=? AND status='queued'", (job_id,)).rowcount
                 if not claimed:
                     return
@@ -250,6 +263,8 @@ class Dispatcher:
                     conn.row_factory = sqlite3.Row
                     current = conn.execute('SELECT active FROM recipients WHERE recipients.channel_id=current_channel() AND recipient_id=?', (recipient_id,)).fetchone()
                     skip = self.closing.is_set() or not current or not current[0]
+                    if context and not form_send.active(conn,context,channels.current_id(),job['organization_id']):
+                        skip = True
                     if job['organization_id']:
                         org=next((o for o in reports.organizations() if o['org_id']==job['organization_id']),None)
                         if not org or not org['active'] or not org['messaging_enabled']:
@@ -284,6 +299,7 @@ class Dispatcher:
                 with app.database_connection() as conn:
                     conn.execute("UPDATE send_deliveries SET status=?,request_id=?,error=? WHERE job_id=? AND recipient_id=?",
                                  (status, request_id, error, job_id, recipient_id))
+                    if status=='accepted' and context:form_send.accepted(conn,context,recipient_id)
             with app.database_connection() as conn:
                 conn.execute("UPDATE send_jobs SET status='finished' WHERE send_jobs.channel_id=current_channel() AND job_id=?", (job_id,))
         except Exception:
@@ -542,6 +558,42 @@ class AdminHandler(BaseHTTPRequestHandler):
             self.respond(200, path.read_bytes(), mime)
         elif self.path == '/api/channels':
             self.respond(200, channels.catalogue(self.user))
+        elif self.path in ('/api/forms/responses','/api/forms/responses/detail','/api/forms/responses/export'):
+            try:
+                if self.path.endswith('/export'):
+                    content,name=form_responses.export(self.user,query,preview=self.preview or self.principal_role=='platform_admin',actor=self.identity)
+                    from urllib.parse import quote
+                    self.respond(200,content,'text/csv; charset=utf-8',{'Content-Disposition':"attachment; filename*=UTF-8''"+quote(name)})
+                else:
+                    result=form_responses.detail(self.user,query.get('form_id'),query.get('response_id'),preview=self.preview) if self.path.endswith('/detail') else form_responses.listing(self.user,query,preview=self.preview)
+                    if self.principal_role=='platform_admin':
+                        with app.database_connection() as conn:reports.audit(conn,self.principal,'vendor.view',channels.current_id(),'平台管理員查看問卷回覆',self.user['organization_id'])
+                    self.respond(200,result)
+            except PermissionError as exc:self.respond(403,{'error':str(exc)})
+            except ValueError as exc:self.respond(400,{'error':str(exc)})
+        elif self.path=='/api/forms/send/history':
+            try:
+                result=form_send.history(self.user,query.get('form_id'),preview=self.preview)
+                if self.principal_role=='platform_admin':
+                    with app.database_connection() as conn:reports.audit(conn,self.principal,'vendor.view',channels.current_id(),'平台管理員查看問卷發送紀錄',self.user['organization_id'])
+                self.respond(200,result)
+            except PermissionError as exc:self.respond(403,{'error':str(exc)})
+        elif self.path=='/api/forms/content/image':
+            try:
+                content=form_content.admin_read(self.user,query.get('form_id'),query.get('image_id'),preview=self.preview)
+                if self.principal_role=='platform_admin':
+                    with app.database_connection() as conn:reports.audit(conn,self.principal,'vendor.view',channels.current_id(),'平台管理員查看問卷說明圖片',self.user['organization_id'])
+                self.respond(200,content,'image/png')
+            except PermissionError as exc:self.respond(403,{'error':str(exc)})
+            except ValueError as exc:self.respond(400,{'error':str(exc)})
+        elif self.path=='/api/forms/attachment':
+            try:
+                content,mime,name=form_attachments.admin_read(self.user,query.get('form_id'),query.get('attachment_id'),query.get('kind','download'),preview=self.preview)
+                from urllib.parse import quote
+                if self.principal_role=='platform_admin':
+                    with app.database_connection() as conn:reports.audit(conn,self.principal,'vendor.view',channels.current_id(),'平台管理員查看表單附件',self.user['organization_id'])
+                self.respond(200,content,mime,{'Content-Disposition':"attachment; filename*=UTF-8''"+quote(name)})
+            except (PermissionError,form_attachments.AttachmentError) as exc:self.respond(403,{'error':str(exc)})
         elif self.path in ('/api/forms', '/api/forms/detail'):
             try:
                 if self.path == '/api/forms':
@@ -864,8 +916,9 @@ class AdminHandler(BaseHTTPRequestHandler):
             '/api/chat/room-preference', '/api/chat/mark-read', '/api/chat/status', '/api/chat/media/cleanup'
         }
         allowed_operator_posts = allowed_collaborator_posts | {
-            '/api/forms/design',
-            '/api/forms/save', '/api/forms/copy', '/api/forms/delete', '/api/forms/status',
+            '/api/forms/send/preview','/api/forms/send','/api/forms/send/retry-preview','/api/forms/send/retry',
+            '/api/forms/design', '/api/forms/content/upload',
+            '/api/forms/folder', '/api/forms/save', '/api/forms/copy', '/api/forms/delete', '/api/forms/status',
             '/api/duty/notice/settings','/api/duty/notice/preview','/api/duty/notice/send','/api/duty/notice/action','/api/duty/notice/trash',
             '/api/duty/rotation/preview','/api/duty/rotation/save','/api/duty/rotation/apply',
             '/api/duty/csv/import', '/api/duty/csv/export',
@@ -923,7 +976,7 @@ class AdminHandler(BaseHTTPRequestHandler):
 
         try:
             size = int(self.headers.get("Content-Length", "0"))
-            maximum = limits.FORM_DESIGN_MAX_BYTES if self.path in ('/api/forms/design', '/api/forms/preview') else (12 * 1024 * 1024 if self.path == '/api/assets/upload' else (limits.DUTY_CSV_MAX_BYTES * 6 + 4096 if self.path == '/api/duty/csv/import' else 65536))
+            maximum = limits.FORM_DESIGN_MAX_BYTES if self.path in ('/api/forms/design', '/api/forms/preview') else (12 * 1024 * 1024 if self.path in ('/api/assets/upload','/api/forms/content/upload') else (limits.DUTY_CSV_MAX_BYTES * 6 + 4096 if self.path == '/api/duty/csv/import' else 65536))
             if size <= 0 or size > maximum or self.headers.get_content_type() != "application/json":
                 raise ValueError("請求格式不正確。")
             payload = json.loads(self.rfile.read(size))
@@ -934,9 +987,22 @@ class AdminHandler(BaseHTTPRequestHandler):
             if self.preview:
                 actor_label = f"{self.principal}（於 {self.identity} 視角下）"
 
-            if self.path in ('/api/forms/save', '/api/forms/copy', '/api/forms/delete', '/api/forms/status', '/api/forms/design', '/api/forms/preview'):
+            if self.path in ('/api/forms/send/preview','/api/forms/send','/api/forms/send/retry-preview','/api/forms/send/retry'):
                 try:
-                    method = {'/api/forms/save': forms.save, '/api/forms/copy': forms.duplicate,
+                    readonly=self.preview or self.principal_role=='platform_admin'
+                    if self.path=='/api/forms/send/preview':result=form_send.preview(self.user,payload,preview=readonly)
+                    elif self.path=='/api/forms/send/retry-preview':result=form_send.retry_preview(self.user,payload,preview=readonly)
+                    elif self.path=='/api/forms/send/retry':
+                        retry=form_send.retry_preview(self.user,payload,preview=readonly)
+                        result=form_send.send(self.user,{**retry,'preview_hash':payload.get('preview_hash'),'job_id':payload.get('job_id')},self.server.dispatcher,preview_mode=readonly)
+                    else:result=form_send.send(self.user,payload,self.server.dispatcher,preview_mode=readonly)
+                    self.respond(200,result)
+                except PermissionError as exc:self.respond(403,{'error':str(exc)})
+            elif self.path=='/api/forms/content/upload':
+                self.respond(201,form_content.upload(self.user,payload,preview=self.preview and not self.preview_edit))
+            elif self.path in ('/api/forms/folder', '/api/forms/save', '/api/forms/copy', '/api/forms/delete', '/api/forms/status', '/api/forms/design', '/api/forms/preview'):
+                try:
+                    method = {'/api/forms/folder': forms.folder_action, '/api/forms/save': forms.save, '/api/forms/copy': forms.duplicate,
                               '/api/forms/delete': forms.delete, '/api/forms/status': forms.transition,
                               '/api/forms/design': forms.save_design, '/api/forms/preview': forms.preview_answers}[self.path]
                     result = method(self.user, payload, actor=actor_label, preview=self.preview and not self.preview_edit)
@@ -1348,7 +1414,7 @@ class AdminHandler(BaseHTTPRequestHandler):
                 reports.save_organization_profile(self.user.get('organization_id'), payload, actor_label)
                 self.respond(200, {'ok': True})
 
-            elif self.path == '/api/assets/upload':
+            elif self.path in ('/api/assets/upload','/api/forms/content/upload'):
                 if not reports.module_enabled(self.user, 'messaging'):
                     raise ValueError('此組織尚未授權訊息發送模組。')
                 self.respond(201, composer.upload(payload, self.user))

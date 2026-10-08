@@ -102,7 +102,7 @@ class FormsPermissionsTests(unittest.TestCase):
         self.assertEqual(self.request(server, '/api/forms', ORG_ADMIN, channel='other')[0], 403)
         self.assertEqual(self.request(server, '/api/forms', SENDER, channel='second')[0], 403)
         self.assertEqual(self.request(server, '/api/forms/detail?form_id='+row['form_id'], ORG_ADMIN, channel='second')[0], 403)
-        for route, payload in [('save', {'name': '跨 OA'}), ('copy', {}), ('delete', {'confirm_counts': {'invitations': 0, 'responses': 0}}), ('status', {'status': 'collecting'})]:
+        for route, payload in [('save', {'name': '跨 OA'}), ('copy', {}), ('delete', {'confirm_counts': {'notifications': 0, 'responses': 0}}), ('status', {'status': 'collecting'})]:
             self.assertEqual(self.request(server, '/api/forms/'+route, ORG_ADMIN,
                                           {**payload, 'form_id': row['form_id']}, channel='second')[0], 403)
 
@@ -161,14 +161,14 @@ class FormsPermissionsTests(unittest.TestCase):
             self.assertEqual(copied['questions'], row['questions'])
             with self.assertRaises(ValueError):
                 forms.delete(self.user, {'form_id': copied['form_id']})
-            forms.delete(self.user, {'form_id': copied['form_id'], 'confirm_counts': {'invitations': 0, 'responses': 0}})
+            forms.delete(self.user, {'form_id': copied['form_id'], 'confirm_counts': {'notifications': 0, 'responses': 0}})
             with self.assertRaises(PermissionError):
                 forms.detail(self.user, copied['form_id'])
         with app.database_connection() as conn:
             actions = {r[0] for r in conn.execute("SELECT action FROM audit_events WHERE action LIKE 'forms.%'")}
             self.assertTrue({'forms.create','forms.copy','forms.status','forms.delete'} <= actions)
             detail = conn.execute("SELECT detail FROM audit_events WHERE action='forms.delete'").fetchone()[0]
-            self.assertIn('邀請 0、回覆 0', detail)
+            self.assertIn('通知 0、回覆 0', detail)
 
     def test_stop_deadline_reopen_and_utc_storage(self):
         self.prepare()

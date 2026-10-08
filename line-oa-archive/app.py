@@ -90,6 +90,21 @@ def initialize_database() -> None:
         if len(forms_schema) == 2:
             conn.commit()
             conn.executescript("-- ============ 表單第一階段" + forms_schema[1])
+            # Approved switch to shareable forms: retain answers, remove recipient attribution.
+            import secrets
+            from uuid import uuid4
+            conn.execute('BEGIN IMMEDIATE')
+            tables={r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            if 'form_invitations' in tables:
+                conn.execute("INSERT OR IGNORE INTO form_notifications SELECT invitation_id,form_id,channel_id,recipient_id,sent_at,last_reminded_at FROM form_invitations")
+                if 'form_responses' in tables:
+                    for old in conn.execute('SELECT r.invitation_id,i.form_id,r.answers_json,r.questions_snapshot_json,r.first_submitted_at,r.updated_at FROM form_responses r JOIN form_invitations i ON i.invitation_id=r.invitation_id').fetchall():
+                        conn.execute('INSERT INTO form_submissions VALUES (?,?,?,?,?,?,?,?)',(uuid4().hex,old[1],secrets.token_urlsafe(32),secrets.token_urlsafe(32),*old[2:]))
+                    conn.execute('DROP TABLE form_responses')
+                conn.execute('DROP TABLE form_invitations')
+            for form_id, in conn.execute('SELECT form_id FROM forms').fetchall():
+                conn.execute('INSERT OR IGNORE INTO form_public_links VALUES (?,?)',(form_id,secrets.token_urlsafe(32)))
+
 
 
 def valid_signature(body: bytes, signature: str, secret: str) -> bool:
@@ -188,6 +203,16 @@ def save_events(events: list[dict]) -> list:
 
 
 class Handler(BaseHTTPRequestHandler):
+    def log_request(self, code='-', size='-'):
+        if urlsplit(self.path).path.startswith('/forms/'):
+            self.log_message('%s %s %s', self.command, '/forms/[invitation]', code)
+        else:
+            super().log_request(code, size)
+
+    def serve_forms(self):
+        import public_forms
+        return public_forms.handle(self)
+
     def serve_image(self, head_only: bool = False) -> bool:
         # Only explicitly published PNG snapshots are public, never arbitrary local paths.
         match = re.fullmatch(r"/images/([0-9a-f]{32}\.png)", self.path)
@@ -215,6 +240,8 @@ class Handler(BaseHTTPRequestHandler):
         return True
 
     def do_HEAD(self) -> None:
+        if self.serve_forms():
+            return
         if not self.serve_image(head_only=True) and not self.serve_media(head_only=True):
             self.send_response(404)
             self.end_headers()
@@ -263,6 +290,8 @@ class Handler(BaseHTTPRequestHandler):
         return True
 
     def do_GET(self) -> None:
+        if self.serve_forms():
+            return
         if self.serve_image() or self.serve_media():
             return
         if self.path == "/healthz":
@@ -276,6 +305,8 @@ class Handler(BaseHTTPRequestHandler):
             self.respond(404, "找不到資源")
 
     def do_POST(self) -> None:
+        if self.serve_forms():
+            return
         try:
             row = channels.webhook_channel(self.path)
             with channels.use(row['channel_id']):

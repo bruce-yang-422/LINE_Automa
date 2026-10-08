@@ -62,16 +62,35 @@ const FormValidation=(()=>{
       if(enabled&&(value<(v.date_min??'0001-01-01')||value>(v.date_max??'9999-12-31')))return ['date_range',true];
     }else if(kind==='time'){
       if(!match('time',value))return ['time',false];
-    }else if(kind==='attachment')return ['attachment',false];
+    }else if(kind==='attachment'){if(!Array.isArray(value)||value.length>q.attachment.max_files||value.some(id=>typeof id!=='string'||!(/^[0-9a-f]{32}$/).test(id))||new Set(value).size!==value.length)return ['attachment',false];}
     return [null,false];
   }
   function validateAnswers(questions,answers){
     if(!plain(answers))return {_form:rules.messages.structure};
-    const errors={},active=new Set(questions.filter(q=>q.type!=='section').map(q=>q.id));
+    const errors={},active=new Set(questions.filter(q=>!rules.display_types.includes(q.type)).map(q=>q.id));
     if(Object.keys(answers).some(id=>!active.has(id)))errors._form=rules.messages.unknown;
-    for(const q of questions){if(q.type==='section')continue;const [code,custom]=answerError(q,answers[q.id]);if(code)errors[q.id]=custom&&q.validation?.message?q.validation.message:rules.messages[code];}
+    for(const q of questions){if(rules.display_types.includes(q.type))continue;const [code,custom]=answerError(q,answers[q.id]);if(code)errors[q.id]=custom&&q.validation?.message?q.validation.message:rules.messages[code];}
     return errors;
   }
-  return {configure,validateAnswers,validDate,number,trim,get rules(){return rules;}};
+  function pages(questions){
+    const result=[[]];
+    for(const q of questions){
+      if(q.type==='section'&&q.page_break===true&&result.at(-1).length)result.push([]);
+      result.at(-1).push(q);
+    }
+    return result;
+  }
+  const escape=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  function youtubeId(value){
+    try{const url=new URL(value);if(url.protocol!=='https:'||url.username||url.password||!['youtube.com','www.youtube.com','m.youtube.com','youtu.be','www.youtu.be','www.youtube-nocookie.com'].includes(url.host))return '';
+      const parts=url.pathname.split('/').filter(Boolean),id=url.host.endsWith('youtu.be')?parts[0]:url.pathname==='/watch'?url.searchParams.get('v'):['embed','shorts'].includes(parts[0])?parts[1]:'';
+      return /^[A-Za-z0-9_-]{11}$/.test(id||'')?id:'';
+    }catch{return '';}
+  }
+  function contentMarkup(q,imageUrl='',embed=false){
+    const c=q.content||{},video=youtubeId(c.youtube_url),title=q.title||'YouTube 影片';
+    return `<section class="form-content-block">${q.title?`<h2>${escape(q.title)}</h2>`:''}${q.description?`<p class="description">${escape(q.description)}</p>`:''}${c.kind==='image'&&c.image_id?`<figure><img ${imageUrl?`src="${escape(imageUrl)}"`:`data-form-content-image="${escape(c.image_id)}" hidden`} alt="${escape(q.title||q.description||'問卷說明圖片')}">${imageUrl?'':'<figcaption data-content-image-status>載入說明圖片中…</figcaption>'}</figure>`:''}${c.kind==='video'&&video?(embed?`<iframe class="form-content-video" src="https://www.youtube-nocookie.com/embed/${video}" title="${escape(title)}" loading="lazy" referrerpolicy="no-referrer" allow="encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>`:`<a class="form-content-video-link" href="https://www.youtube.com/watch?v=${video}" target="_blank" rel="noopener noreferrer"><span aria-hidden="true">▶</span><strong>${escape(title)}</strong><small>開啟 YouTube 影片預覽 · 公開填寫頁提供內嵌播放</small></a>`):''}</section>`;
+  }
+  return {configure,validateAnswers,pages,youtubeId,contentMarkup,validDate,number,trim,get rules(){return rules;}};
 })();
 if(typeof module!=='undefined')module.exports=FormValidation;

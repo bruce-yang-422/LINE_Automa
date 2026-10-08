@@ -622,3 +622,73 @@ CREATE TABLE IF NOT EXISTS forms (
  created_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS forms_scope_idx ON forms(organization_id,channel_id,updated_at);
+
+-- 問卷首頁分類（既有問卷預設未分類）
+CREATE TABLE IF NOT EXISTS form_folders (
+ folder_id TEXT PRIMARY KEY,
+ organization_id TEXT NOT NULL REFERENCES organizations(org_id),
+ channel_id TEXT NOT NULL,
+ name TEXT NOT NULL,
+ created_at TEXT NOT NULL,
+ UNIQUE(organization_id,channel_id,name)
+);
+CREATE TABLE IF NOT EXISTS form_folder_items (
+ form_id TEXT PRIMARY KEY REFERENCES forms(form_id) ON DELETE CASCADE,
+ folder_id TEXT NOT NULL REFERENCES form_folders(folder_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS form_folder_items_folder_idx ON form_folder_items(folder_id);
+
+-- 表單第三階段：可分享問卷與獨立回覆
+CREATE TABLE IF NOT EXISTS form_public_links (
+ form_id TEXT PRIMARY KEY REFERENCES forms(form_id) ON DELETE CASCADE,
+ token TEXT NOT NULL UNIQUE
+);
+CREATE TABLE IF NOT EXISTS form_notifications (
+ notification_id TEXT PRIMARY KEY,
+ form_id TEXT NOT NULL REFERENCES forms(form_id) ON DELETE CASCADE,
+ channel_id TEXT NOT NULL,
+ recipient_id TEXT NOT NULL,
+ sent_at TEXT NOT NULL DEFAULT '',
+ last_reminded_at TEXT NOT NULL DEFAULT '',
+ UNIQUE(form_id,recipient_id)
+);
+CREATE TABLE IF NOT EXISTS form_submissions (
+ response_id TEXT PRIMARY KEY,
+ form_id TEXT NOT NULL REFERENCES forms(form_id) ON DELETE CASCADE,
+ submission_key TEXT NOT NULL,
+ edit_token TEXT NOT NULL UNIQUE,
+ answers_json TEXT NOT NULL,
+ questions_snapshot_json TEXT NOT NULL,
+ first_submitted_at TEXT NOT NULL,
+ updated_at TEXT NOT NULL,
+ UNIQUE(form_id,submission_key)
+);
+CREATE INDEX IF NOT EXISTS form_submissions_form_idx ON form_submissions(form_id,first_submitted_at);
+
+CREATE TABLE IF NOT EXISTS form_upload_drafts (
+ draft_key TEXT PRIMARY KEY,
+ form_id TEXT NOT NULL REFERENCES forms(form_id),
+ response_id TEXT,
+ created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS form_attachments (
+ attachment_id TEXT PRIMARY KEY,
+ form_id TEXT NOT NULL REFERENCES forms(form_id),
+ question_id TEXT NOT NULL,
+ draft_key TEXT NOT NULL,
+ response_id TEXT,
+ original_name TEXT NOT NULL,
+ extension TEXT NOT NULL,
+ byte_size INTEGER NOT NULL,
+ file_name TEXT NOT NULL,
+ thumbnail_name TEXT NOT NULL DEFAULT '',
+ status TEXT NOT NULL CHECK(status IN ('temporary','saved','deleted')),
+ created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS form_attachments_owner_idx ON form_attachments(form_id,response_id,draft_key);
+CREATE TABLE IF NOT EXISTS form_send_jobs (
+ job_id TEXT PRIMARY KEY REFERENCES send_jobs(job_id),
+ form_id TEXT NOT NULL,
+ mode TEXT NOT NULL CHECK(mode IN ('invite','remind')),
+ body TEXT NOT NULL
+);

@@ -3,6 +3,7 @@ import copy
 import json
 import math
 import re
+from urllib.parse import urlsplit, parse_qs
 from pathlib import Path
 
 import limits
@@ -55,10 +56,31 @@ def valid_date(value):
         return False
 
 
+def youtube_id(value):
+    if not isinstance(value, str) or len(value) > 1000:
+        raise ValueError('請填寫有效的 YouTube HTTPS 影片連結。')
+    parsed = urlsplit(value)
+    if parsed.scheme != 'https' or parsed.username or parsed.password or parsed.netloc not in ('youtube.com', 'www.youtube.com', 'm.youtube.com', 'youtu.be', 'www.youtu.be', 'www.youtube-nocookie.com'):
+        raise ValueError('請使用 YouTube 影片的 HTTPS 連結。')
+    segments = parsed.path.strip('/').split('/')
+    identifier = ''
+    if parsed.hostname in ('youtu.be', 'www.youtu.be') and len(segments) == 1:
+        identifier = segments[0]
+    elif parsed.path == '/watch':
+        values = parse_qs(parsed.query).get('v', [])
+        if len(values) == 1: identifier = values[0]
+    elif len(segments) == 2 and segments[0] in ('embed', 'shorts'):
+        identifier = segments[1]
+    if not re.fullmatch(r'[A-Za-z0-9_-]{11}', identifier):
+        raise ValueError('請提供單支 YouTube 影片連結。')
+    return identifier
+
+
 def validate_questions(questions):
     errors, ids = {}, set()
     if not isinstance(questions, list) or len(questions) > limits.FORM_QUESTIONS_MAX:
         raise DefinitionError({'_form': '題目數量超過上限或格式不正確。'})
+    questions = copy.deepcopy(questions)
     for index, q in enumerate(questions):
         key = str(index)
         try:
@@ -74,12 +96,28 @@ def validate_questions(questions):
                 raise ValueError('題型不正確。')
             for name, maximum, required in [('title', limits.FORM_TEXT_MAX, True), ('description', limits.FORM_TEXT_MAX, False)]:
                 value = q.get(name, '')
-                if not isinstance(value, str) or len(value) > maximum or (required and not trim(value)):
+                if not isinstance(value, str) or len(value) > maximum or (required and kind != 'content' and not trim(value)):
                     raise ValueError('請填寫題目標題與有效說明。')
             if type(q.get('required', False)) is not bool or type(q.get('allow_other', False)) is not bool:
                 raise ValueError('必填或其他選項設定不正確。')
             if q.get('allow_other') and kind not in {'single_choice', 'multiple_choice'}:
                 raise ValueError('只有單選與多選可開啟其他。')
+            if 'page_break' in q and (kind != 'section' or type(q['page_break']) is not bool):
+                raise ValueError('換頁設定僅能用於分區，且必須為布林值。')
+            if kind == 'content':
+                content = q.get('content')
+                if not isinstance(content, dict) or content.get('kind') not in RULES['content_kinds']:
+                    raise ValueError('請選擇有效的說明內容類型。')
+                if not isinstance(q.get('validation', {}), dict):
+                    raise ValueError('說明內容驗證設定不正確。')
+                if q.get('required') or q.get('allow_other') or q.get('validation', {}).get('enabled'):
+                    raise ValueError('說明內容不接受必填或答案驗證。')
+                if content['kind'] == 'text' and not (trim(q.get('title', '')) or trim(q.get('description', ''))):
+                    raise ValueError('請填寫說明標題或文字。')
+                if content['kind'] == 'image' and not re.fullmatch(r'[0-9a-f]{32}', str(content.get('image_id', ''))):
+                    raise ValueError('請先上傳說明圖片。')
+                if content['kind'] == 'video':
+                    content['video_id'] = youtube_id(content.get('youtube_url'))
             if kind == 'section' and q.get('required'):
                 raise ValueError('分區標題不能設為必填。')
             options = q.get('options', [])
@@ -165,11 +203,11 @@ def validate_answers(questions, answers):
     if not isinstance(answers, dict):
         return {'_form': RULES['messages']['structure']}
     errors = {}
-    active = {q['id'] for q in questions if q['type'] != 'section'}
+    active = {q['id'] for q in questions if q['type'] not in RULES['display_types']}
     if any(key not in active for key in answers):
         errors['_form'] = RULES['messages']['unknown']
     for q in questions:
-        if q['type'] == 'section':
+        if q['type'] in RULES['display_types']:
             continue
         code, custom = _answer_error(q, answers.get(q['id']))
         if code:
@@ -251,6 +289,7 @@ def _answer_error(q, value):
         if not isinstance(value, str) or not matches('time', value):
             return 'time', False
     elif kind == 'attachment':
-        # Attachment IDs must be verified by the invitation storage layer in phase four.
-        return 'attachment', False
+        if not isinstance(value,list) or len(value)>q['attachment']['max_files'] or any(not isinstance(item,str) or not re.fullmatch(r'[0-9a-f]{32}',item) for item in value) or len(set(value))!=len(value):
+            return 'attachment', False
+        # Storage ownership is checked by public_forms in the submission transaction.
     return None, False

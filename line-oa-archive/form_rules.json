@@ -1,5 +1,7 @@
 {
-  "types": {"short_text":"短文字","paragraph":"段落文字","single_choice":"單選","multiple_choice":"多選","dropdown":"下拉選單","number":"數字／數量","date":"日期","time":"時間","rating":"評分量表","attachment":"附件上傳","section":"分區標題"},
+  "types": {"short_text":"短文字","paragraph":"段落文字","single_choice":"單選","multiple_choice":"多選","dropdown":"下拉選單","number":"數字／數量","date":"日期","time":"時間","rating":"評分量表","attachment":"附件上傳","section":"分區標題","content":"說明內容"},
+  "display_types": ["section","content"],
+  "content_kinds": {"text":"文字說明","image":"圖片／圖文說明","video":"YouTube 影片"},
   "choice_types": ["single_choice","multiple_choice","dropdown"],
   "text_types": ["short_text","paragraph"],
   "other_id": "__other__",

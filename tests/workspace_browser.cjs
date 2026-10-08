@@ -13,6 +13,7 @@ const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
     browser=await chromium.launch({channel:'chrome',headless:true});
     await require('./forms_browser_checks.cjs')(browser,access,null);
     await require('./forms_designer_checks.cjs')(browser,access,null);
+    await require('./forms_home_checks.cjs')(browser,access,null);
     if(process.env.FORMS_ONLY==='1'){console.log('Forms checks passed');return;}
     if(process.env.TOOLS_ONLY!=='1')await require('./duty_browser_checks.cjs')(browser,access,null);
     await require('./workspace_tools_checks.cjs')(browser,access,null);

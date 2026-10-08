@@ -22,6 +22,19 @@ VECTORS = json.loads(Path(__file__).with_name('form_validation_vectors.json').re
 
 
 class FormValidationTests(unittest.TestCase):
+    def test_page_break_is_section_only_and_boolean(self):
+        section = forms.question('section', '第二頁', 'section')
+        section['page_break'] = True
+        self.assertEqual(validation.validate_questions([section])[0]['page_break'], True)
+        for value in ('true', 1, None):
+            section['page_break'] = value
+            with self.assertRaises(ValueError):
+                validation.validate_questions([section])
+        question = forms.question('text', '姓名')
+        question['page_break'] = False
+        with self.assertRaises(ValueError):
+            validation.validate_questions([question])
+
     def test_shared_python_vectors_and_no_answer_coercion(self):
         for vector in VECTORS:
             with self.subTest(vector=vector['name']):
@@ -132,12 +145,13 @@ class FormDesignerApiTests(unittest.TestCase):
         for vector in VECTORS:
             with self.subTest(vector=vector['name']):
                 status,data=self.call(server,'/api/forms/preview',payload={'form_id':row['form_id'],'questions':vector['questions'],'answers':vector['answers']})
-                self.assertEqual(status,200);self.assertEqual(data['valid'],not vector['expected'])
+                attachment_input=any(q['type']=='attachment' and vector['answers'].get(q['id']) for q in vector['questions']) if isinstance(vector['answers'],dict) else False
+                self.assertEqual(status,200);self.assertEqual(data['valid'],not vector['expected'] and not attachment_input)
                 if data['valid']:self.assertEqual(data['answers'],vector['answers'])
         with app.database_connection() as conn:
             self.assertEqual(conn.execute('SELECT count(*) FROM forms').fetchone()[0],1)
             self.assertEqual(conn.execute("SELECT count(*) FROM audit_events WHERE action='forms.design'").fetchone()[0],0)
-            self.assertIsNone(conn.execute("SELECT 1 FROM sqlite_master WHERE name='form_responses'").fetchone())
+            self.assertEqual(conn.execute("SELECT count(*) FROM form_submissions").fetchone()[0],0)
 
     def test_readonly_preview_allowed_design_and_cross_oa_rejected(self):
         self.prepare();row=self.create();server=self.server()
@@ -152,7 +166,7 @@ class FormDesignerApiTests(unittest.TestCase):
     def test_existing_response_changes_require_explicit_confirmation(self):
         self.prepare();row=self.create()
         payload={'form_id':row['form_id'],'questions':row['questions'][1:],'expected_updated_at':row['updated_at']}
-        with channels.use('primary'),patch.object(forms,'_counts',return_value={'invitations':1,'responses':1}):
+        with channels.use('primary'),patch.object(forms,'_counts',return_value={'notifications':1,'responses':1}):
             with self.assertRaises(ValueError):forms.save_design(self.user,payload)
             payload['confirm_response_impact']=True
             self.assertEqual(len(forms.save_design(self.user,payload)['form']['questions']),3)
